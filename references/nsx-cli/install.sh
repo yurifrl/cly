@@ -1,0 +1,205 @@
+#!/bin/sh
+set -e
+
+# NSX installer
+#
+# Usage:
+#   curl -fsSL https://nsx-cli-proxy.nsx.services/main/install.sh | sh
+#   curl -fsSL https://nsx-cli-proxy.nsx.services/main/install.sh | bash -s -- -v v1.0.0
+#
+# Environment variables:
+#   - INSTALL_DIRECTORY: Override the default installation directory
+#   - VERSION: Override the default version to install
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+RESET='\033[0m'
+
+# Repository URL (using SSH which will use local SSH credentials)
+REPO_URL="git@github.com:NSXBet/nsx-cli.git"
+
+usage() {
+  echo "Usage:"
+  echo "  curl -fsSL https://nsx-cli-proxy.nsx.services/main/install.sh | sh"
+  echo "  curl -fsSL https://nsx-cli-proxy.nsx.services/main/install.sh | bash -s -- [options]"
+  echo ""
+  echo "Options:"
+  echo "  -v, --version VERSION    Specify a version to install (default: latest)"
+  echo "  -d, --directory DIR      Specify an installation directory (default: /usr/local/bin or %ProgramFiles%\\nsx)"
+  echo "  -h, --help               Show this help message"
+  exit 1
+}
+
+log_info() {
+  echo "${GREEN}INFO${RESET}: $1"
+}
+
+log_warn() {
+  echo "${YELLOW}WARN${RESET}: $1"
+}
+
+log_error() {
+  echo "${RED}ERROR${RESET}: $1"
+}
+
+check_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    log_error "$1 is required but not installed. Please install $1 and try again."
+    exit 1
+  fi
+}
+
+# Get latest version using proxy instead of git
+get_latest_version() {
+  if ! version=$(curl -fsSL "https://nsx-cli-proxy.nsx.services/latest" | grep -o '"tag_name":"[^"]*' | cut -d'"' -f4); then
+    log_error "Failed to fetch latest version from proxy"
+    exit 1
+  fi
+  echo "${version}"
+}
+
+# Parse arguments
+VERSION="${VERSION:-latest}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -v|--version)
+      VERSION="$2"
+      shift 2
+      ;;
+    -d|--directory)
+      INSTALL_DIRECTORY="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      log_error "Unknown option: $1"
+      usage
+      ;;
+  esac
+done
+
+# Check for required commands
+check_cmd curl
+check_cmd git
+
+# Determine OS and architecture
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+
+# Normalize architecture naming
+case "${ARCH}" in
+  x86_64|amd64)
+    ARCH="x86_64"
+    ;;
+  arm64|aarch64)
+    ARCH="arm64"
+    ;;
+  *)
+    log_error "Unsupported architecture: ${ARCH}"
+    exit 1
+    ;;
+esac
+
+# Get the version to install
+if [ "${VERSION}" = "latest" ]; then
+  log_info "Finding latest version using proxy..."
+  VERSION=$(get_latest_version)
+  if [ -z "${VERSION}" ]; then
+    log_error "Failed to find latest version. Please specify a version manually."
+    exit 1
+  fi
+  log_info "Latest version found: ${VERSION}"
+fi
+
+log_info "Installing NSX ${VERSION} for ${OS}/${ARCH}"
+
+# Determine file extension and binary name based on OS
+case "${OS}" in
+  darwin)
+    BINARY_NAME="nsx"
+    EXTENSION="tar.gz"
+    if [ -z "${INSTALL_DIRECTORY}" ]; then
+      INSTALL_DIRECTORY="/usr/local/bin"
+    fi
+    ;;
+  linux)
+    BINARY_NAME="nsx"
+    EXTENSION="tar.gz"
+    if [ -z "${INSTALL_DIRECTORY}" ]; then
+      INSTALL_DIRECTORY="/usr/local/bin"
+    fi
+    ;;
+  *)
+    # Assuming it's Windows if not darwin or linux
+    log_error "Windows installation via this script is not supported. Please use PowerShell script instead."
+    log_info "PowerShell install command: iwr -useb https://nsx-cli-proxy.nsx.services/main/install.ps1 | iex"
+    exit 1
+    ;;
+esac
+
+# Normalize OS naming for download URL
+if [ "${OS}" = "darwin" ]; then
+  DOWNLOAD_OS="Darwin"
+elif [ "${OS}" = "linux" ]; then
+  DOWNLOAD_OS="Linux"
+fi
+
+# Create temporary directory
+TMP_DIR=$(mktemp -d)
+log_info "Created temporary directory: ${TMP_DIR}"
+
+# Setup cleanup on exit
+cleanup() {
+  log_info "Cleaning up temporary files..."
+  rm -rf "${TMP_DIR}"
+}
+trap cleanup EXIT
+
+# Build download URL - now using the proxy
+DOWNLOAD_FILE="nsx_${DOWNLOAD_OS}_${ARCH}.${EXTENSION}"
+DOWNLOAD_URL="https://nsx-cli-proxy.nsx.services/releases/download/${VERSION}/${DOWNLOAD_FILE}"
+
+# Download the binary
+log_info "Downloading from: ${DOWNLOAD_URL}"
+# For private repositories, we may need to use git archive or similar, but for now we'll try with the URL
+if ! curl -fsL --progress-bar "${DOWNLOAD_URL}" -o "${TMP_DIR}/${DOWNLOAD_FILE}"; then
+  log_error "Failed to download the release asset. This might be a proxy issue. Contact SRE for help."
+  exit 1
+fi
+
+# Extract the archive
+log_info "Extracting archive..."
+tar -xzf "${TMP_DIR}/${DOWNLOAD_FILE}" -C "${TMP_DIR}" "${BINARY_NAME}"
+
+# Check if installation directory exists and is writable
+if [ ! -d "${INSTALL_DIRECTORY}" ]; then
+  log_warn "${INSTALL_DIRECTORY} does not exist. Creating it (may require sudo)..."
+  if ! mkdir -p "${INSTALL_DIRECTORY}" 2>/dev/null; then
+    sudo mkdir -p "${INSTALL_DIRECTORY}"
+  fi
+fi
+
+# Install the binary
+INSTALL_PATH="${INSTALL_DIRECTORY}/${BINARY_NAME}"
+log_info "Installing to ${INSTALL_PATH} (may require sudo)..."
+
+if [ -w "${INSTALL_DIRECTORY}" ]; then
+  cp "${TMP_DIR}/${BINARY_NAME}" "${INSTALL_PATH}"
+  chmod +x "${INSTALL_PATH}"
+else
+  sudo cp "${TMP_DIR}/${BINARY_NAME}" "${INSTALL_PATH}"
+  sudo chmod +x "${INSTALL_PATH}"
+fi
+
+log_info "Successfully installed NSX ${VERSION} to ${INSTALL_PATH}"
+log_info "Run 'nsx --help' to get started"
+
+# Set up shell completion if applicable
+log_info "To enable shell completion, run one of the following commands:"
+echo "  bash: nsx completion bash >> ~/.bashrc"
+echo "  zsh:  nsx completion zsh >> ~/.zshrc"
+echo "  fish: nsx completion fish >> ~/.config/fish/completions/nsx.fish" 

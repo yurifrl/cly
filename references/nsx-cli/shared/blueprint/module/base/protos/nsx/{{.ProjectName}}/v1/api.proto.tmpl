@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package nsx.{{ .ProjectNameSnakeCase }}.v1;
+
+option go_package = "github.com/NSXBet/{{ .ProjectName }}/gen/go/nsx/{{ .ProjectName }}/v1;{{ .ProjectNameSnakeCase }}";
+
+service {{ .ProjectNamePascalCase }}Service {
+  rpc Get{{ .ProjectNamePascalCase }}(Get{{ .ProjectNamePascalCase }}Request) returns (Get{{ .ProjectNamePascalCase }}Response) {}
+}
+
+message Get{{ .ProjectNamePascalCase }}Request {
+  string message = 1;
+}
+
+message Get{{ .ProjectNamePascalCase }}Response {
+  string message = 1;
+}

@@ -1,209 +1,431 @@
-# CLY - Charm CLI Tech Demo
+# CLY - Modular Charm CLI Specification
 
-## Overview
+**Purpose**: Modular Go CLI showcasing Charm libraries (Bubbletea, Bubbles, Huh, Lipgloss) with production-ready architecture patterns from NSX-CLI.
 
-CLY is a modular Go CLI application serving as a **tech demo for Charm libraries**. It demonstrates the full capabilities of the Charm ecosystem while providing a framework for adding random scripts/utilities.
+---
 
 ## Technology Stack
 
-| Library | Purpose | Version |
-|---------|---------|---------|
-| **Cobra** | CLI framework - commands, subcommands, args, help | spf13/cobra |
-| **Viper** | Config management - YAML files, env vars, flags binding | spf13/viper |
-| **Bubbletea** | TUI framework - Elm Architecture (Model-Update-View) | charmbracelet/bubbletea |
-| **Bubbles** | Pre-built TUI components | charmbracelet/bubbles |
-| **Huh** | Forms and prompts | charmbracelet/huh |
-| **Lipgloss** | Styling - colors, borders, layout | charmbracelet/lipgloss |
+| Library | Purpose |
+|---------|---------|
+| **Cobra** | CLI framework (commands, flags, help) |
+| **Viper** | Configuration management (YAML, env vars) |
+| **Bubbletea** | TUI framework (Elm Architecture) |
+| **Bubbles** | Pre-built TUI components |
+| **Huh** | Forms and prompts |
+| **Lipgloss** | Styling (colors, borders, layout) |
 
-## Architecture
+---
 
-### Modular Design (inspired by nsx-cli)
+## Architecture: Everything is a Command
+
+```bash
+cly spinner          # Each Charm component is a direct command
+cly table
+cly list
+cly textinput
+cly form
+cly progress
+cly viewport
+cly textarea
+
+cly config init      # Utility commands
+cly config show
+cly version
+```
+
+**No "demo" parent command** - This prepares for future utility commands beyond demos.
+
+---
+
+## Project Structure
 
 ```
 cly/
-├── main.go                 # Entry point
+├── main.go                  # Entry point
+├── go.mod
 ├── cmd/
-│   └── root.go             # Root command, registers all modules
+│   └── root.go              # Root command, registers all modules
+├── modules/                 # Each module = one Charm component
+│   ├── spinner/
+│   │   ├── cmd.go           # Exports Register(parent)
+│   │   ├── model.go         # Bubbletea model
+│   │   ├── view.go          # Bubbletea view
+│   │   └── update.go        # Bubbletea update
+│   ├── table/
+│   │   ├── cmd.go
+│   │   └── ...
+│   ├── list/
+│   ├── textinput/
+│   ├── form/
+│   ├── progress/
+│   ├── viewport/
+│   ├── textarea/
+│   └── config/
+│       └── cmd.go           # Config management commands
+├── pkg/                     # Shared utilities
+│   ├── config/
+│   │   └── config.go        # Viper-based config loader
+│   ├── style/
+│   │   └── theme.go         # Lipgloss styles
+│   └── ui/
+│       ├── components.go    # Reusable components
+│       ├── help.go          # Help display
+│       └── status.go        # Status messages
 ├── config/
-│   ├── config.go           # Viper setup, YAML config loading
-│   └── config.yaml         # Default config template
-├── internal/
-│   └── style/              # Shared lipgloss styles
-│       └── style.go
-├── modules/                # Each module is self-contained
-│   ├── demo/               # Charm tech demo module
-│   │   ├── cmd.go          # Cobra command registration
-│   │   ├── model.go        # Bubbletea model
-│   │   ├── view.go         # Bubbletea view
-│   │   └── update.go       # Bubbletea update
-│   └── <future>/           # Future modules follow same pattern
-└── pkg/                    # Shared utilities
-    └── ui/
-        └── components.go   # Reusable Bubbles wrappers
+│   └── config.yaml          # Default configuration
+└── references/              # Working examples (for development)
+    ├── bubbletea/examples/  # Official Bubbletea examples
+    ├── nsx-cli/             # NSX-CLI modular architecture reference
+    └── soft-serve/          # Advanced Charm usage
 ```
 
-### Module Interface
+---
 
-Each module:
-- Has **1 entry point** (registers its Cobra command)
-- Receives dependencies via **parameters or interfaces**
-- Can be **easily extracted** into separate package
-- No modification to core code when adding new modules
+## Key Modularity Patterns (from NSX-CLI)
 
+### 1. Command Registration (Query Command Pattern)
+
+**Single registration point**:
 ```go
-// modules/demo/cmd.go
-func Register(parent *cobra.Command, cfg *config.Config) {
-    cmd := &cobra.Command{
-        Use:   "demo",
-        Short: "Charm libraries tech demo",
-        Run:   runDemo,
-    }
-    parent.AddCommand(cmd)
+// cmd/root.go
+package cmd
+
+import (
+    "github.com/spf13/cobra"
+    "cly/modules/spinner"
+    "cly/modules/table"
+    "cly/modules/list"
+)
+
+var RootCmd = &cobra.Command{
+    Use:   "cly",
+    Short: "Charm libraries showcase CLI",
+    PersistentPreRunE: initConfig,
+}
+
+func Execute() {
+    // Modules register themselves - add line per module
+    spinner.Register(RootCmd)
+    table.Register(RootCmd)
+    list.Register(RootCmd)
+
+    RootCmd.Execute()
 }
 ```
 
-## First Implementation: Charm Tech Demo
+### 2. Module Self-Containment (Locality & Behavior)
 
-### Goal
-Showcase **all Charm library capabilities** in an interactive demo.
+**Each module is independent**:
+```go
+// modules/spinner/cmd.go
+package spinner
 
-### Demo Menu Structure
+import "github.com/spf13/cobra"
 
+func Register(parent *cobra.Command) {
+    cmd := &cobra.Command{
+        Use:   "spinner",
+        Short: "Spinner component showcase",
+        Long:  `Demonstrates Bubbles spinner component with multiple types`,
+        RunE:  runSpinner,
+    }
+
+    cmd.Flags().StringVarP(&spinnerType, "type", "t", "dot", "Spinner type")
+    parent.AddCommand(cmd)
+}
+
+func runSpinner(cmd *cobra.Command, args []string) error {
+    p := tea.NewProgram(initialModel())
+    _, err := p.Run()
+    return err
+}
 ```
-cly demo
-├── [1] Bubbletea Basics     # Model-Update-View pattern
-├── [2] Bubbles Showcase     # All pre-built components
-├── [3] Huh Forms            # Form/prompt examples
-├── [4] Lipgloss Gallery     # Styling showcase
-└── [5] Full Demo            # Combined experience
+
+### 3. Shared Utilities (Package-Oriented Design)
+
+**Zero coupling between modules**:
+```go
+// pkg/style/theme.go
+package style
+
+import "github.com/charmbracelet/lipgloss"
+
+var (
+    TitleStyle = lipgloss.NewStyle().
+        Bold(true).
+        Foreground(lipgloss.Color("212"))
+
+    SuccessStyle = lipgloss.NewStyle().
+        Foreground(lipgloss.Color("42"))
+)
+
+func ApplyTheme(themeName string) {
+    // charm, dracula, catppuccin
+}
 ```
 
-### Feature Demonstrations
+**Usage in any module**:
+```go
+// modules/spinner/view.go
+import "cly/pkg/style"
 
-#### 1. Bubbletea Basics
-- [ ] Simple list navigation (cursor movement)
-- [ ] Key bindings (vim-style: j/k, arrows)
-- [ ] State management demo
-- [ ] Commands and messages
+func (m model) View() string {
+    return style.TitleStyle.Render("Spinner Demo") + "\n" + m.spinner.View()
+}
+```
 
-#### 2. Bubbles Showcase
-| Component | Demo |
-|-----------|------|
-| Spinner | Loading states with different spinner types |
-| TextInput | Single-line input with validation |
-| TextArea | Multi-line text editor |
-| Table | Sortable data table |
-| Progress | Animated progress bar |
-| Paginator | Dot-style and numeric pagination |
-| Viewport | Scrollable content pager |
-| List | Filterable list with fuzzy search |
-| FilePicker | File/directory browser |
-| Timer/Stopwatch | Time tracking demo |
-| Help | Auto-generated keybinding help |
-
-#### 3. Huh Forms
-- [ ] Input field with validation
-- [ ] Text area (multi-line)
-- [ ] Select (single choice)
-- [ ] MultiSelect (checkboxes)
-- [ ] Confirm (yes/no)
-- [ ] Multi-page form wizard
-- [ ] Dynamic forms (options change based on input)
-- [ ] Theme showcase (Charm, Dracula, Catppuccin, Base16)
-- [ ] Spinner integration
-
-#### 4. Lipgloss Gallery
-- [ ] Color profiles (ANSI 16, 256, TrueColor)
-- [ ] Adaptive colors (light/dark detection)
-- [ ] Text formatting (bold, italic, underline, etc.)
-- [ ] Borders (normal, rounded, thick, double, custom)
-- [ ] Padding and margins
-- [ ] Text alignment
-- [ ] Width/height constraints
-- [ ] JoinHorizontal/JoinVertical layouts
-- [ ] Table rendering
-- [ ] List rendering (nested, custom enumerators)
-- [ ] Tree rendering
-
-#### 5. Full Demo
-Interactive experience combining all above:
-1. Form to collect user preferences (Huh)
-2. Display styled summary (Lipgloss)
-3. Show loading spinner (Bubbles)
-4. Present results in styled table (Lipgloss table)
-5. Allow navigation through results (Bubbletea)
-
-## Config Structure (Viper/YAML)
+### 4. Configuration (Viper + YAML)
 
 ```yaml
-# ~/.config/cly/config.yaml
+# config/config.yaml
 app:
   name: cly
   debug: false
 
 theme:
-  style: charm  # charm | dracula | catppuccin | base16 | default
+  style: charm  # charm | dracula | catppuccin
 
-demo:
-  default_section: full
+modules:
+  spinner:
+    default_type: dot
+  table:
+    default_height: 10
 ```
 
-### Config Features to Demonstrate
-- [x] YAML config file (`~/.config/cly/config.yaml`)
-- [x] Environment variable override (`CLY_APP_DEBUG=true`)
-- [x] Flag binding (`--debug`)
-- [x] Config file watching (live reload)
-- [x] Default values
+```go
+// pkg/config/config.go
+package config
 
-## CLI Structure
+import "github.com/spf13/viper"
 
+type Config struct {
+    App struct {
+        Name  string
+        Debug bool
+    }
+    Theme struct {
+        Style string
+    }
+    Modules map[string]map[string]interface{}
+}
+
+func Load() (*Config, error) {
+    viper.SetConfigName("config")
+    viper.AddConfigPath("$HOME/.config/cly")
+    viper.AddConfigPath(".")
+
+    // Env var support: CLY_APP_DEBUG=true
+    viper.SetEnvPrefix("CLY")
+    viper.AutomaticEnv()
+
+    if err := viper.ReadInConfig(); err != nil {
+        return nil, err
+    }
+
+    var cfg Config
+    if err := viper.Unmarshal(&cfg); err != nil {
+        return nil, err
+    }
+
+    return &cfg, nil
+}
 ```
-cly [flags]
-├── demo [flags]           # Run the tech demo
-│   ├── --section <name>   # Jump to specific section
-│   └── --theme <name>     # Override theme
-├── config                 # Config management
-│   ├── init               # Create default config
-│   ├── show               # Display current config
-│   └── edit               # Open config in $EDITOR
-├── version                # Show version info
-└── help                   # Auto-generated help
+
+---
+
+## Module Template
+
+**Every module follows MVC pattern (Bubbletea)**:
+
+```go
+// modules/<name>/cmd.go
+package <name>
+
+import (
+    "github.com/spf13/cobra"
+    tea "github.com/charmbracelet/bubbletea"
+)
+
+func Register(parent *cobra.Command) {
+    cmd := &cobra.Command{
+        Use:   "<name>",
+        Short: "<description>",
+        Long:  `<detailed help>`,
+        RunE:  run<Name>,
+    }
+
+    cmd.Flags().StringVarP(&flag, "flag", "f", "default", "description")
+    parent.AddCommand(cmd)
+}
+
+func run<Name>(cmd *cobra.Command, args []string) error {
+    p := tea.NewProgram(initialModel())
+    _, err := p.Run()
+    return err
+}
+
+// modules/<name>/model.go
+package <name>
+
+import tea "github.com/charmbracelet/bubbletea"
+
+type model struct {
+    // State fields
+}
+
+func initialModel() model {
+    return model{}
+}
+
+func (m model) Init() tea.Cmd {
+    return nil
+}
+
+// modules/<name>/update.go
+package <name>
+
+import tea "github.com/charmbracelet/bubbletea"
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        switch msg.String() {
+        case "q", "ctrl+c":
+            return m, tea.Quit
+        }
+    }
+    return m, nil
+}
+
+// modules/<name>/view.go
+package <name>
+
+import "cly/pkg/style"
+
+func (m model) View() string {
+    return style.TitleStyle.Render("Title") + "\n" + "content"
+}
 ```
 
-## Non-Functional Requirements
+---
 
-1. **No TOML** - Config must be YAML (Viper)
-2. **Modular** - Adding commands requires no core changes
-3. **Testable** - Interfaces allow mocking
-4. **Cross-platform** - macOS, Linux, Windows
-5. **Single binary** - No external dependencies
+## Reference Material Mapping
 
-## Future Modules (Post-Demo)
+Each module adapts working examples from `references/bubbletea/examples/`:
 
-The modular structure allows adding utilities:
-- `cly uuid` - Generate UUIDs
-- `cly json` - JSON pretty-print/validate
-- `cly encode` - Base64/URL encoding
-- `cly http` - Quick HTTP client with TUI
-- etc.
+| Command | Reference Example |
+|---------|-------------------|
+| `cly spinner` | `references/bubbletea/examples/spinner` |
+| `cly textinput` | `references/bubbletea/examples/textinput` |
+| `cly list` | `references/bubbletea/examples/list-simple` |
+| `cly table` | `references/bubbletea/examples/table` |
+| `cly progress` | `references/bubbletea/examples/progress-static` |
+| `cly form` | `references/bubbletea/examples/credit-card-form` |
+| `cly viewport` | `references/bubbletea/examples/pager` |
+| `cly textarea` | `references/bubbletea/examples/textarea` |
 
-## Development Setup
+**Don't reinvent** - adapt and integrate existing working code.
+
+---
+
+## Implementation Phases
+
+### Phase 1: Foundation
+**Files**:
+- `main.go` - Entry point
+- `go.mod` - Dependencies
+- `cmd/root.go` - Root command with global flags
+- `pkg/config/config.go` - Config loader
+- `config/config.yaml` - Default config
+- `pkg/style/theme.go` - Shared styles
+
+**Test**: `go run main.go --help`
+
+### Phase 2: First Module (Spinner)
+**Files**:
+- `modules/spinner/cmd.go`
+- `modules/spinner/model.go`
+- `modules/spinner/view.go`
+- `modules/spinner/update.go`
+
+**Reference**: `references/bubbletea/examples/spinner/main.go`
+
+**Test**: `cly spinner` runs working demo
+
+### Phase 3: Additional Modules
+**Priority order**:
+1. spinner ✓ (Phase 2)
+2. textinput
+3. list
+4. table
+5. progress
+6. form
+7. viewport
+8. textarea
+
+**Process**:
+- Copy `modules/spinner/` structure
+- Adapt reference example
+- Register in `cmd/root.go`
+
+### Phase 4: Shared Components
+**Files**:
+- `pkg/ui/components.go` - Generic wrappers
+- `pkg/ui/help.go` - Help display
+- `pkg/ui/status.go` - Status messages
+
+**Refactor**: Use shared components in modules
+
+### Phase 5: Config Commands
+**Files**:
+- `modules/config/cmd.go`
+  - `cly config init`
+  - `cly config show`
+  - `cly config set <key> <value>`
+
+### Phase 6: Polish
+**Tasks**:
+- Add `cly version`
+- Add `cly list` (list all commands)
+- Create README.md
+- Add help text examples
+- Cross-platform testing
+
+---
+
+## Dependencies
 
 ```bash
-# Init
-go mod init github.com/user/cly
 go get github.com/spf13/cobra
 go get github.com/spf13/viper
 go get github.com/charmbracelet/bubbletea
 go get github.com/charmbracelet/bubbles
-go get github.com/charmbracelet/huh
 go get github.com/charmbracelet/lipgloss
-
-# Run
-go run main.go demo
-
-# Build
-go build -o cly
+go get github.com/charmbracelet/huh
 ```
 
-You have access to gitmcp of all those libs
+---
+
+## Success Criteria
+
+✅ **Modular** - Adding command = zero changes to existing modules
+✅ **Self-contained** - Each module has all code in its directory
+✅ **Reusable** - Shared utilities prevent duplication
+✅ **Scalable** - Grows from 5 to 50+ commands easily
+✅ **Working demos** - Each command shows Charm capabilities
+✅ **Config-driven** - Behavior customizable via YAML
+✅ **Single binary** - No external runtime dependencies
+
+---
+
+## Design Principles
+
+1. **Single registration point** (`cmd/root.go`)
+2. **Module autonomy** (no inter-module dependencies)
+3. **Shared consistency** (common utilities for UX)
+4. **Type safety** (interfaces, generics)
+5. **Encapsulation** (independently testable modules)
+6. **Configuration locality** (module-specific config sections)
+
+This architecture enables parallel development without conflicts.

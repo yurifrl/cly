@@ -1,0 +1,83 @@
+package cmd
+
+import (
+    "context"
+    "os"
+    "os/signal"
+    "syscall"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/basefx"
+	"github.com/NSXBet/nsf/pkg/serverx"
+	"github.com/NSXBet/{{ .ProjectName }}/infra/grpc"
+	"github.com/NSXBet/{{ .ProjectName }}/infra/metrics"
+	"github.com/NSXBet/{{ .ProjectName }}/infra/kafka"
+	kafkaHandlers "github.com/NSXBet/{{ .ProjectName }}/internal/handler/kafka"
+    {{- range (index .Imports "all").Paths }}
+	"{{ . }}"
+	{{- end }}
+	{{- range (index .Imports "kafka_worker.go").Paths }}
+	"{{ . }}"
+	{{- end }}
+)
+
+func init() {
+	rootCmd.AddCommand(workerCmd)
+}
+
+var workerCmd = &cobra.Command{
+	Use:   "kafka-worker",
+	Short: "Start the kafka workers",
+	RunE: func(cmd *cobra.Command, args []string) error {
+    	// Create FX app with Kafka worker modules
+		app := fx.New(
+			basefx.Module,        // Core NSF modules
+			metrics.Module,       // Custom metrics
+			kafka.Module,         // Kafka producers/consumers
+			kafkaHandlers.Module, // Message handlers
+            fx.Invoke(func(lc fx.Lifecycle, server *metricx.MetricServer, logger logx.Logger) {
+				lc.Append(fx.Hook{
+					OnStart: func(ctx context.Context) error {
+						// Start the metrics server on port 2112
+						go func() {
+							if err := server.Start(); err != nil {
+								// Log error but don't fail the application start
+								// The metrics server error shouldn't prevent the worker from running
+								logger.ErrorCtx(ctx, "Failed to start metrics server", err)
+							}
+						}()
+						return nil
+					},
+					OnStop: func(ctx context.Context) error {
+						// Metrics server will be stopped when context is cancelled
+						return nil
+					},
+				})
+			}),
+            {{- range (index .Imports "all").FxImports }}
+			{{ . }},
+			{{- end}}
+			{{- range (index .Imports "kafka_worker.go").FxImports }}
+			{{ . }},
+			{{- end}}
+		)
+
+		// Set up graceful shutdown
+		ctx, cancel := signal.NotifyContext(context.Background(),
+			os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+
+		// Start the Kafka worker application
+		if err := app.Start(ctx); err != nil {
+			return err
+		}
+
+		// Wait for shutdown signal
+		<-ctx.Done()
+
+		// Graceful shutdown
+		return app.Stop(context.Background())
+	},
+}

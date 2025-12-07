@@ -1,0 +1,70 @@
+kubernetes:
+  base:
+    metadata:
+      team: {{ .Team }}
+    sourceRepo:
+      name: {{ .ProjectName }}
+      org: NSXBet
+    secretsManager:
+      enabled: true
+      secretsName: staging/{{ .ProjectName }}/betdev
+    monoRepo:
+      appsFolder: apps-config
+      argoCDValues: helms/argocd/values.yaml
+      repository: monorepo-gitops
+    containerRegistry:
+      url: 492684252576.dkr.ecr.us-east-1.amazonaws.com
+    deployConfig:
+      cluster: EKS-NSX-Staging
+      environment: staging
+      steps:
+        - build
+        - push
+        - versioning
+        - deploy
+      service:
+        istio: enabled
+  apps:
+    - name: {{ .ProjectName }}-grpc
+      dockerfile: ./Dockerfile
+      imagePullPolicy: Always
+      kind: deployment
+      revisionHistoryLimit: 1
+      secretsManager:
+        enabled: true
+        secretsName: staging/{{ .ProjectName }}/betdev
+      args:
+        - grpc
+      resources:
+        limits:
+          cpu: 900m
+          memory: 256Mi
+        requests:
+          cpu: 400m
+          memory: 256Mi
+      serviceAccount:
+        awsRoleArn: arn:aws:iam::492684252576:role/{{ .ProjectName }}-staging
+      envs:
+        - name: APP_ENVIRONMENT
+          value: "staging"
+        - name: SKIN
+          value: "betdev"
+      service:
+        healthcheck:
+          grpc: true
+          initialDelaySeconds: 10
+          interval: 5
+          path: /grpc.health.v1.Health.Check
+          port: 9090
+          timeoutSeconds: 5
+        metrics:
+          port: 2112
+          path: /metrics
+        istio: true
+        ports:
+          - containerPort: 9090
+            name: worker-{{ .ProjectName }}
+            virtualservices:
+              - gateway: internal-gateway
+                hosts:
+                  - {{ .ProjectName }}-stg.nsx.services

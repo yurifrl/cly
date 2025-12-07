@@ -1,0 +1,45 @@
+kubernetes:
+  apps:
+    - name: {{ .ProjectName }}-http
+      dockerfile: ./Dockerfile
+      imagePullPolicy: Always
+      kind: deployment
+      revisionHistoryLimit: 1
+      secretsManager:
+        enabled: true
+        secretsName: homol/{{ .ProjectName }}/sandbox
+      args:
+        - http
+      resources:
+        limits:
+          cpu: 900m
+          memory: 256Mi
+        requests:
+          cpu: 400m
+          memory: 256Mi
+      serviceAccount:
+        awsRoleArn: arn:aws:iam::492684252576:role/{{ .ProjectName }}-staging
+      envs:
+        - name: APP_ENVIRONMENT
+          value: "homol"
+        - name: SKIN
+          value: "sandbox"
+      service:
+        healthcheck:
+          grpc: true
+          initialDelaySeconds: 10
+          interval: 5
+          path: /grpc.health.v1.Health.Check
+          port: 9090
+          timeoutSeconds: 5
+        metrics:
+          port: 2112
+          path: /metrics
+        istio: true
+        ports:
+          - containerPort: 8080
+            name: worker-{{ .ProjectName }}
+            virtualservices:
+              - gateway: internal-gateway
+                hosts:
+                  - {{ .ProjectName }}-http-homol.nsx.services

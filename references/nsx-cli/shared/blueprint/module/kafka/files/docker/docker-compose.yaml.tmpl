@@ -1,0 +1,84 @@
+services:
+  worker:
+    build:
+      dockerfile: docker/Dockerfile-air
+      context: ../
+      args:
+        GHA_PAT: ${GHA_PAT}
+        RIVER_PRO_SECRET: ${RIVER_PRO_SECRET}
+    ports:
+      - "2112:2112"
+    environment:
+      - GOCACHE=/app/tmp/go-build-cache
+      - GOMODCACHE=/app/tmp/go-mod-cache
+      - AIR_WATCHER_POLL=true
+      - AIR_WATCHER_INTERVAL=500ms
+      - PROJECT_NAME={{ .ProjectName }}
+      - APP_NAME={{ .ProjectName }}-kafka-worker
+      - CONFIG_PATH=/app/config
+      - APP_ENVIRONMENT=docker
+      - VERSION=1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: "air -- kafka-worker"
+    volumes:
+      - ../:/app
+      - go-build-cache:/app/tmp/go-build-cache
+      - go-mod-cache:/app/tmp/go-mod-cache
+    networks:
+      - local
+  kafka:
+    container_name: kc-kafka
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://kafka:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://kafka:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr kafka:33145
+      - --advertise-rpc-addr kafka:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=info
+    image: redpandadata/redpanda:v23.3.7
+    volumes:
+      - ./data/kafka:/var/lib/redpanda/data
+    healthcheck:
+      test: bash -c 'rpk -Xbrokers=kafka:9092 topic list'
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    networks:
+      - local
+    ports:
+      - 18081:18081
+      - 18082:18082
+      - 19092:19092
+      - 19644:9644
+  kafka-setup:
+    image: redpandadata/redpanda:v23.3.7
+    command:
+      - -Xbrokers=kafka:9092 topic create betdev-auth-events
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - local
+  kafka-ui:
+    container_name: kc-kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8088:8080
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_METRICS_PORT: 9997
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    networks:
+      - local

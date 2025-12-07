@@ -1,0 +1,32 @@
+package cmd
+
+import (
+	"context"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/logx"
+	"github.com/NSXBet/{{ .ProjectName }}/infra/database"
+)
+
+func init() {
+	rootCmd.AddCommand(migratorCmd)
+	migratorCmd.Flags().StringVarP(&dir, "dir", "d", "./migrations", "directory with migration files")
+}
+
+var (
+	dir         string
+	migratorCmd = &cobra.Command{
+		Use:   "migrator",
+		Short: "This command run the migrator",
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			return fx.New(
+				logx.Module,
+				fx.Provide(func() []string { return args }),
+				fx.Provide(func() string { return dir }),
+				database.Migrator,
+			).Start(context.Background())
+		},
+	}
+)

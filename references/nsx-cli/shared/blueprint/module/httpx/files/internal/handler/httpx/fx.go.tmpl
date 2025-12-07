@@ -1,0 +1,12 @@
+package httpx
+
+import (
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/httpx"
+)
+
+var Module = fx.Module(
+    "httpx-handlers", 
+    httpx.ProvideHandler(NewHelloWorldHandler),
+)

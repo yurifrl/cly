@@ -1,0 +1,42 @@
+package cmd
+
+import (
+	"github.com/spf13/cobra"
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/basefx"
+	"github.com/NSXBet/nsf/pkg/configx"
+	"github.com/NSXBet/nsf/pkg/httpx"
+	"github.com/NSXBet/{{ .ProjectName }}/infra/metrics"
+	"github.com/NSXBet/{{ .ProjectName }}/infra/httpserver"
+	httphandler "github.com/NSXBet/{{ .ProjectName }}/internal/handler/httpx"
+	{{- range (index .Imports "all").Paths }}
+	"{{ . }}"
+	{{- end }}
+	{{- range (index .Imports "http.go").Paths }}
+	"{{ . }}"
+	{{- end }}
+)
+
+func init() {
+	rootCmd.AddCommand(httpCmd)
+}
+
+var httpCmd = &cobra.Command{
+	Use:   "http",
+	Short: "Start the http servers",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return httpx.StartHTTPServer[*httpserver.Server](
+			basefx.Module,
+			metrics.Module,
+			httphandler.Module,
+			httpserver.Module,
+			{{- range (index .Imports "all").FxImports }}
+			{{ . }},
+			{{- end}}
+			{{- range (index .Imports "http.go").FxImports }}
+			{{ . }},
+			{{- end}}
+		)
+	},
+}

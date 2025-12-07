@@ -1,0 +1,15 @@
+version: v1
+managed:
+  enabled: true
+  go_package_prefix:
+    default: github.com/NSXBet/{{ .ProjectName }}/gen/go
+    except:
+      - buf.build/bufbuild/protovalidate
+plugins:
+  - plugin: buf.build/protocolbuffers/go:v1.35.2
+    out: ../gen/go
+    opt: paths=source_relative
+  - plugin: buf.build/grpc/go:v1.3.0
+    out: ../gen/go
+    opt:
+      - paths=source_relative

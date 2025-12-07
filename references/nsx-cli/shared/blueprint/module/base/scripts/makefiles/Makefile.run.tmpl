@@ -1,0 +1,30 @@
+# vim: set ft=make:
+
+.PHONY: all clean test
+
+run-all:
+	@go run $(MAIN_FILE) all
+
+.PHONY: grpcui
+grpcui:
+	@go tool grpcui -plaintext --port 36912 localhost:9090
+
+docker-up:
+	@docker-compose --env-file ./.env -f ./docker/docker-compose.yaml -p {{ .ProjectName }} up -d --remove-orphans
+
+docker-stop:
+	@echo
+	@echo "Stopping docker containers..."
+	@docker-compose --env-file ./.env -f ./docker/docker-compose.yaml -p {{ .ProjectName }} stop
+
+deploy-check: ## Check prerequisites for execute deploy via gh
+	@command -v gh >/dev/null 2>&1 || { echo "[X] GitHub CLI (gh) not installed"; exit 1; }
+	@gh auth status >/dev/null 2>&1 || { echo "[X] GitHub CLI not authenticated"; exit 1; }
+
+deploy-staging: deploy-check
+	@BRANCH=$(shell git branch --show-current) && \
+	echo "Deploying to Kubernetes: Source: $$BRANCH / environment: STAGING..." && \
+	gh workflow run "GitHub Builder Remote Workflow" -f environment=staging --ref $$BRANCH && \
+	sleep 3 && \
+	WORKFLOW_ID=$$(gh run list --workflow "GitHub Builder Remote Workflow" --limit 1 --json databaseId -q '.[0].databaseId') && \
+	gh run watch $$WORKFLOW_ID

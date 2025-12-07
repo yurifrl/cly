@@ -1,0 +1,12 @@
+package database
+
+import (
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/configx"
+)
+
+var Module = fx.Module("database module",
+	configx.Provide[Config]("database"),
+	fx.Provide(NewDB),
+)

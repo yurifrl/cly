@@ -1,0 +1,46 @@
+package grpc
+
+import (
+	"context"
+
+	"go.uber.org/fx"
+	"google.golang.org/grpc"
+
+	"github.com/NSXBet/nsf/pkg/serverx"
+	proto "github.com/NSXBet/{{ .ProjectName }}/gen/go/nsx/{{ .ProjectName }}/v1"
+)
+
+type Server struct {
+	proto.Unimplemented{{ .ProjectNamePascalCase }}ServiceServer
+	
+    router *serverx.Router
+}
+
+type Param struct {
+	fx.In
+
+	Router *serverx.Router
+}
+
+func New(param Param) *Server {
+	return &Server{
+		router: param.Router,
+	}
+}
+
+func (s *Server) Close() error {
+	return nil
+}
+
+func (s *Server) RegisterService(reg grpc.ServiceRegistrar) {
+	proto.Register{{ .ProjectNamePascalCase }}ServiceServer(reg, s)
+}
+
+var _ proto.{{ .ProjectNamePascalCase }}ServiceServer = (*Server)(nil)
+
+func (s *Server) Get{{ .ProjectNamePascalCase }}(
+	ctx context.Context,
+	req *proto.Get{{ .ProjectNamePascalCase }}Request,
+) (*proto.Get{{ .ProjectNamePascalCase }}Response, error) {
+	return serverx.HandleGRPCRequest[*proto.Get{{ .ProjectNamePascalCase }}Request, *proto.Get{{ .ProjectNamePascalCase }}Response](ctx, s.router, req)
+}

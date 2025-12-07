@@ -1,0 +1,20 @@
+name: GitHub Builder Remote Workflow
+run-name: Deploy proxy from branch ${{ github.ref_name }}
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "proxy/**"
+jobs:
+  deploy:
+    uses: NSXBet/github-workflows/.github/workflows/deploy_v2.yaml@main
+    secrets: inherit
+    with:
+      sonar: false
+      steps: '["build","push","versioning","deploy"]'
+      apps_filter: '["no_filter"]'
+      environment: staging
+      config_path: kubernetes
+      docker_buildargs: GHA_PAT,GITHUB_ACTOR,TOKEN_DOTNET

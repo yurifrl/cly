@@ -1,0 +1,164 @@
+# Release Management Makefile
+# Requires: gh (GitHub CLI)
+
+.PHONY: release release-major release-minor release-patch release-check release-notes
+
+# Get the latest tag or default to v0.0.0
+CURRENT_VERSION := $(shell git tag --sort=-version:refname | head -1 || echo "v0.0.0")
+CURRENT_VERSION_NO_V := $(shell echo $(CURRENT_VERSION) | sed 's/^v//')
+
+# Parse version components
+VERSION_MAJOR := $(shell echo $(CURRENT_VERSION_NO_V) | cut -d. -f1)
+VERSION_MINOR := $(shell echo $(CURRENT_VERSION_NO_V) | cut -d. -f2)
+VERSION_PATCH := $(shell echo $(CURRENT_VERSION_NO_V) | cut -d. -f3)
+
+# Calculate next versions
+NEXT_MAJOR := v$(shell echo $$(($(VERSION_MAJOR) + 1))).0.0
+NEXT_MINOR := v$(VERSION_MAJOR).$(shell echo $$(($(VERSION_MINOR) + 1))).0
+NEXT_PATCH := v$(VERSION_MAJOR).$(VERSION_MINOR).$(shell echo $$(($(VERSION_PATCH) + 1)))
+
+## release-check: Check release prerequisites
+release-check:
+	@echo "🔍 Checking release prerequisites..."
+	@command -v gh >/dev/null 2>&1 || { echo "❌ gh CLI is not installed. Install it from https://cli.github.com/"; exit 1; }
+	@gh auth status >/dev/null 2>&1 || { echo "❌ gh CLI is not authenticated. Run 'gh auth login'"; exit 1; }
+	@git diff --quiet || { echo "❌ Working directory is not clean. Commit or stash changes first."; exit 1; }
+	@git diff --cached --quiet || { echo "❌ There are staged changes. Commit them first."; exit 1; }
+	@[ "$$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "❌ Not on main branch. Switch to main first."; exit 1; }
+	@git fetch origin >/dev/null 2>&1
+	@[ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" ] || { echo "❌ Local main is not in sync with origin/main. Push or pull first."; exit 1; }
+	@echo "✅ All prerequisites met!"
+
+## release-notes: Show what changed since last release
+release-notes:
+	@echo "📝 Changes since $(CURRENT_VERSION):"
+	@echo ""
+	@git log $(CURRENT_VERSION)..HEAD --pretty=format:"- %s" --no-merges
+	@echo ""
+
+## release-major: Create a major release (x.0.0)
+release-major: release-check
+	@echo "🚀 Creating major release: $(CURRENT_VERSION) → $(NEXT_MAJOR)"
+	@echo ""
+	$(MAKE) release-notes
+	@echo ""
+	@read -p "Continue with release $(NEXT_MAJOR)? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		$(MAKE) _do-release VERSION=$(NEXT_MAJOR); \
+	else \
+		echo "❌ Release cancelled"; \
+		exit 1; \
+	fi
+
+## release-minor: Create a minor release (x.y.0)
+release-minor: release-check
+	@echo "🚀 Creating minor release: $(CURRENT_VERSION) → $(NEXT_MINOR)"
+	@echo ""
+	$(MAKE) release-notes
+	@echo ""
+	@read -p "Continue with release $(NEXT_MINOR)? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		$(MAKE) _do-release VERSION=$(NEXT_MINOR); \
+	else \
+		echo "❌ Release cancelled"; \
+		exit 1; \
+	fi
+
+## release-patch: Create a patch release (x.y.z)
+release-patch: release-check
+	@echo "🚀 Creating patch release: $(CURRENT_VERSION) → $(NEXT_PATCH)"
+	@echo ""
+	$(MAKE) release-notes
+	@echo ""
+	@read -p "Continue with release $(NEXT_PATCH)? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		$(MAKE) _do-release VERSION=$(NEXT_PATCH); \
+	else \
+		echo "❌ Release cancelled"; \
+		exit 1; \
+	fi
+
+## release: Interactive release (prompts for version type)
+release: release-check
+	@echo "Current version: $(CURRENT_VERSION)"
+	@echo ""
+	@echo "Available release types:"
+	@echo "  1) Major release: $(NEXT_MAJOR) (breaking changes)"
+	@echo "  2) Minor release: $(NEXT_MINOR) (new features, backwards compatible)"
+	@echo "  3) Patch release: $(NEXT_PATCH) (bug fixes only)"
+	@echo ""
+	@read -p "Select release type [1-3]: " choice; \
+	case $$choice in \
+		1) $(MAKE) release-major ;; \
+		2) $(MAKE) release-minor ;; \
+		3) $(MAKE) release-patch ;; \
+		*) echo "❌ Invalid choice"; exit 1 ;; \
+	esac
+
+# Internal target to perform the actual release
+_do-release:
+	@echo "📦 Creating release $(VERSION)..."
+	@git tag -a $(VERSION) -m "Release $(VERSION)"
+	@git push origin $(VERSION)
+	@echo "🏷️  Tag $(VERSION) created and pushed"
+	@echo ""
+	@echo "📝 Generating release notes..."
+	@gh release create $(VERSION) \
+		--title "$(VERSION)" \
+		--generate-notes \
+		--verify-tag
+	@echo ""
+	@echo "✅ Release $(VERSION) created successfully!"
+	@echo "🔗 View at: https://github.com/$$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases/tag/$(VERSION)"
+
+## release-list: List all releases
+release-list:
+	@echo "📋 Releases:"
+	@gh release list --limit 10
+
+## release-view: View latest release details
+release-view:
+	@gh release view $(CURRENT_VERSION) || echo "No release found for $(CURRENT_VERSION)"
+
+## release-delete: Delete a release (use VERSION=vX.Y.Z)
+release-delete:
+ifndef VERSION
+	@echo "❌ VERSION not specified. Usage: make release-delete VERSION=v0.1.0"
+	@exit 1
+endif
+	@echo "⚠️  This will delete release $(VERSION) and its tag"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		gh release delete $(VERSION) --yes || true; \
+		git tag -d $(VERSION) || true; \
+		git push origin :refs/tags/$(VERSION) || true; \
+		echo "✅ Release $(VERSION) deleted"; \
+	else \
+		echo "❌ Deletion cancelled"; \
+	fi
+
+## release-help: Show release management help
+release-help:
+	@echo "Release Management Commands:"
+	@echo ""
+	@echo "  make release              - Interactive release (prompts for version type)"
+	@echo "  make release-major        - Create major release ($(NEXT_MAJOR))"
+	@echo "  make release-minor        - Create minor release ($(NEXT_MINOR))"
+	@echo "  make release-patch        - Create patch release ($(NEXT_PATCH))"
+	@echo ""
+	@echo "  make release-check        - Check if environment is ready for release"
+	@echo "  make release-notes        - Show what changed since last release"
+	@echo "  make release-list         - List all releases"
+	@echo "  make release-view         - View latest release details"
+	@echo ""
+	@echo "  make release-delete VERSION=vX.Y.Z  - Delete a specific release"
+	@echo ""
+	@echo "Current version: $(CURRENT_VERSION)"
+	@echo "Next versions:"
+	@echo "  Major: $(NEXT_MAJOR)"
+	@echo "  Minor: $(NEXT_MINOR)"
+	@echo "  Patch: $(NEXT_PATCH)"

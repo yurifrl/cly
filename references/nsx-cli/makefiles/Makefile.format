@@ -1,0 +1,21 @@
+# vim: set ft=make:
+.PHONY: all clean test
+
+.PHONY: format
+format: format-yaml format-go
+
+.PHONY: format-go
+format-go: format-setup
+	@echo "Formatting `echo $(GOLANG_SOURCES) | tr ' ' '\n' | wc -l` .go files..."
+	@golines -w --base-formatter="gofmt"  --ignore-generated --max-len=130 $(GOLANG_SOURCES)
+	@gosimports -local "github.com/NSXBet" -w $(GOLANG_SOURCES)
+	@gofumpt -w $(GOLANG_SOURCES)
+
+.PHONY: format-yaml
+format-yaml: format-setup
+	@echo "Formatting `echo $(YAML_SOURCES) | tr ' ' '\n' | wc -l` .yaml files..."
+	@yamlfmt -conf yamlfmt.yml .
+
+.PHONY: format-setup
+format-setup:
+	@bash ./scripts/ci/setup-formatting.sh

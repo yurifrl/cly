@@ -1,0 +1,26 @@
+.PHONY: all clean test
+
+.PHONY: gen
+gen: gen-setup gen-protos gen-metrics format
+
+.PHONY: gen-protos
+gen-protos: format-setup
+	@go install github.com/NSXBet/bufx@v0.0.1
+	# @cd protos && bufx import
+	@cd protos && buf dep update
+	@cd protos && buf generate --config buf.yaml
+	@$(MAKE) format
+	@$(MAKE) format
+
+.PHONY: gen-metrics
+gen-metrics:
+	@nsx-gen metrics
+
+.PHONY: gen-setup
+gen-setup:
+	@bash ./scripts/ci/setup-gen.sh
+
+gen-mocks:
+	@go install github.com/vektra/mockery/v3@latest
+	@mockery
+

@@ -1,0 +1,29 @@
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/joho/godotenv"
+	_ "go.uber.org/automaxprocs"
+
+
+	"github.com/NSXBet/{{ .ProjectName }}/cmd"
+)
+
+func main() {
+	environment := os.Getenv("ENV")
+	if len(environment) > 0 {
+		envFile := fmt.Sprintf(".env.%s", environment)
+		fmt.Printf("Loading environment variables from %s\n", envFile)
+		err := godotenv.Load(envFile)
+		if err != nil {
+			fmt.Printf("Error loading environment variables from %s: %v\n", envFile, err)
+		}
+	} else {
+		fmt.Println("Loading environment variables from .env")
+		_ = godotenv.Load(".env")
+	}
+
+	cmd.Execute()
+}

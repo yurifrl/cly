@@ -1,0 +1,29 @@
+package kafka
+
+import (
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/configx"
+	"github.com/NSXBet/nsf/pkg/kafkax/v3"
+)
+
+var Module = fx.Module(
+	"kafka",
+	kafkax.ProvideMetricsManager(os.Getenv("FORCE_METRICS") == "true"),
+	kafkax.ProvideDefaultFranzProducer(func() (configx.Config[kafkax.ProducerConfig], error) {
+		conf, err := configx.Load[kafkax.ProducerConfig]("nsf.kafka.producer")
+		if err != nil {
+			return nil, err
+		}
+
+		return conf, nil
+	}),
+	kafkax.ProvideFranzConsumer(func() (configx.Config[kafkax.ConsumerConfig], error) {
+		conf, err := configx.Load[kafkax.ConsumerConfig]("nsf.kafka.consumer")
+		if err != nil {
+			return nil, err
+		}
+
+		return conf, nil
+	}),
+)

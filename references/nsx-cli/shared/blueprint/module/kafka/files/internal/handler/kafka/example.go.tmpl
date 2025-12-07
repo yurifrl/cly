@@ -1,0 +1,53 @@
+package kafka
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/NSXBet/nsf/pkg/logx"
+	"github.com/NSXBet/nsf/pkg/timex"
+	"github.com/NSXBet/nsf/pkg/metricx"
+    "github.com/NSXBet/{{ .ProjectName }}/infra/metrics"
+	kafkai "github.com/NSXBet/nsf/pkg/kafkax/v3/interfaces"
+)
+
+type Example{{ .ProjectNamePascalCase }}Listener struct {
+	logger     logx.Logger
+	clock      timex.Clock
+	metrics    *metrics.Metrics
+}
+
+func NewExample{{ .ProjectNamePascalCase }}Listener(
+	logger logx.Logger,
+	clock timex.Clock,
+	metrics *metrics.Metrics,
+) *Example{{ .ProjectNamePascalCase }}Listener {
+	return &Example{{ .ProjectNamePascalCase }}Listener{
+		logger:     logger,
+		clock:      clock,
+		metrics:    metrics,
+	}
+}
+
+var _ kafkai.Handler = (*Example{{ .ProjectNamePascalCase }}Listener)(nil)
+
+func (l *Example{{ .ProjectNamePascalCase }}Listener) Name() string {
+	return "example"
+}
+
+func (l *Example{{ .ProjectNamePascalCase }}Listener) Topics() []kafkai.Topic {
+	return []kafkai.Topic{kafkai.Topic("example-topic")}
+}
+
+func (l *Example{{ .ProjectNamePascalCase }}Listener) Metrics(context.Context, kafkai.KafkaMessage) ([]metricx.MetricsTag, error) {
+	return nil, nil 
+}
+
+func (l *Example{{ .ProjectNamePascalCase }}Listener) ErrorCode(err error) kafkai.Failure {
+	return kafkai.Error("example error code", err)
+}
+
+func (l *Example{{ .ProjectNamePascalCase }}Listener) Handle(ctx context.Context, msg kafkai.KafkaMessage) error {
+	l.logger.DebugCtx(ctx, fmt.Sprintf("Processing message from topic %s: %s", msg.Topic(), msg.Value()))
+	return nil
+}

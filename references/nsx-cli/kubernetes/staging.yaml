@@ -1,0 +1,52 @@
+kubernetes:
+  base:
+    sourceRepo:
+      name: nsx-cli-proxy
+      org: NSXBet
+    monoRepo:
+      url: git@github.com:NSXBet/monorepo-gitops.git
+      appsFolder: apps-config
+      argoCDValues: helms/argocd/values.yaml
+      repository: monorepo-gitops
+    containerRegistry:
+      url: 492684252576.dkr.ecr.us-east-1.amazonaws.com
+    deployConfig:
+      cluster: EKS-NSX-Tooling
+      environment: staging
+      steps:
+        - build
+        - push
+        - versioning
+        - deploy
+      service:
+        istio: enabled
+  apps:
+    - name: nsx-cli-proxy
+      dockerfile: ./proxy/Dockerfile
+      args:
+        - start
+        - --optimized
+        - --log-console-output=json
+      imagePullPolicy: Always
+      kind: deployment
+      replicas: 1
+      resources:
+        limits:
+          cpu: 900m
+          memory: 1Gi
+        requests:
+          cpu: 400m
+          memory: 512Mi
+      secretsManager:
+        enabled: true
+        secretsName: staging/nsx-cli-proxy/config
+      service:
+        istio: true
+        ports:
+          - containerPort: 8080
+            name: nsx-cli-proxy
+            virtualservices:
+              - gateway: internal-gateway
+                name: internal
+                hosts:
+                  - nsx-cli-proxy.nsx.services

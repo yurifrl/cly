@@ -1,0 +1,65 @@
+package httpx
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	"github.com/gorilla/mux"
+
+	"github.com/NSXBet/nsf/pkg/httpx"
+	"github.com/NSXBet/nsf/pkg/metricx"
+)
+
+type HelloWorldHandler struct{}
+
+var _ httpx.Handler = (*HelloWorldHandler)(nil) // verifica se está implementando a interface
+
+func NewHelloWorldHandler() *HelloWorldHandler { return &HelloWorldHandler{} }
+
+func (e *HelloWorldHandler) Name() string { return "example handler" }
+func (e *HelloWorldHandler) URL() string  { return "/" }
+
+func (e *HelloWorldHandler) Methods() []string {
+	return []string{http.MethodOptions, http.MethodGet}
+}
+
+func (e *HelloWorldHandler) Metrics(
+	ctx context.Context,
+	req *http.Request,
+) ([]metricx.MetricsTag, error) {
+	tags := []metricx.MetricsTag{}
+	vars := mux.Vars(req)
+
+	operation, ok := vars["operation"]
+	if ok {
+		tags = append(tags, metricx.NewLoTag("operation", operation))
+	}
+
+	tags = append(tags, metricx.NewHiTag("referer", req.Referer()))
+
+	return tags, nil
+}
+
+func (e *HelloWorldHandler) Handle(
+	ctx context.Context,
+	req *http.Request,
+	res http.ResponseWriter,
+) error {
+	data, err := json.Marshal(map[string]any{"message": "Hello World!"})
+	if err != nil {
+		return fmt.Errorf("marshaling response: %w", err)
+	}
+
+	res.WriteHeader(http.StatusOK)
+
+	if _, err := res.Write(data); err != nil {
+		return fmt.Errorf("writing response: %w", err)
+	}
+	return nil
+}
+
+func (e *HelloWorldHandler) ErrorCode(err error) httpx.Failure {
+	return httpx.Error(http.StatusInternalServerError)
+}

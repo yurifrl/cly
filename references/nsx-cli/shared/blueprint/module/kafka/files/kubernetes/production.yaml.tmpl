@@ -1,0 +1,35 @@
+kubernetes:
+  apps:
+    - name: {{ .ProjectName }}-kafka-worker
+      dockerfile: ./Dockerfile
+      imagePullPolicy: Always
+      kind: deployment
+      revisionHistoryLimit: 1
+      secretsManager:
+        enabled: true
+        secretsName: production/{{ .ProjectName }}/betnacional
+      args:
+        - kafka-worker
+      hpa:
+        targetCPUUtilizationPercentage: 75
+        minReplicas: 3
+        maxReplicas: 20
+      resources:
+        limits:
+          cpu: 900m
+          memory: 512Mi
+        requests:
+          cpu: 400m
+          memory: 256Mi
+      serviceAccount:
+        awsRoleArn: arn:aws:iam::492684252576:role/{{ .ProjectName }}-production
+      envs:
+        - name: APP_ENVIRONMENT
+          value: "production"
+        - name: SKIN
+          value: "betnacional"
+      service:
+        metrics:
+          port: 2112
+          path: /metrics
+        istio: true

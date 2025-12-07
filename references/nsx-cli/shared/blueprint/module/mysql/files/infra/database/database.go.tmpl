@@ -1,0 +1,29 @@
+package database
+
+import (
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+
+	"github.com/NSXBet/nsf/pkg/configx"
+	"github.com/NSXBet/nsf/pkg/logx"
+)
+
+func NewDB(log logx.Logger, c configx.Config[Config]) (*gorm.DB, error) {
+	cfg := c.Get()
+	db, err := gorm.Open(mysql.Open(buildDSN(cfg, log)), &gorm.Config{
+		// Logger: gormLogger,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+
+	return db, nil
+}

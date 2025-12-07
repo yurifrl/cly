@@ -1,0 +1,11 @@
+project_name: {{ .ProjectName }}
+target_package: infra/metrics
+metrics:
+  - name: {{ .ProjectNameSnakeCase }}_example_counter
+    description: "{{ .ProjectName }} metrics"
+    unit: "count"
+    type: "Counter"
+    tags:
+      - name: environment
+        description: "Environment"
+        type: "string"

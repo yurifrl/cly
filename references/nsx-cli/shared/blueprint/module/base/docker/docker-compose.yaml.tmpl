@@ -1,0 +1,46 @@
+networks:
+  local:
+volumes:
+  go-build-cache:
+  go-mod-cache:
+
+services:
+  grpc:
+    build:
+      dockerfile: docker/Dockerfile-air
+      context: ../
+      args:
+        GHA_PAT: ${GHA_PAT}
+        RIVER_PRO_SECRET: ${RIVER_PRO_SECRET}
+    environment:
+      - GOCACHE=/app/tmp/go-build-cache
+      - GOMODCACHE=/app/tmp/go-mod-cache
+      - AIR_WATCHER_POLL=true
+      - AIR_WATCHER_INTERVAL=500ms
+      - PROJECT_NAME={{ .ProjectName }}
+      - APP_NAME={{ .ProjectName }}-grpc
+      - CONFIG_PATH=/app/config
+      - APP_ENVIRONMENT=docker
+      - VERSION=1
+      - SKIN=betdev
+      - TZ=America/Sao_Paulo
+    ports:
+      - "2113:2112"
+      - "9090:9090"
+    command: "air -- grpc"
+    volumes:
+      - ../:/app
+      - go-build-cache:/app/tmp/go-build-cache
+      - go-mod-cache:/app/tmp/go-mod-cache
+    networks:
+      - local
+  grpcui:
+    image: fullstorydev/grpcui:latest
+    ports:
+      - "8000:8080"
+    depends_on:
+      - grpc
+    restart: on-failure
+    command: ["-plaintext", "grpc:9090"]
+    networks:
+      - local

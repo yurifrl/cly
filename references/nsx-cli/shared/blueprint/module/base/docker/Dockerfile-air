@@ -1,0 +1,19 @@
+FROM golang:1.25
+
+ARG GHA_PAT
+ARG RIVER_PRO_SECRET
+ARG VERSION
+
+ENV GO111MODULE=on
+ENV GOPRIVATE "github.com/NSXBet/*,github.com/nsxbet/*"
+ENV RIVER_PRO_SECRET=$RIVER_PRO_SECRET
+ENV GOPROXY=https://proxy.golang.org,https://river:$RIVER_PRO_SECRET@riverqueue.com/goproxy,direct
+ENV GONOSUMDB=github.com/NSXBet,github.com/nsxbet,riverqueue.com/riverpro
+ENV GHA_PAT=$GHA_PAT
+ENV VERSION=$VERSION
+
+RUN git config --global url."https://$GHA_PAT@github.com/".insteadOf "https://github.com/"
+
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app

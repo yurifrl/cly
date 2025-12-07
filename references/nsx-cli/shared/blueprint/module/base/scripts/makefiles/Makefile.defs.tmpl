@@ -1,0 +1,17 @@
+# Variables
+MAIN_FILE          := main.go
+CURRENT_FOLDER     := $(notdir $(CURDIR))
+LAST_GIT_TAG       := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+CURRENT_GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
+GOLANG_SOURCES     := $(shell find . -type f -name '*.go' -not -path "./scripts")
+YAML_SOURCES       := $(shell find . -type f -name '*.yaml' | grep -v kubernetes/ | grep -v .github/ | grep -v config/ | grep -v protos/ | grep -v docker/ | grep -v ./.golangci.yaml)
+PROTO_SOURCES      := $(shell find . -type f -name '*.proto')
+CURRENT_USER       := $(shell whoami)
+
+ifeq ($(CURRENT_GIT_BRANCH), $(LAST_GIT_TAG))
+  VERSION := $(LAST_GIT_TAG)
+else
+  VERSION := $(LAST_GIT_TAG)-$(CURRENT_GIT_BRANCH)
+endif
+
+BINARY_NAME := $(CURRENT_FOLDER):$(VERSION)

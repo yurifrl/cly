@@ -1,0 +1,11 @@
+all: true
+dir: test/mocks
+pkgname: mocks
+recursive: true
+template: testify
+template-data:
+  unroll-variadic: true
+packages:
+  github.com/NSXBet/{{ .ProjectName }}/internal:
+    config:
+      filename: "mock_\{\{ .InterfaceName | snakecase \}\}.go"

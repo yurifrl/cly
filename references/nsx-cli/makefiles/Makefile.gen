@@ -1,0 +1,8 @@
+.PHONY: all clean test
+
+.PHONY: gen
+gen: gen-golang format
+
+.PHONY: gen-golang
+gen-golang:
+	@go generate ./...

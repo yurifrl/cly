@@ -1,0 +1,24 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: tos_mysql
+    restart: unless-stopped
+    environment:
+      TZ: America/Sao_Paulo
+      MYSQL_ROOT_PASSWORD: root-pass
+      MYSQL_DATABASE: {{ .ProjectName }}
+      MYSQL_USER: test
+      MYSQL_PASSWORD: test
+    command: --skip-networking=0 --bind-address=0.0.0.0 --default-time-zone='-03:00'
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db_init:/docker-entrypoint-initdb.d
+volumes:
+  mysql_data:
+    driver: local

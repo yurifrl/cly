@@ -1,0 +1,41 @@
+package cmd
+
+import (
+	"github.com/spf13/cobra"
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/basefx"
+	"github.com/NSXBet/nsf/pkg/serverx"
+	"github.com/NSXBet/{{ .ProjectName }}/infra/grpc"
+	"github.com/NSXBet/{{ .ProjectName }}/infra/metrics"
+	grpchandler "github.com/NSXBet/{{ .ProjectName }}/internal/handler/grpc"
+	{{- range (index .Imports "all").Paths }}
+	"{{ . }}"
+	{{- end }}
+	{{- range (index .Imports "grpc.go").Paths }}
+	"{{ . }}"
+	{{- end }}
+)
+
+func init() {
+	rootCmd.AddCommand(grpcCmd)
+}
+
+var grpcCmd = &cobra.Command{
+	Use:   "grpc",
+	Short: "Start the grpc servers",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return serverx.StartServer[*grpc.Server](
+			basefx.Module,
+			metrics.Module,
+			grpc.Module,
+			grpchandler.Module,
+			{{- range (index .Imports "all").FxImports }}
+			{{ . }},
+			{{- end}}
+			{{- range (index .Imports "grpc.go").FxImports }}
+			{{ . }},
+			{{- end}}
+		)
+	},
+}

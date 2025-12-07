@@ -1,0 +1,59 @@
+# vim: set ft=make:
+.PHONY: build run install clean-build
+
+# Build the CLI binary
+build:
+	@echo "Building $(CURRENT_FOLDER) CLI..."
+	@go build -ldflags="-X 'main.Version=$(VERSION)'" -o $(CURRENT_FOLDER) $(MAIN_FILE)
+	@echo "✅ Build complete: $(CURRENT_FOLDER)"
+
+# Build with optimizations for production
+build-release:
+	@echo "Building $(CURRENT_FOLDER) CLI for release..."
+	@go build -ldflags="-s -w -X 'main.Version=$(VERSION)'" -o $(CURRENT_FOLDER) $(MAIN_FILE)
+	@echo "✅ Release build complete: $(CURRENT_FOLDER)"
+
+# Run the CLI locally
+run:
+	@echo "Running $(CURRENT_FOLDER) CLI..."
+	@go run $(MAIN_FILE) $(ARGS)
+
+# Install the CLI to $GOPATH/bin
+install:
+	@echo "Installing $(CURRENT_FOLDER) CLI..."
+	@go install -ldflags="-X 'main.Version=$(VERSION)'" .
+	@echo "✅ Installation complete"
+
+# Clean build artifacts
+clean-build:
+	@echo "Cleaning build artifacts..."
+	@rm -f $(CURRENT_FOLDER)
+	@echo "✅ Clean complete"
+
+# Build for multiple platforms
+build-all: build-linux build-darwin build-windows
+
+build-linux:
+	@echo "Building for Linux..."
+	@GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X 'main.Version=$(VERSION)'" -o $(CURRENT_FOLDER)-linux-amd64 $(MAIN_FILE)
+	@echo "✅ Linux build complete: $(CURRENT_FOLDER)-linux-amd64"
+
+build-darwin:
+	@echo "Building for macOS..."
+	@GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X 'main.Version=$(VERSION)'" -o $(CURRENT_FOLDER)-darwin-amd64 $(MAIN_FILE)
+	@GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X 'main.Version=$(VERSION)'" -o $(CURRENT_FOLDER)-darwin-arm64 $(MAIN_FILE)
+	@echo "✅ macOS builds complete: $(CURRENT_FOLDER)-darwin-amd64, $(CURRENT_FOLDER)-darwin-arm64"
+
+build-windows:
+	@echo "Building for Windows..."
+	@GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X 'main.Version=$(VERSION)'" -o $(CURRENT_FOLDER)-windows-amd64.exe $(MAIN_FILE)
+	@echo "✅ Windows build complete: $(CURRENT_FOLDER)-windows-amd64.exe"
+
+# Show build info
+build-info:
+	@echo "Build Information:"
+	@echo "  Binary Name: $(CURRENT_FOLDER)"
+	@echo "  Version:     $(VERSION)"
+	@echo "  Git Tag:     $(LAST_GIT_TAG)"
+	@echo "  Git Branch:  $(CURRENT_GIT_BRANCH)"
+	@echo "  Main File:   $(MAIN_FILE)"

@@ -1,0 +1,13 @@
+version: '3'
+tasks:
+  env:
+    desc: Process ENV_FILE with 1Password CLI and output to .env
+    cmds:
+      - op inject -i ".env.op" -o .env
+
+  install:
+    desc: Install CLI as 'nsx' binary
+    cmds:
+      - go build -ldflags="-X 'main.Version=$(git describe --tags --always --dirty)'" -o nsx .
+      - mv nsx $(go env GOBIN)/nsx
+      - echo "✅ Installed as 'nsx' to $(go env GOBIN)/nsx"

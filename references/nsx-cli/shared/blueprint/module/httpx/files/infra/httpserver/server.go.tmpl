@@ -1,0 +1,30 @@
+package httpserver
+
+import (
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/httpx"
+)
+
+// Server is the main server struct that handles HTTP calls.
+type Server struct {
+	// Add below the dependencies that the server needs to run.
+	router *httpx.Router
+}
+
+// Param is the parameter struct for the server.
+type Param struct {
+	fx.In
+
+	Router *httpx.Router
+}
+
+func NewHTTPServer(param Param) *Server {
+	return &Server{
+		router: param.Router,
+	}
+}
+
+func (s *Server) Close() error {
+	return nil
+}

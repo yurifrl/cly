@@ -1,0 +1,76 @@
+package database
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+
+	"github.com/jarvanstack/mysqldump"
+	"github.com/pressly/goose/v3"
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+
+	"github.com/NSXBet/nsf/pkg/configx"
+	"github.com/NSXBet/nsf/pkg/logx"
+)
+
+var Migrator = fx.Module(
+	"migrator",
+	configx.Provide[Config]("database"),
+	fx.Invoke(RunMigrator),
+)
+
+func RunMigrator(args []string, dir string, log logx.Logger, c configx.Config[Config]) (err error) {
+	var (
+		cfg       = c.Get()
+		dsn       = buildDSN(cfg, log)
+		db        *sql.DB
+		arguments = []string{}
+		command   = args[0]
+	)
+
+	log.Info("Running migrator command!", zap.String("cmd", command), zap.Any("args", args))
+	if db, err = goose.OpenDBWithDriver("mysql", dsn); err != nil {
+		log.Error("goose: failed to open DB", err)
+		return err
+	}
+
+	defer func() {
+		if err = db.Close(); err != nil {
+			log.Error("goose: failed to close DB", err)
+		}
+	}()
+
+	if len(args) > 1 {
+		arguments = append(arguments, args[1:]...)
+	}
+
+	if err = goose.RunContext(context.Background(), command, db, dir, arguments...); err != nil {
+		log.Error(fmt.Sprintf("goose %v", command), err)
+		return err
+	}
+
+	if command == "up" && os.Getenv("APP_ENVIRONMENT") != "local" {
+		log.Info("Generating dump...")
+		fileName := "./docker/containers/db_init/dump.sql"
+		if _, err := os.Stat(fileName); err == nil {
+			log.Info("Dump file already exists", zap.String("file", fileName))
+			if err = os.Remove(fileName); err != nil {
+				log.Error("goose: failed to remove dump file", err)
+				return err
+			}
+		}
+		f, err := os.Create(fileName)
+		if err != nil {
+			log.Error("goose: failed to create dump file", err)
+			return err
+		}
+		if err = mysqldump.Dump(dsn, mysqldump.WithWriter(f)); err != nil {
+			log.Error("goose: failed to generate dump", err)
+			return err
+		}
+	}
+
+	return
+}

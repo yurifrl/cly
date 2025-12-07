@@ -1,0 +1,25 @@
+.env
+.env.*
+
+output/
+.vscode/
+.local/
+
+# build artifacts
+build/
+dist/
+nsx-cli
+
+# Test artifacts
+test-results/
+unit.xml
+
+# Coverage artifacts
+coverage.txt
+coverage.html
+coverage.out
+coverage.unit.out
+
+.idea
+
+.claude/

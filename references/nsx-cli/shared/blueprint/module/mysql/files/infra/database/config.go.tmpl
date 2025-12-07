@@ -1,0 +1,47 @@
+package database
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/samber/lo"
+	"go.uber.org/zap"
+
+	"github.com/NSXBet/nsf/pkg/logx"
+)
+
+type Config struct {
+	Host string `config:"host"`
+	Port int    `config:"port"`
+	Name string `config:"name"`
+	User string `config:"user"`
+	Pass string `config:"password"`
+	URL  string `config:"url"`
+
+	MaxOpenConns    int           `config:"max_open_conns"`
+	MaxIdleConns    int           `config:"max_idle_conns"`
+	ConnMaxLifetime time.Duration `config:"conn_max_lifetime"`
+}
+
+func buildDSN(cfg Config, log logx.Logger) string {
+	if lo.IsNotEmpty(cfg.URL) {
+		log.Info("Connecting with DB URL")
+		return cfg.URL
+	}
+	log.Info("Connecting with DB config")
+
+	userPass := fmt.Sprintf("%s:%s", cfg.User, cfg.Pass)
+	if cfg.Pass == "" {
+		userPass = cfg.User
+	}
+
+	baseDSN := fmt.Sprintf(
+		"%s@tcp(%s:%d)/%s?charset=utf8&parseTime=True&loc=UTC",
+		userPass,
+		cfg.Host,
+		cfg.Port,
+		cfg.Name,
+	)
+	log.Debug("DSN", zap.String("dsn", baseDSN))
+	return baseDSN
+}

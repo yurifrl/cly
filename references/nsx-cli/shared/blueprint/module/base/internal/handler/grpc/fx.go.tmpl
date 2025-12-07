@@ -1,0 +1,14 @@
+package grpc
+
+import (
+	"go.uber.org/fx"
+
+	"github.com/NSXBet/nsf/pkg/serverx"
+
+	proto "github.com/NSXBet/{{ .ProjectName }}/gen/go/nsx/{{ .ProjectName }}/v1"
+)
+
+var Module = fx.Module(
+	"grpc-handlers",
+	serverx.ProvideGRPCHandler[*proto.Get{{ .ProjectNamePascalCase }}Request, *proto.Get{{ .ProjectNamePascalCase }}Response](NewGet{{ .ProjectNamePascalCase }}),
+)

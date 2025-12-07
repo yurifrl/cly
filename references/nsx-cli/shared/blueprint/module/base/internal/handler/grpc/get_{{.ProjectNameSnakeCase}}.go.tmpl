@@ -1,0 +1,56 @@
+package grpc
+
+import (
+	"context"
+
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+
+	"github.com/NSXBet/nsf/pkg/logx"
+	"github.com/NSXBet/nsf/pkg/metricx"
+	"github.com/NSXBet/nsf/pkg/serverx"
+	proto "github.com/NSXBet/{{ .ProjectName }}/gen/go/nsx/{{ .ProjectName }}/v1"
+)
+
+type Get{{ .ProjectNamePascalCase }} struct {
+	log logx.Logger
+}
+
+type Get{{ .ProjectNamePascalCase }}Params struct {
+	fx.In
+
+    Log logx.Logger
+}
+
+func NewGet{{ .ProjectNamePascalCase }}(p Get{{ .ProjectNamePascalCase }}Params) *Get{{ .ProjectNamePascalCase }} {
+	return &Get{{ .ProjectNamePascalCase }}{
+		log: p.Log,
+	}
+}
+
+func (h *Get{{ .ProjectNamePascalCase }}) Name() string {
+	return "Get{{ .ProjectNamePascalCase }}"
+}
+
+func (h *Get{{ .ProjectNamePascalCase }}) Metrics(
+	_ context.Context,
+	req *proto.Get{{ .ProjectNamePascalCase }}Request,
+) ([]metricx.MetricsTag, error) {
+	return []metricx.MetricsTag{}, nil
+}
+
+func (h *Get{{ .ProjectNamePascalCase }}) Handle(
+	ctx context.Context,
+	req *proto.Get{{ .ProjectNamePascalCase }}Request,
+) (*proto.Get{{ .ProjectNamePascalCase }}Response, error) {
+	h.log.Info("Get{{ .ProjectNamePascalCase }} request received", zap.Any("request", req))
+
+	return &proto.Get{{ .ProjectNamePascalCase }}Response{
+		Message: "Hello, world!",
+	}, nil
+}
+
+func (h *Get{{ .ProjectNamePascalCase }}) ErrorCode(err error) serverx.Failure {
+	return serverx.Error(codes.Unknown)
+}
