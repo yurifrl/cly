@@ -32,7 +32,7 @@ The application SHALL have a minimal main entry point that delegates to the comm
 - **AND** produce a single binary executable named `cly`
 
 ### Requirement: Root Command
-The application SHALL provide a root command with styled help output and proper CLI structure.
+The application SHALL provide a root command with styled help output, proper CLI structure, and configuration initialization.
 
 #### Scenario: Help flag displays styled information
 - **WHEN** user runs `cly --help` or `cly -h`
@@ -46,6 +46,13 @@ The application SHALL provide a root command with styled help output and proper 
 - **THEN** it SHALL export a `RootCmd` variable of type `*cobra.Command`
 - **AND** provide an `Execute()` function that returns error
 - **AND** use Cobra's standard command structure for future module registration
+
+#### Scenario: Configuration loads before command execution
+- **WHEN** any command is executed
+- **THEN** root command SHALL have PersistentPreRunE function
+- **AND** PersistentPreRunE SHALL call config.Load()
+- **AND** config SHALL be loaded before subcommand RunE executes
+- **AND** config errors SHALL prevent command execution
 
 ### Requirement: Shared Styling
 The application SHALL provide consistent theming through shared Lipgloss styles.
