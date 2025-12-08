@@ -111,7 +111,7 @@ cly/
 
 ## Adding a Module
 
-See [`docs/module-template.md`](docs/module-template.md) for detailed template and instructions.
+See [`docs/adding-modules.md`](docs/adding-modules.md) for detailed template and instructions.
 
 Quick steps:
 1. Create `modules/<name>/` directory
