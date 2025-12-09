@@ -1,17 +1,15 @@
 # Change: Session Management
 
 ## Why
-CLI needs named sessions for better user experience. Currently sessions are identified only by random UUIDs, making it difficult for users to track and resume specific work contexts across terminal sessions.
+Need named sessions for Claude Code integration. Currently no way to identify or track sessions across terminal tabs.
 
 ## What Changes
-- Named session capability: Allow users to specify memorable session names
-- Auto-generated session names: Two-word random format when no name provided
-- Terminal integration: Update Zellij tab/pane names to match session
-- Environment variable exports: Export `CLY_SESSION_NAME` for downstream tools
+- New `cly claude` command that wraps Claude Code with session management
+- `--name` flag for explicit session names (or auto-generate)
+- Reads/exports `CLAUDE_SESSION_NAME` environment variable
+- Zellij tab rename via `zellij action rename-tab`
 
 ## Impact
-- Affected specs: Creates new `session-management` capability
-- Affected code:
-  - `cmd/root.go` - Add session initialization in PreRun
-  - New `pkg/session/` package for session logic
-  - Integration with terminal (Zellij only)
+- New `modules/claude/` module
+- Uses `pkg/session/` for session logic
+- No changes to existing commands

@@ -1,13 +1,11 @@
 app:
   name: cly
   debug: false
-  version: 0.1.0
-
+  version: 0.1.1
 theme:
-  style: charm  # Options: charm | dracula | catppuccin
-
+  style: charm # Options: charm | dracula | catppuccin
 modules:
   uuid:
-    default_version: v4  # Options: v4 | v7
+    default_version: v4 # Options: v4 | v7
   demo:
     show_count: true

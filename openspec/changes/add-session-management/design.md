@@ -1,103 +1,84 @@
 # Design: Session Management
 
 ## Context
-CLI currently has no session identity beyond random UUIDs. Users working across multiple terminal tabs/panes need human-readable session names to track work contexts. This feature adds named sessions with terminal integration.
+`cly claude` wraps Claude Code with session naming and Zellij tab integration. Users get memorable session names and visual tab context.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Provide memorable session names (auto-generated or explicit)
-- Export session context to environment for downstream tools
-- Integrate with Zellij terminal for visual feedback
+- Wrap Claude Code with session context
+- Auto-generate or accept explicit session names
+- Update Zellij tab name to match session
+- Export `CLAUDE_SESSION_NAME` for Claude Code
 
 **Non-Goals:**
-- Session persistence across restarts (future enhancement)
+- Session persistence across restarts
+- Support for tmux or other multiplexers
 - Session history or resumption
-- Multi-terminal multiplexer support beyond Zellij
 
 ## Decisions
 
 ### Decision: Two-Word Name Generation
-Use simple random word combination (color/adjective + animal/noun) for auto-generated names.
+Use adjective + animal format for auto-generated names.
 
 **Rationale:**
-- Human-memorable without cognitive load
-- Collision probability acceptably low for CLI tool scope
-- Simple implementation without external dependencies
-- Examples: `QuickTask`, `BrightIdea`, `TempWork`
+- Human-memorable: `QuickFox`, `BrightOwl`
+- Simple implementation, no external dependencies
+- Collision probability acceptable for CLI scope
 
-**Alternatives considered:**
-- UUID prefixes: Not human-friendly
-- Timestamp-based: Not memorable
-- Word + number: Less memorable than word pairs
-
-### Decision: Zellij-Only Terminal Integration
-Support only Zellij for tab/pane name updates initially.
+### Decision: Zellij via CLI Command
+Use `zellij action rename-tab` instead of escape sequences.
 
 **Rationale:**
-- Zellij provides documented escape sequences
-- User base primarily uses Zellij (based on specs/04)
-- Other multiplexers have inconsistent or undocumented APIs
-- Can expand to tmux/others in future if needed
+- Documented, stable API
+- Simpler than escape sequence handling
+- Silent failure if not in Zellij
 
-### Decision: Environment Variable Export Only
-Export session name via env vars, don't manage session files or state.
-
-**Rationale:**
-- Simplest implementation for MVP
-- Follows Unix philosophy (env vars for context)
-- No file system dependencies or permissions issues
-- Child processes inherit session context naturally
-
-### Decision: Initialize in Root Command PreRun
-Hook session initialization into Cobra's `PersistentPreRunE`.
+### Decision: Module Structure
+New `modules/claude/` with session logic in `pkg/session/`.
 
 **Rationale:**
-- Executes before all commands automatically
-- Proper error handling with early exit
-- Consistent behavior across all subcommands
-- Minimal code changes to existing commands
+- Follows existing module pattern
+- Session logic reusable by other modules
+- Clean separation of concerns
 
 ## Architecture
 
 ### Package Structure
 ```
+modules/claude/
+└── cmd.go          # cly claude command
+
 pkg/session/
-├── session.go      # Core session logic
+├── session.go      # Initialize, Session struct
 ├── generator.go    # Name generation
-├── terminal.go     # Zellij integration
-└── session_test.go # Tests
+├── zellij.go       # Zellij integration
+└── session_test.go
 ```
 
 ### Data Flow
-1. Parse CLI flags (`--name`)
-2. Check environment (`CLY_SESSION_NAME`)
+1. Parse `--name` flag
+2. Check `CLAUDE_SESSION_NAME` env if no flag
 3. Generate name if needed
 4. Validate name
-5. Export to environment
-6. Detect terminal type
-7. Update terminal (if Zellij)
-8. Print session indicator
+5. Detect Zellij, rename tab if present
+6. Print session indicator
+7. Export env and exec `claude`
 
-### Integration Point
+### Integration
 ```go
-// cmd/root.go
-RootCmd = &cobra.Command{
-    PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-        // Existing config load
-        _, err := pkgconfig.Load()
-        if err != nil {
-            return err
-        }
-
-        // New session initialization
-        name := cmd.Flag("name").Value.String()
+// modules/claude/cmd.go
+var Cmd = &cobra.Command{
+    Use:   "claude",
+    Short: "Run Claude Code with session management",
+    RunE: func(cmd *cobra.Command, args []string) error {
+        name, _ := cmd.Flags().GetString("name")
         sess, err := session.Initialize(name)
         if err != nil {
             return err
         }
         fmt.Printf("🏷️  Session: %s\n", sess.Name)
-        return nil
+        return sess.ExecClaude(args)
     },
 }
 ```
@@ -105,31 +86,7 @@ RootCmd = &cobra.Command{
 ## Risks / Trade-offs
 
 ### Risk: Name Collisions
-Auto-generated names may collide if user runs many concurrent sessions.
+Low probability with 50+ words in each pool (2500+ combinations).
 
-**Mitigation:**
-- Large word pools (50+ words each) = 2500+ combinations
-- Session lifetime is typically short for CLI tools
-- Collisions are cosmetic (no data corruption)
-
-### Trade-off: Zellij-Only Support
-Non-Zellij users won't get terminal integration.
-
-**Mitigation:**
-- Feature degrades gracefully (session still works, just no tab names)
-- Can add tmux/others in future
-- Document limitation clearly
-
-### Risk: Environment Variable Pollution
-Exporting env vars affects child processes.
-
-**Mitigation:**
-- Use clear `CLY_` prefix to avoid conflicts
-- Document exported vars
-- Standard practice for CLI context propagation
-
-## Migration Plan
-No migration needed - this is a new feature with no breaking changes.
-
-## Open Questions
-None - design is straightforward and scoped for initial implementation.
+### Trade-off: Zellij-Only
+Non-Zellij users don't get tab integration. Feature degrades gracefully.

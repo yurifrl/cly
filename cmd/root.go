@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/modules/claude"
 	"github.com/yurifrl/cly/modules/config"
 	"github.com/yurifrl/cly/modules/demo"
 	"github.com/yurifrl/cly/modules/uuid"
@@ -9,9 +12,12 @@ import (
 	"github.com/yurifrl/cly/pkg/style"
 )
 
+var Version = "dev"
+
 var RootCmd = &cobra.Command{
-	Use:   "cly",
-	Short: style.TitleStyle.Render("Charm Libraries Showcase"),
+	Use:     "cly",
+	Short:   style.TitleStyle.Render("Charm Libraries Showcase"),
+	Version: Version,
 	Long: `Interactive demos of Bubbletea, Bubbles, Huh, and Lipgloss.
 
 Each command demonstrates a different Charm component:
@@ -28,6 +34,8 @@ Press 'q' or Ctrl+C to quit any demo.`,
 }
 
 func init() {
+	RootCmd.SetVersionTemplate(fmt.Sprintf("cly %s\n", Version))
+	claude.Register(RootCmd)
 	uuid.Register(RootCmd)
 	demo.Register(RootCmd)
 	config.Register(RootCmd)

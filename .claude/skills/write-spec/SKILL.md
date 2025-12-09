@@ -173,7 +173,3 @@ cli session --resume NonExistent
 # Shows: ❌ Session not found
 #        Available: MyProject, RedFox
 ```
-
-## Sources
-- [Perforce SRS](https://www.perforce.com/blog/alm/how-write-software-requirements-specification-srs-document)
-- [Asana Requirements](https://asana.com/resources/software-requirement-document-template)

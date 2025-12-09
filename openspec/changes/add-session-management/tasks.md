@@ -1,22 +1,21 @@
-## 1. Core Session Package
-- [ ] 1.1 Create `pkg/session/session.go` with name generation logic
-- [ ] 1.2 Implement two-word random name generator (color + animal pools)
-- [ ] 1.3 Add session name validation (alphanumeric, hyphens, underscores)
-- [ ] 1.4 Export environment variables (`CLY_SESSION_NAME`)
+## 1. Session Package
+- [x] Create `pkg/session/session.go` with Initialize function
+- [x] Implement two-word name generator (adjectives + animals)
+- [x] Add name validation (alphanumeric, hyphens, underscores)
 
-## 2. CLI Integration
-- [ ] 2.1 Add `--name` flag to root command
-- [ ] 2.2 Check `CLY_SESSION_NAME` environment variable
-- [ ] 2.3 Initialize session in `PersistentPreRunE`
-- [ ] 2.4 Print session name with emoji indicator
+## 2. Claude Module
+- [x] Create `modules/claude/cmd.go` with `cly claude` command
+- [x] Add `--name` flag (optional value)
+- [x] Check `CLAUDE_SESSION_NAME` env var for default
+- [x] Export `CLAUDE_SESSION_NAME` to child process
+- [x] Execute `claude` with passthrough args
 
-## 3. Terminal Integration
-- [ ] 3.1 Detect Zellij environment
-- [ ] 3.2 Update tab name using Zellij escape sequences
-- [ ] 3.3 Update pane name using Zellij escape sequences
+## 3. Zellij Integration
+- [x] Detect Zellij via `$ZELLIJ` env var
+- [x] Run `zellij action rename-tab <name>` when detected
 
 ## 4. Testing
-- [ ] 4.1 Unit tests for name generation
-- [ ] 4.2 Unit tests for environment variable detection
-- [ ] 4.3 Integration tests for CLI flags
-- [ ] 4.4 Integration tests for terminal detection
+- [x] Unit tests for name generation
+- [x] Unit tests for name validation
+- [x] Integration tests for env var handling
+- [x] Integration tests for Zellij detection (mocked)

@@ -1,0 +1,41 @@
+version: '3'
+
+includes:
+  bump: ./taskfiles/bump.yaml
+
+vars:
+  VERSION:
+    sh: yq '.app.version' config/config.yaml
+  BINARY_NAME: cly
+  BUILD_DIR: dist
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build for current platform
+    cmds:
+      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
+    sources:
+      - "**/*.go"
+    generates:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}"
+
+  install:
+    desc: Install CLI to GOBIN
+    cmds:
+      - go install .
+      - go run . completion fish > ~/.config/fish/completions/cly.fish
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
+  run:
+    desc: Run cly directly with args (use -- for args, e.g., task run -- --help)
+    cmds:
+      - go run . {{.CLI_ARGS}}
