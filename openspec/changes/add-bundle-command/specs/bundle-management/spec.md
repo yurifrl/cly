@@ -4,7 +4,7 @@
 
 Declarative package management for multiple ecosystems (brew, go, js, python) through a unified CLI interface.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Bundle Command Structure
 

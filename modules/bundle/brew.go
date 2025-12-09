@@ -32,37 +32,25 @@ func (b *BrewBundler) CheckDeps() error {
 func (b *BrewBundler) Sync(bundleFile string, dryRun bool) error {
 	fmt.Printf("Syncing Homebrew packages from %s\n\n", bundleFile)
 
+	args := []string{"bundle", "--file=" + bundleFile}
 	if dryRun {
-		// Show what would be installed
-		fmt.Println("Checking missing packages:")
-		checkCmd := exec.Command("brew", "bundle", "check", "--file="+bundleFile, "--verbose")
-		checkCmd.Stdout = os.Stdout
-		checkCmd.Stderr = os.Stderr
-		checkCmd.Run() // ignore error, exits non-zero if packages missing
-
-		// Show what would be removed
-		fmt.Println("\nPackages to remove (not in Brewfile):")
-		cleanupCmd := exec.Command("brew", "bundle", "cleanup", "--file="+bundleFile)
-		cleanupCmd.Stdout = os.Stdout
-		cleanupCmd.Stderr = os.Stderr
-		cleanupCmd.Run()
-		return nil
+		args = append(args, "--no-lock")
+		// For dry-run, use check to see what would change
+		args = []string{"bundle", "check", "--file=" + bundleFile}
 	}
 
-	// Install packages
-	installCmd := exec.Command("brew", "bundle", "--file="+bundleFile)
-	installCmd.Stdout = os.Stdout
-	installCmd.Stderr = os.Stderr
-	if err := installCmd.Run(); err != nil {
+	cmd := exec.Command("brew", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		if dryRun {
+			// brew bundle check exits non-zero if packages are missing
+			fmt.Println("\nPackages need to be installed (run without --dry-run)")
+			return nil
+		}
 		return fmt.Errorf("brew bundle failed: %w", err)
 	}
-
-	// Remove packages not in Brewfile
-	fmt.Println("\nCleaning up packages not in Brewfile...")
-	cleanupCmd := exec.Command("brew", "bundle", "cleanup", "--file="+bundleFile, "--force")
-	cleanupCmd.Stdout = os.Stdout
-	cleanupCmd.Stderr = os.Stderr
-	cleanupCmd.Run() // don't fail on cleanup errors
 
 	printGreen("\nDone!")
 	return nil

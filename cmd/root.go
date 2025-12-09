@@ -36,7 +36,6 @@ Press 'q' or Ctrl+C to quit any demo.`,
 
 func init() {
 	RootCmd.SetVersionTemplate(fmt.Sprintf("cly %s\n", Version))
-	bundle.Register(RootCmd)
 	claude.Register(RootCmd)
 	uuid.Register(RootCmd)
 	demo.Register(RootCmd)

@@ -2,16 +2,16 @@
 
 ## Implementation Order
 
-- [x] Create module skeleton with Register function and root command
-- [x] Implement Bundler interface and common file/state parsing
-- [x] Implement BrewBundler (calls brew bundle)
-- [x] Implement GoBundler with mise detection
-- [x] Implement JsBundler with GitHub shorthand normalization
-- [x] Implement PythonBundler using uv tool
-- [x] Add --edit, --no-edit, --dry-run, --file flags
-- [x] Register module in cmd/root.go
-- [x] Write tests for file parsing and state diff logic
-- [x] Write integration tests per bundler type
+- [ ] Create module skeleton with Register function and root command
+- [ ] Implement Bundler interface and common file/state parsing
+- [ ] Implement BrewBundler (calls brew bundle)
+- [ ] Implement GoBundler with mise detection
+- [ ] Implement JsBundler with GitHub shorthand normalization
+- [ ] Implement PythonBundler using uv tool
+- [ ] Add --edit, --no-edit, --dry-run, --file flags
+- [ ] Register module in cmd/root.go
+- [ ] Write tests for file parsing and state diff logic
+- [ ] Write integration tests per bundler type
 
 ## Parallelizable
 
