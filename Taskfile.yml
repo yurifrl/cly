@@ -39,3 +39,8 @@ tasks:
     desc: Run cly directly with args (use -- for args, e.g., task run -- --help)
     cmds:
       - go run . {{.CLI_ARGS}}
+
+  worktree:
+    desc: Create git worktree in .worktrees/<name>
+    cmds:
+      - git worktree add .worktrees/{{.CLI_ARGS}} -b {{.CLI_ARGS}}

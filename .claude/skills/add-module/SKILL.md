@@ -7,6 +7,64 @@ description: Create new demo or utility modules following CLY project patterns. 
 
 Automates creation of new modules in the CLY project following established patterns.
 
+## Module Isolation Principle (CRITICAL)
+
+**The Portability Test**: Before creating a module, ask: *"If I copy this module folder to a new repo, how hard would it be to make it work?"*
+
+The answer should be: **trivially easy**.
+
+### Requirements for Isolation
+
+- **Self-contained**: All module logic lives within its directory
+- **Minimal dependencies**: Only depend on stdlib, Bubbletea/Bubbles/Lipgloss, and Cobra
+- **No cross-module imports**: Modules NEVER import from other modules
+- **Single registration point**: Only touch parent's `cmd.go` for registration
+- **Own types**: Define types locally, don't reach into other packages
+
+### What a Module Can Import
+
+```
+✓ Standard library (fmt, strings, etc.)
+✓ github.com/charmbracelet/bubbletea
+✓ github.com/charmbracelet/bubbles/*
+✓ github.com/charmbracelet/lipgloss
+✓ github.com/spf13/cobra
+✓ github.com/yurifrl/cly/pkg/*  (shared utilities - see below)
+✗ github.com/yurifrl/cly/modules/*  (NEVER)
+```
+
+### Avoiding Duplication (The Balance)
+
+Isolation doesn't mean blind copy-paste. Use `pkg/` for genuinely shared code:
+
+| Location | Purpose | Example |
+|----------|---------|---------|
+| `pkg/style/` | Shared Lipgloss styles | Colors, borders, common styles |
+| `pkg/keys/` | Common keybindings | Quit keys, navigation patterns |
+| `pkg/tui/` | TUI utilities | Screen helpers, common components |
+
+**Rule of Three**: Only extract to `pkg/` when 3+ modules need the same code.
+
+**Duplication is OK when**:
+- Variations exist between modules
+- Extraction would create tight coupling
+
+**Extract to pkg/ when**:
+- Exact same code in 3+ places
+- Code is substantial and stable
+- Changes should propagate everywhere
+
+### Module Directory = Complete Unit
+
+```
+modules/demo/spinner/
+├── cmd.go        # Registration only
+├── spinner.go    # All logic here
+└── (optional)    # Helpers if needed, but keep in same package
+```
+
+Copy this folder → paste in new project → change import path → works.
+
 ## When to Use This Skill
 
 - User wants to add a new demo module showcasing a Bubbletea component
@@ -631,12 +689,3 @@ func run(cmd *cobra.Command, args []string) error {
 	return err
 }
 ```
-
----
-
-## Current Project Stats
-
-- **Total demo modules**: 48
-- **Total utility modules**: 1 (uuid)
-- **Reference examples**: 48 in `references/bubbletea/examples/`
-- **All demos working**: ✅ Yes
