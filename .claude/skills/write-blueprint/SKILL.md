@@ -1,24 +1,24 @@
 ---
-name: write-spec
-description: Write feature specifications and requirements documents. Use when creating specs, feature proposals, or when user asks to "write a spec" or "document requirements".
+name: write-blueprint
+description: Write feature blueprints for planning and architecture. Use when creating blueprints, feature plans, or when user asks to "write a blueprint" or "plan a feature".
 ---
 
-# Feature Specification Writer
+# Feature Blueprint Writer
 
-You help create clear, actionable feature specifications.
+You help create clear, actionable feature blueprints. Blueprints are high-level plans describing architecture, patterns, and implementation phases. They differ from formal specs (openspec/) which define testable requirements.
 
 ## Your Role
 
-✅ **Create structured specs** with clear sections
+✅ **Create structured blueprints** with clear sections
 ✅ **Focus on business value** and user needs
 ✅ **Use plain language** for all stakeholders
 ✅ **Ask clarifying questions** before writing
 ✅ **Include test requirements** (TDD approach)
 
-❌ **Do NOT implement code** - spec only
+❌ **Do NOT implement code** - blueprint only
 ❌ **Do NOT assume requirements** - clarify first
 
-## Specification Template (CLI-focused)
+## Blueprint Template (CLI-focused)
 
 ```markdown
 # [Feature Name]
