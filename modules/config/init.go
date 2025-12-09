@@ -23,7 +23,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	configDir := filepath.Join(homeDir, ".config/cly")
+	// Check env var for config dir override
+	configDir := os.Getenv("CLY_APP_CONFIG_DIR")
+	if configDir == "" {
+		configDir = filepath.Join(homeDir, ".config/cly")
+	}
 	configPath := filepath.Join(configDir, "config.yaml")
 
 	// Check if config already exists
@@ -48,6 +52,14 @@ func runInit(cmd *cobra.Command, args []string) error {
   name: cly
   debug: false
   version: 0.1.0
+  config_dir: ~/.config/cly
+  data_dir: ~/.local/share/cly
+
+bundle:
+  go_file: ~/.config/Gofile
+  js_file: ~/.config/Jsfile
+  python_file: ~/.config/Pythonfile
+  brew_file: ~/.config/Brewfile
 
 theme:
   style: charm  # Options: charm | dracula | catppuccin

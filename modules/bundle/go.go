@@ -6,140 +6,131 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/store"
 )
 
-// GoBundler manages Go binaries via go install
+// GoBundler manages Go binaries.
 type GoBundler struct {
+	*baseBundler
 	gobin string
 }
 
-func (b *GoBundler) Name() string {
-	return "go"
-}
-
-func (b *GoBundler) DefaultFile() string {
-	return filepath.Join(os.Getenv("HOME"), ".config", "Gofile")
-}
-
-func (b *GoBundler) StateFile() string {
-	return filepath.Join(os.Getenv("HOME"), ".config", "go_bundle_state")
+// NewGoBundler creates a new GoBundler.
+func NewGoBundler(s store.Store) *GoBundler {
+	b := &GoBundler{}
+	goFile := pkgconfig.GetString("bundle.go_file")
+	if goFile == "" {
+		goFile = "~/.config/Gofile"
+	}
+	b.baseBundler = &baseBundler{
+		name:        "go",
+		defaultFile: goFile,
+		store:       s,
+		installFn:   b.install,
+		uninstallFn: b.uninstall,
+	}
+	return b
 }
 
 func (b *GoBundler) CheckDeps() error {
-	if _, err := exec.LookPath("go"); err != nil {
+	if !commandExists("go") {
 		return fmt.Errorf("go not found. Install Go: https://go.dev/dl/")
 	}
-	b.setupGobin()
+
+	// Detect GOBIN - prefer mise if available
+	b.gobin = b.detectGobin()
 	return nil
 }
 
-func (b *GoBundler) setupGobin() {
+func (b *GoBundler) detectGobin() string {
 	// Try mise first
-	if out, err := exec.Command("mise", "where", "go").Output(); err == nil {
-		miseRoot := strings.TrimSpace(string(out))
-		if miseRoot != "" {
-			b.gobin = filepath.Join(miseRoot, "bin")
-			os.Setenv("GOPATH", miseRoot)
-			os.Setenv("GOBIN", b.gobin)
-			return
+	if commandExists("mise") {
+		cmd := exec.Command("mise", "where", "go")
+		out, err := cmd.Output()
+		if err == nil {
+			miseGoRoot := strings.TrimSpace(string(out))
+			if miseGoRoot != "" {
+				return filepath.Join(miseGoRoot, "bin")
+			}
 		}
 	}
 
-	// Fallback to go env
-	if out, err := exec.Command("go", "env", "GOPATH").Output(); err == nil {
+	// Fallback to go env GOPATH
+	cmd := exec.Command("go", "env", "GOPATH")
+	out, err := cmd.Output()
+	if err == nil {
 		gopath := strings.TrimSpace(string(out))
 		if gopath != "" {
-			b.gobin = filepath.Join(gopath, "bin")
+			return filepath.Join(gopath, "bin")
 		}
 	}
+
+	// Last resort
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "go", "bin")
 }
 
-func (b *GoBundler) Sync(bundleFile string, dryRun bool) error {
-	fmt.Printf("Syncing Go binaries from %s\n", bundleFile)
-	if b.gobin != "" {
-		fmt.Printf("Target directory: %s\n", b.gobin)
-	}
-	fmt.Println()
+func (b *GoBundler) install(pkg string, verbose bool) error {
+	// Set GOBIN for mise integration
+	env := os.Environ()
+	env = append(env, "GOBIN="+b.gobin)
 
-	desired, err := ParseBundleFile(bundleFile)
-	if err != nil {
-		return fmt.Errorf("failed to parse bundle file: %w", err)
-	}
+	args := []string{"install", pkg + "@latest"}
+	cmd := exec.Command("go", args...)
+	cmd.Env = env
 
-	installed, err := LoadState(b.StateFile())
-	if err != nil {
-		return fmt.Errorf("failed to load state: %w", err)
+	if verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 	}
 
-	toInstall, toRemove := DiffPackages(desired, installed)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("go install failed: %w", err)
+	}
+	return nil
+}
 
-	if dryRun {
-		if len(toInstall) > 0 {
-			fmt.Println("Would install:")
-			for _, pkg := range toInstall {
-				printGreen("  + %s", pkg)
-			}
-		}
-		if len(toRemove) > 0 {
-			fmt.Println("Would remove:")
-			for _, pkg := range toRemove {
-				printYellow("  - %s", pkg)
-			}
-		}
-		if len(toInstall) == 0 && len(toRemove) == 0 {
-			fmt.Println("Nothing to do")
+func (b *GoBundler) uninstall(pkg string, verbose bool) error {
+	binaryName := getBinaryName(pkg)
+	binaryPath := filepath.Join(b.gobin, binaryName)
+
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		if verbose {
+			fmt.Printf("Binary %s not found, skipping\n", binaryPath)
 		}
 		return nil
 	}
 
-	// Remove packages no longer in file
-	for _, pkg := range toRemove {
-		binaryName := filepath.Base(pkg)
-		binaryPath := filepath.Join(b.gobin, binaryName)
-		if _, err := os.Stat(binaryPath); err == nil {
-			printYellow("Removing: %s", binaryPath)
-			if err := os.Remove(binaryPath); err != nil {
-				printRed("Failed to remove %s: %v", binaryPath, err)
-			} else {
-				printGreen("✓ Removed %s", binaryName)
-			}
-		}
+	if err := os.Remove(binaryPath); err != nil {
+		return fmt.Errorf("failed to remove %s: %w", binaryPath, err)
 	}
 
-	// Install packages
-	var failed []string
-	var successful []string
-
-	for _, pkg := range desired {
-		printGreen("Installing: %s", pkg)
-		cmd := exec.Command("go", "install", pkg+"@latest")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
-			printRed("✗ Failed to install %s", pkg)
-			failed = append(failed, pkg)
-		} else {
-			printGreen("✓ Installed %s", pkg)
-			successful = append(successful, pkg)
-		}
+	if verbose {
+		fmt.Printf("Removed %s\n", binaryPath)
 	}
-
-	// Save state
-	if err := SaveState(b.StateFile(), successful); err != nil {
-		return fmt.Errorf("failed to save state: %w", err)
-	}
-
-	fmt.Println()
-	printGreen("Done!")
-
-	if len(failed) > 0 {
-		printRed("Failed installations:")
-		for _, pkg := range failed {
-			fmt.Printf("  %s\n", pkg)
-		}
-		return fmt.Errorf("%d packages failed to install", len(failed))
-	}
-
 	return nil
+}
+
+// getBinaryName extracts binary name from package path.
+// github.com/foo/bar/cmd/baz → baz
+// github.com/foo/bar → bar
+func getBinaryName(pkg string) string {
+	// Remove version suffix if present
+	if idx := strings.Index(pkg, "@"); idx != -1 {
+		pkg = pkg[:idx]
+	}
+
+	parts := strings.Split(pkg, "/")
+
+	// Check for /cmd/ pattern
+	for i, part := range parts {
+		if part == "cmd" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+
+	// Default to last segment
+	return parts[len(parts)-1]
 }

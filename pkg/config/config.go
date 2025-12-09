@@ -13,6 +13,14 @@ var defaultConfig = []byte(`app:
   name: cly
   debug: false
   version: 0.1.0
+  config_dir: ~/.config/cly
+  data_dir: ~/.local/share/cly
+
+bundle:
+  go_file: ~/.config/Gofile
+  js_file: ~/.config/Jsfile
+  python_file: ~/.config/Pythonfile
+  brew_file: ~/.config/Brewfile
 
 theme:
   style: charm
@@ -22,14 +30,25 @@ modules:
     default_version: v4
   demo:
     show_count: true
+  dotfiles:
+    directory: ~/DotFiles
+    zellij_plugins_dir: ~/.config/zellij/plugins
 `)
 
 type Config struct {
 	App struct {
-		Name    string `yaml:"name"`
-		Debug   bool   `yaml:"debug"`
-		Version string `yaml:"version"`
+		Name      string `yaml:"name"`
+		Debug     bool   `yaml:"debug"`
+		Version   string `yaml:"version"`
+		ConfigDir string `yaml:"config_dir"`
+		DataDir   string `yaml:"data_dir"`
 	} `yaml:"app"`
+	Bundle struct {
+		GoFile     string `yaml:"go_file"`
+		JsFile     string `yaml:"js_file"`
+		PythonFile string `yaml:"python_file"`
+		BrewFile   string `yaml:"brew_file"`
+	} `yaml:"bundle"`
 	Theme struct {
 		Style string `yaml:"style"`
 	} `yaml:"theme"`
@@ -98,7 +117,13 @@ func GetString(key string) string {
 
 func Set(key string, value interface{}) error {
 	homeDir, _ := os.UserHomeDir()
-	configPath := filepath.Join(homeDir, ".config/cly/config.yaml")
+
+	// Check for env var override, otherwise use default
+	configDir := os.Getenv("CLY_APP_CONFIG_DIR")
+	if configDir == "" {
+		configDir = filepath.Join(homeDir, ".config/cly")
+	}
+	configPath := filepath.Join(configDir, "config.yaml")
 
 	v := viper.New()
 	v.SetConfigFile(configPath)

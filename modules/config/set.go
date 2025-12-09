@@ -28,7 +28,12 @@ func runSet(cmd *cobra.Command, args []string) error {
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	configPath := filepath.Join(homeDir, ".config/cly/config.yaml")
+	// Check env var for config dir override
+	configDir := os.Getenv("CLY_APP_CONFIG_DIR")
+	if configDir == "" {
+		configDir = filepath.Join(homeDir, ".config/cly")
+	}
+	configPath := filepath.Join(configDir, "config.yaml")
 
 	fmt.Printf("✓ Set %s = %s\n", key, value)
 	fmt.Printf("  Config: %s\n", configPath)

@@ -4,112 +4,81 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+
+	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/store"
 )
 
-// PythonBundler manages Python tools via uv
-type PythonBundler struct{}
-
-func (b *PythonBundler) Name() string {
-	return "python"
+// PythonBundler manages Python tools via uv.
+type PythonBundler struct {
+	*baseBundler
 }
 
-func (b *PythonBundler) DefaultFile() string {
-	return filepath.Join(os.Getenv("HOME"), ".config", "Pythonfile")
-}
-
-func (b *PythonBundler) StateFile() string {
-	return filepath.Join(os.Getenv("HOME"), ".config", "python_bundle_state")
+// NewPythonBundler creates a new PythonBundler.
+func NewPythonBundler(s store.Store) *PythonBundler {
+	b := &PythonBundler{}
+	pythonFile := pkgconfig.GetString("bundle.python_file")
+	if pythonFile == "" {
+		pythonFile = "~/.config/Pythonfile"
+	}
+	b.baseBundler = &baseBundler{
+		name:        "python",
+		defaultFile: pythonFile,
+		store:       s,
+		installFn:   b.install,
+		uninstallFn: b.uninstall,
+	}
+	return b
 }
 
 func (b *PythonBundler) CheckDeps() error {
-	if _, err := exec.LookPath("uv"); err != nil {
-		return fmt.Errorf("uv not found. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh")
+	if !commandExists("uv") {
+		return fmt.Errorf("uv not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh")
 	}
 	return nil
 }
 
-func (b *PythonBundler) Sync(bundleFile string, dryRun bool) error {
-	fmt.Printf("Syncing Python tools from %s\n\n", bundleFile)
+func (b *PythonBundler) install(pkg string, verbose bool) error {
+	args := []string{"tool", "install", pkg}
+	cmd := exec.Command("uv", args...)
 
-	desired, err := ParseBundleFile(bundleFile)
-	if err != nil {
-		return fmt.Errorf("failed to parse bundle file: %w", err)
-	}
-
-	installed, err := LoadState(b.StateFile())
-	if err != nil {
-		return fmt.Errorf("failed to load state: %w", err)
-	}
-
-	toInstall, toRemove := DiffPackages(desired, installed)
-
-	if dryRun {
-		if len(toInstall) > 0 {
-			fmt.Println("Would install:")
-			for _, pkg := range toInstall {
-				printGreen("  + %s", pkg)
-			}
-		}
-		if len(toRemove) > 0 {
-			fmt.Println("Would remove:")
-			for _, pkg := range toRemove {
-				printYellow("  - %s", pkg)
-			}
-		}
-		if len(toInstall) == 0 && len(toRemove) == 0 {
-			fmt.Println("Nothing to do")
-		}
-		return nil
-	}
-
-	// Remove packages no longer in file
-	for _, pkg := range toRemove {
-		printYellow("Uninstalling: %s", pkg)
-		cmd := exec.Command("uv", "tool", "uninstall", pkg)
+	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			printRed("✗ Failed to uninstall %s", pkg)
-		} else {
-			printGreen("✓ Uninstalled %s", pkg)
-		}
 	}
 
-	// Install packages
-	var failed []string
-	var successful []string
-
-	for _, pkg := range desired {
-		printGreen("Installing: %s", pkg)
-		cmd := exec.Command("uv", "tool", "install", pkg)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
-			printRed("✗ Failed to install %s", pkg)
-			failed = append(failed, pkg)
-		} else {
-			printGreen("✓ Installed %s", pkg)
-			successful = append(successful, pkg)
-		}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("uv tool install failed: %w", err)
 	}
-
-	// Save state
-	if err := SaveState(b.StateFile(), successful); err != nil {
-		return fmt.Errorf("failed to save state: %w", err)
-	}
-
-	fmt.Println()
-	printGreen("Done!")
-
-	if len(failed) > 0 {
-		printRed("Failed installations:")
-		for _, pkg := range failed {
-			fmt.Printf("  %s\n", pkg)
-		}
-		return fmt.Errorf("%d packages failed to install", len(failed))
-	}
-
 	return nil
+}
+
+func (b *PythonBundler) uninstall(pkg string, verbose bool) error {
+	// Extract base package name (remove extras like [lsp,mcp] and version specs)
+	basePkg := extractBasePkg(pkg)
+
+	cmd := exec.Command("uv", "tool", "uninstall", basePkg)
+
+	if verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("uv tool uninstall failed: %w", err)
+	}
+	return nil
+}
+
+// extractBasePkg extracts base package name from spec.
+// vectorcode[lsp,mcp]<1.0.0 → vectorcode
+// ruff → ruff
+func extractBasePkg(pkg string) string {
+	// Find first occurrence of [ < > = or @
+	for i, c := range pkg {
+		if c == '[' || c == '<' || c == '>' || c == '=' || c == '@' {
+			return pkg[:i]
+		}
+	}
+	return pkg
 }

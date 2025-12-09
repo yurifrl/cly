@@ -2,10 +2,22 @@ app:
   name: cly
   debug: false
   version: 0.1.1
+  config_dir: ~/.config/cly
+  data_dir: ~/.local/share/cly
+
+bundle:
+  go_file: ~/.config/Gofile
+  js_file: ~/.config/Jsfile
+  python_file: ~/.config/Pythonfile
+  brew_file: ~/.config/Brewfile
+
 theme:
   style: charm # Options: charm | dracula | catppuccin
+
 modules:
   uuid:
     default_version: v4 # Options: v4 | v7
   demo:
     show_count: true
+  dotfiles:
+    directory: ~/DotFiles
