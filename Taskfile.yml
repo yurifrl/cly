@@ -26,6 +26,7 @@ tasks:
 
   install:
     desc: Install CLI to GOBIN
+    aliases: [i]
     cmds:
       - go install .
       - go run . completion fish > ~/.config/fish/completions/cly.fish
