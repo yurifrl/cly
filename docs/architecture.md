@@ -83,7 +83,7 @@ cly/
 
 ## Key Modularity Patterns
 
-### 1. Command Registration (Query Command Pattern)
+### Command Registration (Query Command Pattern)
 
 **Single registration point**:
 ```go
@@ -113,7 +113,7 @@ func Execute() {
 }
 ```
 
-### 2. Module Self-Containment (Locality & Behavior)
+### Module Self-Containment (Locality & Behavior)
 
 **Each module is independent**:
 ```go
@@ -141,7 +141,7 @@ func runSpinner(cmd *cobra.Command, args []string) error {
 }
 ```
 
-### 3. Shared Utilities (Package-Oriented Design)
+### Shared Utilities (Package-Oriented Design)
 
 **Zero coupling between modules**:
 ```go
@@ -174,7 +174,7 @@ func (m model) View() string {
 }
 ```
 
-### 4. Configuration (Viper + YAML)
+### Configuration (Viper + YAML)
 
 ```yaml
 # config/config.yaml
@@ -354,14 +354,14 @@ Each module adapts working examples from `references/bubbletea/examples/`:
 
 ### Phase 3: Additional Modules
 **Priority order**:
-1. spinner ✓ (Phase 2)
-2. textinput
-3. list
-4. table
-5. progress
-6. form
-7. viewport
-8. textarea
+- spinner ✓ (Phase 2)
+- textinput
+- list
+- table
+- progress
+- form
+- viewport
+- textarea
 
 **Process**:
 - Copy `modules/spinner/` structure
@@ -420,11 +420,11 @@ go get github.com/charmbracelet/huh
 
 ## Design Principles
 
-1. **Single registration point** (`cmd/root.go`)
-2. **Module autonomy** (no inter-module dependencies)
-3. **Shared consistency** (common utilities for UX)
-4. **Type safety** (interfaces, generics)
-5. **Encapsulation** (independently testable modules)
-6. **Configuration locality** (module-specific config sections)
+**Single registration point** (`cmd/root.go`)
+**Module autonomy** (no inter-module dependencies)
+**Shared consistency** (common utilities for UX)
+**Type safety** (interfaces, generics)
+**Encapsulation** (independently testable modules)
+**Configuration locality** (module-specific config sections)
 
 This architecture enables parallel development without conflicts.

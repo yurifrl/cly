@@ -41,20 +41,20 @@ Skip proposal for:
 - Tests for existing behavior
 
 **Workflow**
-1. Review `openspec/project.md`, `openspec list`, and `openspec list --specs` to understand current context.
-2. Choose a unique verb-led `change-id` and scaffold `proposal.md`, `tasks.md`, optional `design.md`, and spec deltas under `openspec/changes/<id>/`.
-3. Draft spec deltas using `## ADDED|MODIFIED|REMOVED Requirements` with at least one `#### Scenario:` per requirement.
-4. Run `openspec validate <id> --strict` and resolve any issues before sharing the proposal.
+- Review `openspec/project.md`, `openspec list`, and `openspec list --specs` to understand current context.
+- Choose a unique verb-led `change-id` and scaffold `proposal.md`, `tasks.md`, optional `design.md`, and spec deltas under `openspec/changes/<id>/`.
+- Draft spec deltas using `## ADDED|MODIFIED|REMOVED Requirements` with at least one `#### Scenario:` per requirement.
+- Run `openspec validate <id> --strict` and resolve any issues before sharing the proposal.
 
 ### Stage 2: Implementing Changes
 Track these steps as TODOs and complete them one by one.
-1. **Read proposal.md** - Understand what's being built
-2. **Read design.md** (if exists) - Review technical decisions
-3. **Read tasks.md** - Get implementation checklist
-4. **Implement tasks sequentially** - Complete in order
-5. **Confirm completion** - Ensure every item in `tasks.md` is finished before updating statuses
-6. **Update checklist** - After all work is done, set every task to `- [x]` so the list reflects reality
-7. **Approval gate** - Do not start implementation until the proposal is reviewed and approved
+- **Read proposal.md** - Understand what's being built
+- **Read design.md** (if exists) - Review technical decisions
+- **Read tasks.md** - Get implementation checklist
+- **Implement tasks sequentially** - Complete in order
+- **Confirm completion** - Ensure every item in `tasks.md` is finished before updating statuses
+- **Update checklist** - After all work is done, set every task to `- [x]` so the list reflects reality
+- **Approval gate** - Do not start implementation until the proposal is reviewed and approved
 
 ### Stage 3: Archiving Changes
 After deployment, create separate PR to:
@@ -156,9 +156,9 @@ New request?
 
 ### Proposal Structure
 
-1. **Create directory:** `changes/[change-id]/` (kebab-case, verb-led, unique)
+**Create directory:** `changes/[change-id]/` (kebab-case, verb-led, unique)
 
-2. **Write proposal.md:**
+**Write proposal.md:**
 ```markdown
 # Change: [Brief description of change]
 
@@ -174,7 +174,7 @@ New request?
 - Affected code: [key files/systems]
 ```
 
-3. **Create spec deltas:** `specs/[capability]/spec.md`
+**Create spec deltas:** `specs/[capability]/spec.md`
 ```markdown
 ## ADDED Requirements
 ### Requirement: New Feature
@@ -195,7 +195,7 @@ The system SHALL provide...
 ```
 If multiple capabilities are affected, create multiple delta files under `changes/[change-id]/specs/<capability>/spec.md`—one per capability.
 
-4. **Create tasks.md:**
+**Create tasks.md:**
 ```markdown
 ## 1. Implementation
 - [ ] 1.1 Create database schema
@@ -204,7 +204,7 @@ If multiple capabilities are affected, create multiple delta files under `change
 - [ ] 1.4 Write tests
 ```
 
-5. **Create design.md when needed:**
+**Create design.md when needed:**
 Create `design.md` if any of the following apply; otherwise omit it:
 - Cross-cutting change (multiple services/modules) or a new architectural pattern
 - New external dependency or significant data model changes
@@ -415,22 +415,22 @@ Only add complexity with:
 ## Error Recovery
 
 ### Change Conflicts
-1. Run `openspec list` to see active changes
-2. Check for overlapping specs
-3. Coordinate with change owners
-4. Consider combining proposals
+- Run `openspec list` to see active changes
+- Check for overlapping specs
+- Coordinate with change owners
+- Consider combining proposals
 
 ### Validation Failures
-1. Run with `--strict` flag
-2. Check JSON output for details
-3. Verify spec file format
-4. Ensure scenarios properly formatted
+- Run with `--strict` flag
+- Check JSON output for details
+- Verify spec file format
+- Ensure scenarios properly formatted
 
 ### Missing Context
-1. Read project.md first
-2. Check related specs
-3. Review recent archives
-4. Ask for clarification
+- Read project.md first
+- Check related specs
+- Review recent archives
+- Ask for clarification
 
 ## Quick Reference
 
