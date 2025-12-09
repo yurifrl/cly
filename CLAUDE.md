@@ -16,3 +16,8 @@ Use `@/openspec/AGENTS.md` to learn:
 Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
+
+# Context
+- You need to editorialize, cut, choose only the best parts when creating, less is more.<D-s>
+- A 500 lines of code e is a inconsivable amount of code
+- Avoid numbered lists or numbering any element
