@@ -1,6 +1,6 @@
 # Session Management
 
-Named Claude sessions with persistence and resumption.
+Named CLI sessions with persistence and resumption.
 
 ---
 
@@ -21,32 +21,32 @@ Named Claude sessions with persistence and resumption.
 ### Start named session
 ```bash
 # Explicit name
-cly claude --session-name WorkProject
+cli --session-name WorkProject
 
 # Auto-generated name
-cly claude --session-name
+cli --session-name
 
 # From environment
-export CLAUDE_SESSION_NAME=WorkProject
-cly claude
+export SESSION_NAME=WorkProject
+cli
 ```
 
 **What happens:**
 - Prints: `🏷️  Session: WorkProject`
-- Saves: `~/.config/cly/sessions.json` with `{"WorkProject": "uuid-123"}`
-- Exports: `CLAUDE_SESSION_ID=uuid-123`
+- Saves: `~/.config/app/sessions.json` with `{"WorkProject": "uuid-123"}`
+- Exports: `SESSION_ID=uuid-123`
 - Updates terminal tab to: `WorkProject`
 
 ### Resume session
 ```bash
 # By name
-cly claude --resume WorkProject
+cli --resume WorkProject
 
 # By ID
-cly claude --resume uuid-123
+cli --resume uuid-123
 
 # From file
-cly claude --resume-from session-uuid-123.paid
+cli --resume-from session-uuid-123.save
 ```
 
 **What happens:**
@@ -57,7 +57,7 @@ cly claude --resume-from session-uuid-123.paid
 
 ### List sessions
 ```bash
-cly claude --list-sessions
+cli --list-sessions
 # Shows: WorkProject (2h ago), Research (1d ago), TempWork (3d ago)
 ```
 
@@ -69,7 +69,7 @@ cly claude --list-sessions
 
 **Three sources:**
 1. `--session-name NAME` - explicit flag
-2. `CLAUDE_SESSION_NAME=NAME` - environment variable
+2. `SESSION_NAME=NAME` - environment variable
 3. `--session-name` (no value) - auto-generate
 
 **Auto-generated format:**
@@ -79,7 +79,7 @@ cly claude --list-sessions
 
 ### Session Persistence
 
-**Storage:** Config file (`~/.config/cly/sessions.json`)
+**Storage:** Config file (`~/.config/app/sessions.json`)
 
 **Format:**
 ```json
@@ -100,19 +100,19 @@ cly claude --list-sessions
 
 **By name:**
 ```bash
-cly claude --resume WorkProject
+cli --resume WorkProject
 ```
 Looks up ID from config, restores session
 
 **By ID:**
 ```bash
-cly claude --resume uuid-abc-123
+cli --resume uuid-abc-123
 ```
 Directly restores by ID
 
 **From file:**
 ```bash
-cly claude --resume-from session.paid
+cli --resume-from session.save
 ```
 Extracts ID from filename or content
 
@@ -131,11 +131,11 @@ Extracts ID from filename or content
 ### Environment Variables
 
 **Exports for downstream tools:**
-- `CLAUDE_SESSION_ID` - Current session UUID
-- `CLAUDE_SESSION_NAME` - Human-readable name
+- `SESSION_ID` - Current session UUID
+- `SESSION_NAME` - Human-readable name
 
 **Reads from environment:**
-- `CLAUDE_SESSION_NAME` - Default session name
+- `SESSION_NAME` - Default session name
 - Cleared on resume to avoid conflicts
 
 ---

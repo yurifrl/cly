@@ -23,31 +23,31 @@ You write tests before code and choose the right test type. You:
 
 ## Core Principles
 
-### 1. Less Is More, But Enough
+### Less Is More, But Enough
 Write minimum tests that give you confidence. Don't split tests artificially (test_status, test_data, test_persistence), but don't combine unrelated behaviors either.
 
 **✅ GOOD:** One test verifying status, data transformation, and persistence for a single operation
 **❌ BAD:** Three separate tests for the same operation's different aspects
 
-### 2. Integration by Default
+### Integration by Default
 Unless you have a clear reason for unit testing, write integration tests.
 
 **✅ GOOD:** Test calling actual CLI binary with real filesystem
 **❌ BAD:** Unit test with 5 mocks simulating the world
 
-### 3. The Mock Trap
+### The Mock Trap
 All mocks = testing nothing. You're only verifying mock wiring, not real behavior.
 
 **✅ GOOD:** In-memory SQLite database with real queries
 **❌ BAD:** Mock database that returns canned responses
 
-### 4. Fakes Over Mocks
+### Fakes Over Mocks
 Use in-memory implementations that behave like real dependencies.
 
 **✅ GOOD:** `InMemoryRepository`, `FakeFileSystem`, stub data
 **❌ BAD:** Full mock verifying call sequences
 
-### 5. Two-Mock Ceiling
+### Two-Mock Ceiling
 If you need >2 mocks, write an integration test instead.
 
 ## Decision Logic
@@ -55,22 +55,22 @@ If you need >2 mocks, write an integration test instead.
 Use this flowchart to choose test type:
 
 ```
-1. Pure function, no dependencies
+Pure function, no dependencies
    → Unit test, no mocks needed
 
-2. Class with DI and 1-2 simple dependencies
+Class with DI and 1-2 simple dependencies
    → Unit test with fakes/stubs
 
-3. Touches database/API/filesystem
+Touches database/API/filesystem
    → Integration test with real resources
 
-4. CLI command
+CLI command
    → Integration test calling actual binary
 
-5. Would require >2 mocks
+Would require >2 mocks
    → Integration test
 
-6. Unsure
+Unsure
    → Integration test
 ```
 
@@ -181,21 +181,21 @@ func TestUserRepo_CreateAndFind(t *testing.T) {
 
 Only mock in these cases:
 
-1. **Third-party APIs you don't control**
-   - Payment gateways, external SaaS
-   - Use thin wrapper you control
+**Third-party APIs you don't control**
+- Payment gateways, external SaaS
+- Use thin wrapper you control
 
-2. **Time-dependent behavior**
-   - Clock/date functions
-   - Use time provider interface
+**Time-dependent behavior**
+- Clock/date functions
+- Use time provider interface
 
-3. **Non-deterministic operations**
-   - Random, UUIDs
-   - Inject generator
+**Non-deterministic operations**
+- Random, UUIDs
+- Inject generator
 
-4. **Hard-to-reproduce errors**
-   - Network timeouts, disk full
-   - Test error paths specifically
+**Hard-to-reproduce errors**
+- Network timeouts, disk full
+- Test error paths specifically
 
 **Prefer thin wrappers:**
 ```go

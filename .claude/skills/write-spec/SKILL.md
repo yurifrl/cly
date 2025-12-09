@@ -42,10 +42,10 @@ You help create clear, actionable feature specifications.
 ### [Primary use case]
 ```bash
 # Show the actual command
-cly feature --flag value
+cli feature --flag value
 
 # Show variations
-cly feature -f value
+cli feature -f value
 ```
 
 **What happens:**
@@ -57,7 +57,7 @@ cly feature -f value
 ### [Secondary use case]
 ```bash
 # Another example
-cly feature --other-flag
+cli feature --other-flag
 ```
 
 **What happens:**
@@ -75,7 +75,7 @@ Clear description of behavior
 
 **How to use:**
 ```bash
-cly command --example
+cli command --example
 ```
 
 **Options:**
@@ -97,14 +97,14 @@ Show what user sees
 
 **[Error case 1]:**
 ```bash
-cly command --bad-input
+cli command --bad-input
 # Shows: ❌ Error message
 #        Helpful context
 ```
 
 **[Error case 2]:**
 ```bash
-cly command --missing-thing
+cli command --missing-thing
 # Shows: ❌ Different error
 #        What to do instead
 ```
@@ -153,23 +153,23 @@ cly command --missing-thing
 **Usage first:**
 ```bash
 # Good: Show the command
-cly session --name MyProject
+cli session --name MyProject
 
 # Bad: "Users can name sessions"
 ```
 
 **What happens:**
 - Prints: `🏷️  Session: MyProject`
-- Saves to: `~/.config/cly/sessions.json`
+- Saves to: `~/.config/app/sessions.json`
 - Exports: `SESSION_ID=uuid-123`
 
 **Be concrete:**
-- ✅ "Saves to `~/.config/cly/sessions.json`"
+- ✅ "Saves to `~/.config/app/sessions.json`"
 - ❌ "Persists session data"
 
 **Show errors:**
 ```bash
-cly session --resume NonExistent
+cli session --resume NonExistent
 # Shows: ❌ Session not found
 #        Available: MyProject, RedFox
 ```

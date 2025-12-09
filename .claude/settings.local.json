@@ -11,5 +11,10 @@
     "serena",
     "vectorcode",
     "viper_docs"
-  ]
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(openspec change --help:*)"
+    ]
+  }
 }
