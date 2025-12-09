@@ -27,16 +27,16 @@ Automates creation of new modules in the CLY project following established patte
 
 ## Step-by-Step Workflow
 
-### 1. Determine Module Type
+### Determine Module Type
 Ask user if unclear:
 - "Is this a demo (showcase component) or utility (real functionality)?"
 
-### 2. Find Reference (for demos)
+### Find Reference (for demos)
 - Check if component exists in `references/bubbletea/examples/<name>/`
 - Read the reference implementation
 - Note initialization code in main() function
 
-### 3. Create Directory Structure
+### Create Directory Structure
 ```bash
 # For demo:
 mkdir -p modules/demo/<name>
@@ -45,7 +45,7 @@ mkdir -p modules/demo/<name>
 mkdir -p modules/<name>
 ```
 
-### 4. Create cmd.go (Command Registration)
+### Create cmd.go (Command Registration)
 
 **Template for demos:**
 ```go
@@ -79,13 +79,13 @@ func run(cmd *cobra.Command, args []string) error {
 - `tea.WithMouseAllMotion()` - For mouse tracking
 - `tea.WithReportFocus()` - For focus/blur events
 
-### 5. Create Implementation File
+### Create Implementation File
 
 **Extract from reference:**
-1. Copy type definitions (model struct, custom types)
-2. Copy Init(), Update(), View() methods
-3. Create initialModel() from main() function's initialization code
-4. Remove unused imports (fmt, os, log often unused after main() removal)
+- Copy type definitions (model struct, custom types)
+- Copy Init(), Update(), View() methods
+- Create initialModel() from main() function's initialization code
+- Remove unused imports (fmt, os, log often unused after main() removal)
 
 **Template:**
 ```go
@@ -125,7 +125,7 @@ func (m model) View() string {
 }
 ```
 
-### 6. Register Module
+### Register Module
 
 **For demos** - Edit `modules/demo/cmd.go`:
 ```go
@@ -151,7 +151,7 @@ func init() {
 }
 ```
 
-### 7. Validation Checklist
+### Validation Checklist
 
 - [ ] Compiles: `go build`
 - [ ] Shows in help: `go run main.go --help` or `go run main.go demo --help`
@@ -219,11 +219,11 @@ go mod tidy
 
 ## Best Practices
 
-1. **Start from reference** - All 48 Bubbletea examples available in references/
-2. **Copy existing module** - Fastest way to get structure right
-3. **Test incrementally** - Build and run after each file
-4. **Clean imports early** - Remove fmt/os/log before testing
-5. **Follow naming** - Hyphens in names, underscores in packages
+**Start from reference** - All 48 Bubbletea examples available in references/
+**Copy existing module** - Fastest way to get structure right
+**Test incrementally** - Build and run after each file
+**Clean imports early** - Remove fmt/os/log before testing
+**Follow naming** - Hyphens in names, underscores in packages
 
 ## Troubleshooting
 
@@ -266,17 +266,17 @@ go mod tidy
 ## Quick Steps
 
 ### For Demo Modules
-1. Find reference: `references/bubbletea/examples/<component>/`
-2. Copy pattern: `cp -r modules/demo/spinner modules/demo/<newname>`
-3. Adapt implementation from reference
-4. Register in `modules/demo/cmd.go` init()
-5. Test
+- Find reference: `references/bubbletea/examples/<component>/`
+- Copy pattern: `cp -r modules/demo/spinner modules/demo/<newname>`
+- Adapt implementation from reference
+- Register in `modules/demo/cmd.go` init()
+- Test
 
 ### For Utility Modules
-1. Copy pattern: `cp -r modules/uuid modules/<newname>`
-2. Implement functionality
-3. Register in `cmd/root.go` init()
-4. Test
+- Copy pattern: `cp -r modules/uuid modules/<newname>`
+- Implement functionality
+- Register in `cmd/root.go` init()
+- Test
 
 ---
 
@@ -472,12 +472,12 @@ All 48 Bubbletea examples are in `references/bubbletea/examples/` and `modules/d
 
 ### Step-by-Step Process
 
-1. **Find reference**: `references/bubbletea/examples/<component>/main.go`
-2. **Read main() function**: This has initialization code
-3. **Extract to initialModel()**: Move setup from main() to initialModel()
-4. **Copy Model implementation**: Copy type definitions, Init(), Update(), View()
-5. **Clean imports**: Remove `fmt`, `os`, `log` if unused
-6. **Create cmd.go**: Use template above with Register() function
+**Find reference**: `references/bubbletea/examples/<component>/main.go`
+**Read main() function**: This has initialization code
+**Extract to initialModel()**: Move setup from main() to initialModel()
+**Copy Model implementation**: Copy type definitions, Init(), Update(), View()
+**Clean imports**: Remove `fmt`, `os`, `log` if unused
+**Create cmd.go**: Use template above with Register() function
 
 ### Example: Adapting Spinner
 
@@ -547,12 +547,12 @@ func initialModel() model {
 
 ## Tips
 
-1. **Start with existing demos** - 48 working examples to learn from
-2. **Copy working code** - Don't reinvent, adapt from references
-3. **Test frequently** - Build and run after each change
-4. **Keep it simple** - Single file until complexity demands splitting
-5. **Use shared styles** - Import `pkg/style` for consistent theming
-6. **Follow the pattern** - Look at 3-4 similar modules before starting
+**Start with existing demos** - 48 working examples to learn from
+**Copy working code** - Don't reinvent, adapt from references
+**Test frequently** - Build and run after each change
+**Keep it simple** - Single file until complexity demands splitting
+**Use shared styles** - Import `pkg/style` for consistent theming
+**Follow the pattern** - Look at 3-4 similar modules before starting
 
 ---
 

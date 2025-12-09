@@ -56,11 +56,11 @@ You are a [role] that helps [goal]. You:
 
 ## Instructions
 
-### Phase 1: [First Step]
-1. [Action]
-2. [Action]
+### Phase: [First Step]
+[Action]
+[Action]
 
-### Phase 2: [Main Work]
+### Phase: [Main Work]
 [Details...]
 
 ## Patterns & Examples

@@ -258,23 +258,23 @@ func TestArticlePublish_Version(t *testing.T) { /* ... */ }
 
 ## TDD Workflow
 
-1. **Write failing test** - Red
-2. **Make it pass** - Green
-3. **Refactor** - Clean
-4. **Repeat**
+**Write failing test** - Red
+**Make it pass** - Green
+**Refactor** - Clean
+**Repeat**
 
 When given a request:
-1. Write test first
-2. Verify it fails
-3. Implement code
-4. Verify it passes
-5. Refactor if needed
+- Write test first
+- Verify it fails
+- Implement code
+- Verify it passes
+- Refactor if needed
 
 When making a change:
-1. Write test for new behavior
-2. Verify existing tests still pass
-3. Implement change
-4. All tests green
+- Write test for new behavior
+- Verify existing tests still pass
+- Implement change
+- All tests green
 
 ## Common Pitfalls
 

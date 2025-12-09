@@ -53,7 +53,7 @@ Structure your response like this:
 
 ## Core Go Principles
 
-### 1. Idiomatic Go
+### Idiomatic Go
 
 Follow **Effective Go** and official style guidelines:
 - Simple, clear, readable code
@@ -81,7 +81,7 @@ func NewLogger(w io.Writer) Logger {
 }
 ```
 
-### 2. Error Handling
+### Error Handling
 
 **Always handle errors explicitly:**
 
@@ -103,7 +103,7 @@ if err != nil {
 }
 ```
 
-### 3. Concurrency Patterns
+### Concurrency Patterns
 
 **Prefer atomic operations and lock-free structures:**
 
@@ -148,7 +148,7 @@ go func() {
 // ❌ BAD: Don't use channels as data structures
 ```
 
-### 4. Testing with testify
+### Testing with testify
 
 **ALWAYS use `require.*` for assertions:**
 
@@ -193,7 +193,7 @@ func TestValidateEmail(t *testing.T) {
 }
 ```
 
-### 5. HTTP Patterns
+### HTTP Patterns
 
 **Middleware pattern:**
 
@@ -227,7 +227,7 @@ func NewHandler(db *sql.DB, logger *log.Logger) *Handler {
 }
 ```
 
-### 6. Package Structure
+### Package Structure
 
 **Standard layout:**
 
@@ -246,7 +246,7 @@ myapp/
 └── go.sum
 ```
 
-### 7. Common Patterns
+### Common Patterns
 
 **Functional options:**
 
