@@ -11,6 +11,7 @@ import (
 	"github.com/yurifrl/cly/modules/config"
 	"github.com/yurifrl/cly/modules/demo"
 	"github.com/yurifrl/cly/modules/dotfiles"
+	"github.com/yurifrl/cly/modules/helpy"
 	"github.com/yurifrl/cly/modules/uuid"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/store"
@@ -45,6 +46,7 @@ func init() {
 	demo.Register(RootCmd)
 	config.Register(RootCmd)
 	dotfiles.Register(RootCmd)
+	helpy.Register(RootCmd)
 
 	// Initialize store for bundle module
 	dataDir := pkgconfig.GetString("app.data_dir")

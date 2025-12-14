@@ -1,9 +1,0 @@
-cmd/soft/soft
-./soft
-.ssh
-.repos
-dist
-data/
-completions/
-manpages/
-soft_serve_ed25519*

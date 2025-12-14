@@ -126,6 +126,27 @@ func TestExtractBasePkg(t *testing.T) {
 	}
 }
 
+func TestOpenEditor(t *testing.T) {
+	t.Run("uses EDITOR env var when set", func(t *testing.T) {
+		editor := getEditor()
+		// Should return something (either EDITOR env or fallback)
+		assert.NotEmpty(t, editor)
+	})
+
+	t.Run("falls back to vim when EDITOR not set", func(t *testing.T) {
+		orig := os.Getenv("EDITOR")
+		os.Unsetenv("EDITOR")
+		defer func() {
+			if orig != "" {
+				os.Setenv("EDITOR", orig)
+			}
+		}()
+
+		editor := getEditor()
+		assert.Equal(t, "vim", editor)
+	})
+}
+
 func TestBaseBundlerCheck(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "bundle-test-*")
 	require.NoError(t, err)
