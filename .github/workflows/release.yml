@@ -66,28 +66,6 @@ jobs:
           name: linux-binaries
           path: dist/*
 
-  build-macos-amd64:
-    needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: macos-15-large
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: Build macOS amd64 binaries
-        run: |
-          VERSION=$(cat VERSION)
-          mkdir -p dist
-          CGO_ENABLED=1 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-darwin-amd64 .
-          CGO_ENABLED=1 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-darwin-amd64 ./cmd/mcp
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-amd64-binaries
-          path: dist/*
-
   build-macos-arm64:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
@@ -134,7 +112,7 @@ jobs:
           path: dist/*
 
   release:
-    needs: [check-version, build-linux, build-macos-amd64, build-macos-arm64, build-windows]
+    needs: [check-version, build-linux, build-macos-arm64, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
