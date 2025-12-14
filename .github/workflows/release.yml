@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_exists: ${{ steps.check_tag.outputs.exists }}
+      should_release: ${{ steps.should_release.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read VERSION
+        id: version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "v$(cat VERSION)" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Should release?
+        id: should_release
+        run: |
+          if [ "${{ steps.check_tag.outputs.exists }}" = "false" ]; then
+            echo "result=true" >> $GITHUB_OUTPUT
+          else
+            echo "result=false" >> $GITHUB_OUTPUT
+          fi
+
+  release:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build binaries
+        run: |
+          VERSION=$(cat VERSION)
+          mkdir -p dist
+
+          # CLY binaries
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-darwin-arm64 .
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-linux-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-windows-amd64.exe .
+
+          # MCP binaries
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-darwin-amd64 ./cmd/mcp
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-darwin-arm64 ./cmd/mcp
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-linux-amd64 ./cmd/mcp
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-linux-arm64 ./cmd/mcp
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-windows-amd64.exe ./cmd/mcp
+
+          # Checksums
+          cd dist && sha256sum * > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.check-version.outputs.version }}
+          name: CLY ${{ needs.check-version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

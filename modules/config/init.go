@@ -51,7 +51,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	defaultContent := `app:
   name: cly
   debug: false
-  version: 0.1.0
   config_dir: ~/.config/cly
   data_dir: ~/.local/share/cly
 

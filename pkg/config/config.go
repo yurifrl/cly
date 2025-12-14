@@ -12,7 +12,6 @@ import (
 var defaultConfig = []byte(`app:
   name: cly
   debug: false
-  version: 0.1.0
   config_dir: ~/.config/cly
   data_dir: ~/.local/share/cly
 
@@ -39,7 +38,6 @@ type Config struct {
 	App struct {
 		Name      string `yaml:"name"`
 		Debug     bool   `yaml:"debug"`
-		Version   string `yaml:"version"`
 		ConfigDir string `yaml:"config_dir"`
 		DataDir   string `yaml:"data_dir"`
 	} `yaml:"app"`

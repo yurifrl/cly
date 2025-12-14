@@ -1,7 +1,6 @@
 app:
   name: cly
   debug: false
-  version: 0.1.1
   config_dir: ~/.config/cly
   data_dir: ~/.local/share/cly
 
