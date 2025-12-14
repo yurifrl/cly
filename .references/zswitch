@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# zswitch - Zellij session switcher wrapper
+# Easily switch between Zellij sessions using zellij-switch plugin
+
+set -euo pipefail
+
+# Plugin path (using tilde expansion for portability)
+PLUGIN_PATH="file:~/.config/zellij/plugins/zellij-switch.wasm"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Generate Fish completions
+generate_completions() {
+    cat <<'EOF'
+# Fish completions for zswitch
+complete -c zswitch -f
+complete -c zswitch -s s -l session -f -r -d "Session name to switch to" -a "(zellij list-sessions --no-formatting --short 2>/dev/null)"
+complete -c zswitch -s c -l cwd -r -d "Working directory (absolute path)"
+complete -c zswitch -s l -l layout -f -r -d "Layout to use" -a "(ls ~/.config/zellij/layouts/*.kdl 2>/dev/null | xargs -n1 basename | sed 's/.kdl\$//')"
+complete -c zswitch -s h -l help -f -d "Show help message"
+complete -c zswitch -l generate-completions -f -d "Generate shell completions"
+EOF
+}
+
+# Show usage
+usage() {
+    cat <<EOF
+Usage: zswitch [OPTIONS]
+
+Switch between Zellij sessions without detaching.
+
+OPTIONS:
+    -s, --session <name>       Session name to switch to (required)
+    -c, --cwd <path>           Working directory (absolute path)
+    -l, --layout <layout>      Layout to use
+    -h, --help                 Show this help message
+    --generate-completions     Generate Fish shell completions
+
+EXAMPLES:
+    # Switch to a session named "work"
+    zswitch -s work
+
+    # Switch to session with specific working directory
+    zswitch -s dotfiles -c $HOME/DotFiles
+
+    # Switch to session with layout
+    zswitch -s dev -l compact
+
+    # Switch with all options
+    zswitch -s project -c /Users/yuri/WORKDIR/WIP -l default
+
+NOTES:
+    - Must be run from within a Zellij session
+    - Session names with spaces are supported
+    - CWD must be an absolute path
+
+EOF
+}
+
+# Parse arguments
+SESSION=""
+CWD=""
+LAYOUT=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --generate-completions)
+            generate_completions
+            exit 0
+            ;;
+        -s|--session)
+            SESSION="$2"
+            shift 2
+            ;;
+        -c|--cwd)
+            CWD="$2"
+            shift 2
+            ;;
+        -l|--layout)
+            LAYOUT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}✗${NC} Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Check if running in Zellij
+if [[ -z "${ZELLIJ:-}" ]]; then
+    echo -e "${RED}✗${NC} Error: Not running in Zellij session"
+    exit 1
+fi
+
+# Validate session name is provided
+if [[ -z "$SESSION" ]]; then
+    echo -e "${RED}✗${NC} Error: Session name is required"
+    usage
+    exit 1
+fi
+
+# Build plugin arguments
+PLUGIN_ARGS="--session $SESSION"
+[[ -n "$CWD" ]] && PLUGIN_ARGS="$PLUGIN_ARGS --cwd $CWD"
+[[ -n "$LAYOUT" ]] && PLUGIN_ARGS="$PLUGIN_ARGS --layout $LAYOUT"
+
+# Execute the switch
+echo -e "${BLUE}→${NC} Switching to session: ${GREEN}$SESSION${NC}"
+[[ -n "$CWD" ]] && echo -e "${BLUE}→${NC} Working directory: ${YELLOW}$CWD${NC}"
+[[ -n "$LAYOUT" ]] && echo -e "${BLUE}→${NC} Layout: ${YELLOW}$LAYOUT${NC}"
+
+# Run the plugin
+zellij pipe --plugin "$PLUGIN_PATH" -- "$PLUGIN_ARGS"
+
+echo -e "${GREEN}✓${NC} Session switch command sent"
