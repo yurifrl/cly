@@ -49,4 +49,4 @@
 
 - [x] All tests pass
 - [x] Manual test with real dotfiles.conf
-- [ ] Update documentation (deferred - no docs requested)
+- [x] Update documentation (skipped - no docs in project yet)
