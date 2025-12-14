@@ -94,13 +94,3 @@ tasks:
     desc: Update submodules to latest
     cmds:
       - git submodule update --remote --merge
-
-  release:snapshot:
-    desc: Test release build locally with goreleaser
-    cmds:
-      - goreleaser release --snapshot --clean --skip=publish
-
-  release:check:
-    desc: Validate goreleaser config
-    cmds:
-      - goreleaser check
