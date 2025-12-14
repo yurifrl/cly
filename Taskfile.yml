@@ -45,3 +45,13 @@ tasks:
     desc: Create git worktree in .worktrees/<name>
     cmds:
       - git worktree add .worktrees/{{.CLI_ARGS}} -b {{.CLI_ARGS}}
+
+  ref:init:
+    desc: Initialize submodules after clone
+    cmds:
+      - git submodule update --init --recursive
+
+  ref:update:
+    desc: Update submodules to latest
+    cmds:
+      - git submodule update --remote --merge
