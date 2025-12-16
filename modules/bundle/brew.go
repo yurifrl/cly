@@ -35,13 +35,16 @@ func (b *BrewBundler) CheckDeps() error {
 	return nil
 }
 
-func (b *BrewBundler) Sync(bundleFile string, verbose bool) error {
+func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool) error {
 	bundleFile = expandPath(bundleFile)
 	fmt.Printf("Syncing Homebrew packages from %s\n\n", bundleFile)
 
 	args := []string{"bundle", "--file=" + bundleFile}
 	if verbose {
 		args = append(args, "--verbose")
+	}
+	if force {
+		args = append(args, "--force")
 	}
 
 	cmd := exec.Command("brew", args...)
@@ -73,11 +76,14 @@ func (b *BrewBundler) Check(bundleFile string) error {
 	return nil
 }
 
-func (b *BrewBundler) Cleanup(bundleFile string, verbose bool) error {
+func (b *BrewBundler) Cleanup(bundleFile string, verbose bool, force bool) error {
 	bundleFile = expandPath(bundleFile)
 	fmt.Printf("Cleaning up Homebrew packages not in %s\n\n", bundleFile)
 
-	args := []string{"bundle", "cleanup", "--file=" + bundleFile, "--force"}
+	args := []string{"bundle", "cleanup", "--file=" + bundleFile}
+	if force {
+		args = append(args, "--force")
+	}
 	if verbose {
 		args = append(args, "--verbose")
 	}

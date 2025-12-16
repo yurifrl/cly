@@ -94,11 +94,12 @@ func commandExists(name string) bool {
 
 // baseBundler provides common functionality for bundlers that use the Store.
 type baseBundler struct {
-	name        string
-	defaultFile string
-	store       store.Store
-	installFn   func(pkg string, verbose bool) error
-	uninstallFn func(pkg string, verbose bool) error
+	name            string
+	defaultFile     string
+	store           store.Store
+	installFn       func(pkg string, verbose bool, force bool) error
+	uninstallFn     func(pkg string, verbose bool) error
+	listInstalledFn func() ([]string, error) // optional: check actual system state
 }
 
 func (b *baseBundler) Name() string {
@@ -109,15 +110,24 @@ func (b *baseBundler) DefaultFile() string {
 	return b.defaultFile
 }
 
-func (b *baseBundler) Sync(bundleFile string, verbose bool) error {
+func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool) error {
 	desired, err := parseFile(bundleFile)
 	if err != nil {
 		return err
 	}
 
-	installed, err := b.store.List(b.name)
-	if err != nil {
-		return fmt.Errorf("failed to list installed packages: %w", err)
+	// Use actual system state if available, otherwise fall back to store
+	var installed []string
+	if b.listInstalledFn != nil {
+		installed, err = b.listInstalledFn()
+		if err != nil {
+			return fmt.Errorf("failed to list installed packages: %w", err)
+		}
+	} else {
+		installed, err = b.store.List(b.name)
+		if err != nil {
+			return fmt.Errorf("failed to list installed packages: %w", err)
+		}
 	}
 
 	toRemove := diff(installed, desired)
@@ -131,10 +141,19 @@ func (b *baseBundler) Sync(bundleFile string, verbose bool) error {
 		}
 	}
 
+	var toInstall []string
+	if force {
+		// Force reinstall all desired packages
+		toInstall = desired
+	} else {
+		// Only install missing packages
+		toInstall = diff(desired, installed)
+	}
+
 	var failed []string
-	for _, pkg := range desired {
+	for _, pkg := range toInstall {
 		printGreen(fmt.Sprintf("Installing: %s", pkg))
-		if err := b.installFn(pkg, verbose); err != nil {
+		if err := b.installFn(pkg, verbose, force); err != nil {
 			printRed(fmt.Sprintf("Failed to install %s: %v", pkg, err))
 			failed = append(failed, pkg)
 			continue
@@ -158,9 +177,18 @@ func (b *baseBundler) Check(bundleFile string) error {
 		return err
 	}
 
-	installed, err := b.store.List(b.name)
-	if err != nil {
-		return fmt.Errorf("failed to list installed packages: %w", err)
+	// Use actual system state if available, otherwise fall back to store
+	var installed []string
+	if b.listInstalledFn != nil {
+		installed, err = b.listInstalledFn()
+		if err != nil {
+			return fmt.Errorf("failed to list installed packages: %w", err)
+		}
+	} else {
+		installed, err = b.store.List(b.name)
+		if err != nil {
+			return fmt.Errorf("failed to list installed packages: %w", err)
+		}
 	}
 
 	toInstall := diff(desired, installed)
@@ -188,7 +216,7 @@ func (b *baseBundler) Check(bundleFile string) error {
 	return fmt.Errorf("changes needed")
 }
 
-func (b *baseBundler) Cleanup(bundleFile string, verbose bool) error {
+func (b *baseBundler) Cleanup(bundleFile string, verbose bool, force bool) error {
 	desired, err := parseFile(bundleFile)
 	if err != nil {
 		return err

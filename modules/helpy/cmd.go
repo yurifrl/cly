@@ -3,6 +3,7 @@ package helpy
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 const defaultFilePath = "~/DotFiles/HELP.md"
 
 var fileFlag string
+var claudeFlag bool
 
 var errorStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
@@ -31,6 +33,7 @@ func Register(parent *cobra.Command) {
 	}
 
 	cmd.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
+	cmd.Flags().BoolVarP(&claudeFlag, "claude", "c", false, "open Claude Code for DotFiles Q&A")
 
 	// Create alias command
 	alias := &cobra.Command{
@@ -39,12 +42,17 @@ func Register(parent *cobra.Command) {
 		RunE:  run,
 	}
 	alias.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
+	alias.Flags().BoolVarP(&claudeFlag, "claude", "c", false, "open Claude Code for DotFiles Q&A")
 
 	parent.AddCommand(cmd)
 	parent.AddCommand(alias)
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	if claudeFlag {
+		return runClaude(cmd, args)
+	}
+
 	path := expandPath(fileFlag)
 
 	if !fileExists(path) {
@@ -95,4 +103,18 @@ func readFileContent(path string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+func runClaude(cmd *cobra.Command, args []string) error {
+	dotfilesPath := expandPath("~/DotFiles")
+
+	systemPrompt := "You are a question answerer for system configuration in ~/DotFiles. Your role is to explain configurations, find settings, and answer questions about the dotfiles, neovim config, shell configs, and system utilities. ONLY modify or change files if explicitly instructed. Default to reading and explaining, not editing."
+
+	claudeCmd := exec.Command("claude", "--system-prompt", systemPrompt)
+	claudeCmd.Dir = dotfilesPath
+	claudeCmd.Stdin = os.Stdin
+	claudeCmd.Stdout = os.Stdout
+	claudeCmd.Stderr = os.Stderr
+
+	return claudeCmd.Run()
 }

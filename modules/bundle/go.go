@@ -72,7 +72,7 @@ func (b *GoBundler) detectGobin() string {
 	return filepath.Join(home, "go", "bin")
 }
 
-func (b *GoBundler) install(pkg string, verbose bool) error {
+func (b *GoBundler) install(pkg string, verbose bool, force bool) error {
 	// Set GOBIN for mise integration
 	env := os.Environ()
 	env = append(env, "GOBIN="+b.gobin)

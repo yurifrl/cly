@@ -13,6 +13,7 @@ var (
 	fileFlag    string
 	verboseFlag bool
 	noItFlag    bool
+	forceFlag   bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -52,6 +53,7 @@ Types:
 	cmd.Flags().StringVarP(&fileFlag, "file", "f", "", "override bundle file path")
 	cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "show detailed output")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "skip interactive editor mode, just sync")
+	cmd.Flags().BoolVar(&forceFlag, "force", true, "force reinstall packages even if already installed")
 
 	cmd.AddCommand(checkCmd(bundlers))
 	cmd.AddCommand(cleanupCmd(bundlers))
@@ -92,7 +94,7 @@ func cleanupCmd(bundlers map[string]Bundler) *cobra.Command {
 func runSync(bundlers map[string]Bundler, bundleType string) error {
 	if bundleType == "all" {
 		return runAll(bundlers, func(b Bundler) error {
-			return b.Sync(getBundleFile(b), verboseFlag)
+			return b.Sync(getBundleFile(b), verboseFlag, forceFlag)
 		})
 	}
 
@@ -105,7 +107,7 @@ func runSync(bundlers map[string]Bundler, bundleType string) error {
 		return err
 	}
 
-	return bundler.Sync(getBundleFile(bundler), verboseFlag)
+	return bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag)
 }
 
 func runCheck(bundlers map[string]Bundler, bundleType string) error {
@@ -130,7 +132,7 @@ func runCheck(bundlers map[string]Bundler, bundleType string) error {
 func runCleanup(bundlers map[string]Bundler, bundleType string) error {
 	if bundleType == "all" {
 		return runAll(bundlers, func(b Bundler) error {
-			return b.Cleanup(getBundleFile(b), verboseFlag)
+			return b.Cleanup(getBundleFile(b), verboseFlag, forceFlag)
 		})
 	}
 
@@ -143,7 +145,7 @@ func runCleanup(bundlers map[string]Bundler, bundleType string) error {
 		return err
 	}
 
-	return bundler.Cleanup(getBundleFile(bundler), verboseFlag)
+	return bundler.Cleanup(getBundleFile(bundler), verboseFlag, forceFlag)
 }
 
 func runAll(bundlers map[string]Bundler, fn func(Bundler) error) error {
@@ -216,5 +218,5 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 	}
 
 	fmt.Println("\n=== Syncing ===")
-	return bundler.Sync(bundleFile, verboseFlag)
+	return bundler.Sync(bundleFile, verboseFlag, forceFlag)
 }

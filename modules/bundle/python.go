@@ -38,8 +38,11 @@ func (b *PythonBundler) CheckDeps() error {
 	return nil
 }
 
-func (b *PythonBundler) install(pkg string, verbose bool) error {
+func (b *PythonBundler) install(pkg string, verbose bool, force bool) error {
 	args := []string{"tool", "install", pkg}
+	if force {
+		args = append(args, "--force")
+	}
 	cmd := exec.Command("uv", args...)
 
 	if verbose {
