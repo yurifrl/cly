@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/modules/ai"
 	"github.com/yurifrl/cly/modules/bundle"
 	"github.com/yurifrl/cly/modules/claude"
 	"github.com/yurifrl/cly/modules/config"
@@ -42,6 +43,7 @@ Press 'q' or Ctrl+C to quit any demo.`,
 
 func init() {
 	RootCmd.SetVersionTemplate(fmt.Sprintf("cly %s\n", Version))
+	ai.Register(RootCmd)
 	claude.Register(RootCmd)
 	uuid.Register(RootCmd)
 	demo.Register(RootCmd)
