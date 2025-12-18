@@ -2,8 +2,10 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -32,8 +34,10 @@ modules:
   dotfiles:
     directory: ~/DotFiles
     zellij_plugins_dir: ~/.config/zellij/plugins
-  backup:
-    gcs_bucket: ""
+  # Example: Use 1Password secrets with op:// references
+  # backup:
+  #   gcs_bucket: op://Personal/gcs-backup/bucket-name
+  #   gcs_token: op://Personal/gcs-backup/token
 `)
 
 type Config struct {
@@ -56,6 +60,11 @@ type Config struct {
 }
 
 var globalConfig *Config
+
+// newOpResolverFunc is a variable to allow test override
+var newOpResolverFunc = func() *OpResolver {
+	return NewOpResolver()
+}
 
 func Load() (*Config, error) {
 	v := viper.New()
@@ -91,6 +100,17 @@ func Load() (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
+	}
+
+	// Resolve secrets in modules section
+	if len(cfg.Modules) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		resolver := newOpResolverFunc()
+		if err := resolveSecretsInPlace(ctx, resolver, cfg.Modules); err != nil {
+			return nil, err
+		}
 	}
 
 	globalConfig = &cfg

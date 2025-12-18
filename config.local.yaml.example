@@ -3,7 +3,7 @@
 
 modules:
   backup:
-    gcs_bucket: your-bucket-name-here
+    gcs_bucket: op://my-gcs-bucket/backups
 
   dotfiles:
     directory: ~/DotFiles
