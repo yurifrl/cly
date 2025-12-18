@@ -32,6 +32,8 @@ modules:
   dotfiles:
     directory: ~/DotFiles
     zellij_plugins_dir: ~/.config/zellij/plugins
+  backup:
+    gcs_bucket: ""
 `)
 
 type Config struct {
@@ -57,21 +59,30 @@ var globalConfig *Config
 
 func Load() (*Config, error) {
 	v := viper.New()
-	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 
-	// Add search paths (Viper checks in order)
 	homeDir, _ := os.UserHomeDir()
-	v.AddConfigPath(filepath.Join(homeDir, ".config/cly"))
-	v.AddConfigPath(".")
+	configDir := filepath.Join(homeDir, ".config/cly")
 
 	// Enable env var support with CLY_ prefix
 	v.SetEnvPrefix("CLY")
 	v.AutomaticEnv()
 
-	// Try reading config file
-	if err := v.ReadInConfig(); err != nil {
-		// No config file found, load embedded defaults
+	// Try config.local.yaml first (not committed), then config.yaml
+	configFound := false
+	for _, configName := range []string{"config.local", "config"} {
+		v.SetConfigName(configName)
+		v.AddConfigPath(configDir)
+		v.AddConfigPath(".")
+
+		if err := v.ReadInConfig(); err == nil {
+			configFound = true
+			break
+		}
+	}
+
+	// No config file found, load embedded defaults
+	if !configFound {
 		if err := v.ReadConfig(bytes.NewBuffer(defaultConfig)); err != nil {
 			return nil, err
 		}
@@ -95,18 +106,29 @@ func Get() *Config {
 
 func GetString(key string) string {
 	v := viper.New()
-	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 
 	homeDir, _ := os.UserHomeDir()
-	v.AddConfigPath(filepath.Join(homeDir, ".config/cly"))
-	v.AddConfigPath(".")
+	configDir := filepath.Join(homeDir, ".config/cly")
 
 	v.SetEnvPrefix("CLY")
 	v.AutomaticEnv()
 
-	// Try reading config, fall back to defaults
-	if err := v.ReadInConfig(); err != nil {
+	// Try config.local.yaml first, then config.yaml
+	configFound := false
+	for _, configName := range []string{"config.local", "config"} {
+		v.SetConfigName(configName)
+		v.AddConfigPath(configDir)
+		v.AddConfigPath(".")
+
+		if err := v.ReadInConfig(); err == nil {
+			configFound = true
+			break
+		}
+	}
+
+	// Fall back to defaults if no config found
+	if !configFound {
 		v.ReadConfig(bytes.NewBuffer(defaultConfig))
 	}
 

@@ -20,3 +20,6 @@ modules:
     show_count: true
   dotfiles:
     directory: ~/DotFiles
+  backup:
+    # GCS bucket for backups (configure in config.local.yaml)
+    gcs_bucket: ""

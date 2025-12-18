@@ -2,6 +2,10 @@
 .task
 .serena
 
+# Local config (not committed)
+config.local.yaml
+config.local.yml
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
