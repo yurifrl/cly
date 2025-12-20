@@ -18,27 +18,26 @@ func TestNewClient(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		apiKey  string
-		model   string
+		flags   map[string]interface{}
 		wantErr bool
 	}{
 		{
-			name:    "valid config",
-			apiKey:  "sk-ant-test-key",
-			model:   "claude-sonnet-4-5",
+			name: "with model",
+			flags: map[string]interface{}{
+				"model": "claude-sonnet-4-5",
+			},
 			wantErr: false,
 		},
 		{
-			name:    "empty model defaults",
-			apiKey:  "sk-ant-test-key",
-			model:   "",
+			name:    "empty flags",
+			flags:   map[string]interface{}{},
 			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewClient(tt.apiKey, tt.model)
+			client, err := NewClient(tt.flags)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -46,7 +45,6 @@ func TestNewClient(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.NotNil(t, client)
-				assert.NotEmpty(t, client.model)
 			}
 		})
 	}
@@ -59,12 +57,14 @@ func TestClient_SendMessage(t *testing.T) {
 	}
 
 	// Skip if no API key
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
+	if os.Getenv("ANTHROPIC_API_KEY") == "" {
 		t.Skip("ANTHROPIC_API_KEY not set")
 	}
 
-	client, err := NewClient(apiKey, "claude-sonnet-4-5")
+	flags := map[string]interface{}{
+		"model": "claude-3-5-sonnet-latest",
+	}
+	client, err := NewClient(flags)
 	require.NoError(t, err)
 
 	tests := []struct {

@@ -10,6 +10,7 @@ import (
 func TestGenerateConversationID(t *testing.T) {
 	id := GenerateConversationID()
 
-	assert.True(t, strings.HasPrefix(id, "modsi-"), "ID should start with modsi-")
-	assert.Greater(t, len(id), len("modsi-"), "ID should have timestamp")
+	assert.NotEmpty(t, id, "ID should not be empty")
+	assert.True(t, strings.Contains(id, "-"), "ID should be hyphenated (adjective-noun format)")
+	assert.Greater(t, len(id), 5, "ID should be at least a few characters")
 }

@@ -1,11 +1,13 @@
 package ai
 
 import (
-	"fmt"
-	"time"
+	"math/rand"
+
+	"github.com/lucasepe/codename"
 )
 
-// GenerateConversationID creates a new conversation ID with timestamp
+// GenerateConversationID creates a new conversation ID with human-readable format
 func GenerateConversationID() string {
-	return fmt.Sprintf("modsi-%d", time.Now().Unix())
+	rng := rand.New(rand.NewSource(rand.Int63()))
+	return codename.Generate(rng, 0)
 }

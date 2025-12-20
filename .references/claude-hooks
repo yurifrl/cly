@@ -1,0 +1,219 @@
+#!/bin/bash
+
+# Sound control: checks file first, then env var, defaults to off
+SOUND_CONFIG_FILE="$HOME/.config/claude/sound"
+if [[ -f "$SOUND_CONFIG_FILE" ]]; then
+    SOUND_ENABLED=$(cat "$SOUND_CONFIG_FILE" 2>/dev/null | tr -d '[:space:]')
+else
+    SOUND_ENABLED="${SOUND:-off}"
+fi
+
+# Check CLAUDE_VERBOSE environment variable (default is 1 if not set)
+CLAUDE_VERBOSE="${CLAUDE_VERBOSE:-1}"
+
+# If CLAUDE_VERBOSE is 0, disable all notifications and sounds
+if [[ "$CLAUDE_VERBOSE" == "0" ]]; then
+    # Pass through any input and exit silently
+    if [[ -p /dev/stdin ]]; then
+        cat
+    fi
+    exit 0
+fi
+
+# Build context string from session names
+CONTEXT_STR=""
+if [[ -n "$ZELLIJ_SESSION_NAME" ]]; then
+    CONTEXT_STR="[${ZELLIJ_SESSION_NAME}]"
+fi
+if [[ -n "$CLAUDE_SESSION_NAME" ]]; then
+    if [[ -n "$CONTEXT_STR" ]]; then
+        CONTEXT_STR="${CONTEXT_STR} ${CLAUDE_SESSION_NAME}"
+    else
+        CONTEXT_STR="$CLAUDE_SESSION_NAME"
+    fi
+fi
+
+# Function to send notification
+send_notification() {
+    local title="$1"
+    local subtitle="$2"
+    local message="$3"
+    local sound="$4"
+    local group="$5"
+    
+    if command -v terminal-notifier >/dev/null 2>&1; then
+        if [[ "$SOUND_ENABLED" == "on" ]]; then
+            terminal-notifier \
+                -title "$title" \
+                -subtitle "$subtitle" \
+                -message "$message" \
+                -sound "$sound" \
+                -group "$group" \
+                >/dev/null 2>&1 &
+        else
+            terminal-notifier \
+                -title "$title" \
+                -subtitle "$subtitle" \
+                -message "$message" \
+                -group "$group" \
+                >/dev/null 2>&1 &
+        fi
+    fi
+}
+
+# Determine notification type based on arguments
+case "$1" in
+    notification)
+        TITLE="🔔 Claude Task"
+        SUBTITLE="Starting"
+        MESSAGE="New task"
+        [[ -n "$CONTEXT_STR" ]] && MESSAGE="${MESSAGE} ${CONTEXT_STR}"
+        NOTIFICATION_SOUND="Glass"
+        GROUP="claude-task-start"
+        # Send to zellij status bar
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe "zjstatus::notify::🔔 Task notification" >/dev/null 2>&1 &
+        fi
+        # Append emoji to current tab (NEW SYNTAX: positional argument)
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe -n "notify" "notification" >/dev/null 2>&1 &
+        fi
+        send_notification "$TITLE" "$SUBTITLE" "$MESSAGE" "$NOTIFICATION_SOUND" "$GROUP"
+        ;;
+    posttooluse)
+        # PostToolUse hook - silent, just update tab (NEW SYNTAX: positional argument)
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe -n "notify" "posttooluse" >/dev/null 2>&1 &
+        fi
+        exit 0
+        ;;
+    stop|complete)
+        TITLE="✅ Claude Complete"
+        SUBTITLE="Finished"
+        MESSAGE="Task completed"
+        [[ -n "$CONTEXT_STR" ]] && MESSAGE="${MESSAGE} ${CONTEXT_STR}"
+        NOTIFICATION_SOUND="Blow"
+        GROUP="claude-task-complete"
+        # Send to zellij status bar
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe "zjstatus::notify::✅ Task completed" >/dev/null 2>&1 &
+        fi
+        # Append success emoji to current tab (NEW SYNTAX: positional argument)
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe -n "notify" "stop" >/dev/null 2>&1 &
+        fi
+        send_notification "$TITLE" "$SUBTITLE" "$MESSAGE" "$NOTIFICATION_SOUND" "$GROUP"
+        ;;
+    hook)
+        # Hook mode - handle data from Claude hooks
+        hook_data=""
+        if [[ -p /dev/stdin ]]; then
+            hook_data=$(cat)
+        fi
+
+        TITLE="🪝 Claude Hook"
+        SUBTITLE="Triggered"
+        MESSAGE="Hook event received"
+        [[ -n "$CONTEXT_STR" ]] && MESSAGE="${MESSAGE} ${CONTEXT_STR}"
+        NOTIFICATION_SOUND="Submarine"
+        GROUP="claude-hook"
+
+        # Send notification
+        send_notification "$TITLE" "$SUBTITLE" "$MESSAGE" "$NOTIFICATION_SOUND" "$GROUP"
+
+        # Send to zellij status bar
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe "zjstatus::notify::🪝 Hook triggered" >/dev/null 2>&1 &
+        fi
+
+        # Append emoji to current tab
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe "zellij-notify::append::⚡" >/dev/null 2>&1 &
+        fi
+
+        # Pass through hook data
+        if [[ -n "$hook_data" ]]; then
+            echo "$hook_data"
+        fi
+        exit 0
+        ;;
+    sound)
+        # Toggle sound on/off
+        case "$2" in
+            on|enable)
+                mkdir -p "$(dirname "$SOUND_CONFIG_FILE")"
+                echo "on" > "$SOUND_CONFIG_FILE"
+                echo "✅ Sound notifications enabled"
+                ;;
+            off|disable)
+                mkdir -p "$(dirname "$SOUND_CONFIG_FILE")"
+                echo "off" > "$SOUND_CONFIG_FILE"
+                echo "🔇 Sound notifications disabled"
+                ;;
+            status|"")
+                if [[ "$SOUND_ENABLED" == "on" ]]; then
+                    echo "🔔 Sound is currently ON"
+                else
+                    echo "🔇 Sound is currently OFF"
+                fi
+                ;;
+            *)
+                echo "Usage: claude-hooks sound [on|off|status]"
+                exit 1
+                ;;
+        esac
+        exit 0
+        ;;
+    --help|-h)
+        echo "Usage: claude-hooks [OPTIONS]"
+        echo "Options:"
+        echo "  notification      Notification for task start"
+        echo "  stop              Notification for task completion"
+        echo "  complete          Same as stop"
+        echo "  hook              Hook mode (for Claude hooks)"
+        echo "  posttooluse       Silent tool use update"
+        echo "  sound [on|off]    Enable/disable notification sounds"
+        echo "  --help            Show this help"
+        echo ""
+        echo "Environment Variables:"
+        echo "  CLAUDE_VERBOSE         Set to 0 to disable all notifications (default: 1)"
+        echo "  SOUND                  Set to 'on' to enable sounds (default: off)"
+        echo "  ZELLIJ_SESSION_NAME    If set, included in notification messages"
+        echo "  CLAUDE_SESSION_NAME    If set, included in notification messages"
+        echo ""
+        echo "Sound Configuration:"
+        echo "  Sound preference is stored in: ~/.config/claude/sound"
+        echo "  Use 'claude-hooks sound on' to enable sounds"
+        echo "  Use 'claude-hooks sound off' to disable sounds"
+        echo ""
+        echo "Notification Sounds:"
+        echo "  notification      Glass"
+        echo "  stop/complete     Blow"
+        echo "  hook              Submarine"
+        echo "  default           Ping"
+        exit 0
+        ;;
+    "")
+        # No arguments - default notification
+        TITLE="📢 Claude"
+        SUBTITLE="Notification"
+        MESSAGE="Claude notification received"
+        [[ -n "$CONTEXT_STR" ]] && MESSAGE="${MESSAGE} ${CONTEXT_STR}"
+        NOTIFICATION_SOUND="Ping"
+        GROUP="claude-default"
+        # Send to zellij status bar
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe "zjstatus::notify::📢 Claude notification" >/dev/null 2>&1 &
+        fi
+        # Append emoji to current tab
+        if command -v zellij >/dev/null 2>&1 && [[ -n "$ZELLIJ" ]]; then
+            zellij pipe "zellij-notify::append::⚡" >/dev/null 2>&1 &
+        fi
+        send_notification "$TITLE" "$SUBTITLE" "$MESSAGE" "$NOTIFICATION_SOUND" "$GROUP"
+        ;;
+    *)
+        echo "Unknown option: $1"
+        echo "Run 'claude-hooks --help' for usage information"
+        exit 1
+        ;;
+esac
