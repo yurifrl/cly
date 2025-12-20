@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
@@ -18,15 +19,8 @@ func Register(parent *cobra.Command) {
 		Long:  "Send and manage notifications for Claude Code hook events",
 	}
 
-	// Event type commands
-	notificationCmd := createNotificationCmd("notification")
-	stopCmd := createNotificationCmd("stop")
-	hookCmd := createNotificationCmd("hook")
-	posttooluseCmd := createPostToolUseCmd()
-
-	// Create complete as alias (needs to be a separate command, not same pointer)
-	completeCmd := createNotificationCmd("stop")
-	completeCmd.Use = "complete"
+	// Dynamic hook command
+	hookCmd := createHookCmd()
 
 	// Utility commands
 	soundCmd := createSoundCmd()
@@ -34,15 +28,19 @@ func Register(parent *cobra.Command) {
 	debugCmd := createDebugCmd()
 	claudeCmd := createClaudeCmd()
 
-	notifyCmd.AddCommand(notificationCmd, stopCmd, completeCmd, hookCmd, posttooluseCmd, soundCmd, configCmd, debugCmd, claudeCmd)
+	notifyCmd.AddCommand(hookCmd, soundCmd, configCmd, debugCmd, claudeCmd)
 	parent.AddCommand(notifyCmd)
 }
 
-func createNotificationCmd(eventType string) *cobra.Command {
+func createHookCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   eventType,
-		Short: fmt.Sprintf("Send %s notification", eventType),
+		Use:   "hook <hookname>",
+		Short: "Send notification for a hook",
+		Long:  "Send notification for any hook defined in config (e.g., stop, notification, mycustomhook)",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			hookName := args[0]
+
 			// Check CLAUDE_VERBOSE env (default 1)
 			if os.Getenv("CLAUDE_VERBOSE") == "0" {
 				return nil // Silent mode
@@ -54,26 +52,31 @@ func createNotificationCmd(eventType string) *cobra.Command {
 				return fmt.Errorf("failed to load config")
 			}
 
-			// Get notification type config
-			typeConfig, ok := cfg.Notify.Types[eventType]
+			// Check if notifications are enabled
+			if !cfg.Notify.Enabled {
+				return nil
+			}
+
+			// Get hook config
+			hookConfig, ok := cfg.Notify.Hooks[hookName]
 			if !ok {
-				return fmt.Errorf("notification type '%s' not configured", eventType)
+				return fmt.Errorf("hook '%s' not configured", hookName)
 			}
 
-			// Build context string from session names
-			contextStr := buildContextString()
-			message := typeConfig.Message
-			if contextStr != "" {
-				message = message + " " + contextStr
+			// Check if hook is enabled
+			if !hookConfig.Enabled {
+				return nil
 			}
 
-			// Create notification
+			// Generate group name: cly-claude-hooks-{lowercase}
+			group := fmt.Sprintf("cly-claude-hooks-%s", strings.ToLower(hookName))
+
+			// Create notification with config values (already env-expanded)
 			n := notify.Notification{
-				Title:    typeConfig.Title,
-				Subtitle: typeConfig.Subtitle,
-				Message:  message,
-				Sound:    typeConfig.Sound,
-				Group:    typeConfig.Group,
+				Title:   hookConfig.Title,
+				Message: hookConfig.Message,
+				Sound:   hookConfig.Sound,
+				Group:   group,
 			}
 
 			// Get icon path (use embedded if not configured)
@@ -84,38 +87,12 @@ func createNotificationCmd(eventType string) *cobra.Command {
 
 			// Send to all enabled notifiers
 			notifier := notify.New(
-				eventType,
-				cfg.Notify.UseBeeep,
-				cfg.Notify.UseTerminalNotifier,
+				hookName,
 				cfg.Notify.UseZellijStatus,
 				cfg.Notify.UseZellijNotify,
 				iconPath,
 			)
 			return notifier.Send(context.Background(), n)
-		},
-	}
-}
-
-func createPostToolUseCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "posttooluse",
-		Short: "Silent tool use update (Zellij only)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Check CLAUDE_VERBOSE
-			if os.Getenv("CLAUDE_VERBOSE") == "0" {
-				return nil
-			}
-
-			// Only send to Zellij (no system notification)
-			cfg := pkgconfig.Get()
-			zellijNotifier := notify.NewZellijNotifier("posttooluse", cfg.Notify.UseZellijStatus, cfg.Notify.UseZellijNotify)
-			if !zellijNotifier.Available() {
-				return nil // Silent if not in Zellij
-			}
-
-			// Empty notification for Zellij tab update only
-			n := notify.Notification{}
-			return zellijNotifier.Send(context.Background(), n)
 		},
 	}
 }
@@ -181,18 +158,18 @@ func createConfigCmd() *cobra.Command {
 			soundEnabled := isSoundEnabled(soundFile, cfg.Notify.Sound)
 
 			fmt.Println(style.BlueStyle.Render("Notify Configuration:"))
+			fmt.Printf("  Enabled: %v\n", cfg.Notify.Enabled)
 			fmt.Printf("  Sound: %v\n", soundEnabled)
-			fmt.Printf("  Use Beeep: %v\n", cfg.Notify.UseBeeep)
-			fmt.Printf("  Use Terminal-Notifier: %v\n", cfg.Notify.UseTerminalNotifier)
 			fmt.Printf("  Use Zellij Status: %v\n", cfg.Notify.UseZellijStatus)
 			fmt.Printf("  Use Zellij Notify: %v\n", cfg.Notify.UseZellijNotify)
 			fmt.Printf("  Icon: %s\n", cfg.Notify.Icon)
 			fmt.Println()
-			fmt.Println(style.BlueStyle.Render("Notification Types:"))
-			for name, typeConfig := range cfg.Notify.Types {
+			fmt.Println(style.BlueStyle.Render("Hooks:"))
+			for name, hookConfig := range cfg.Notify.Hooks {
 				fmt.Printf("  %s:\n", name)
-				fmt.Printf("    Title: %s\n", typeConfig.Title)
-				fmt.Printf("    Message: %s\n", typeConfig.Message)
+				fmt.Printf("    Enabled: %v\n", hookConfig.Enabled)
+				fmt.Printf("    Title: %s\n", hookConfig.Title)
+				fmt.Printf("    Message: %s\n", hookConfig.Message)
 			}
 
 			return nil

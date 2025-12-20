@@ -14,8 +14,6 @@ import (
 
 func createDebugCmd() *cobra.Command {
 	var respectConfig bool
-	var testBeeep bool
-	var testTerminal bool
 	var testZellijStatus bool
 	var testZellijNotify bool
 
@@ -42,10 +40,9 @@ func createDebugCmd() *cobra.Command {
 			fmt.Println(style.YellowStyle.Render("Configuration:"))
 			soundFile := getSoundFilePath()
 			soundEnabled := isSoundEnabled(soundFile, cfg.Notify.Sound)
+			fmt.Printf("  Enabled: %v\n", cfg.Notify.Enabled)
 			fmt.Printf("  Sound Enabled: %v\n", soundEnabled)
 			fmt.Printf("  Sound File: %s (exists: %v)\n", soundFile, fileExists(soundFile))
-			fmt.Printf("  Use Beeep: %v\n", cfg.Notify.UseBeeep)
-			fmt.Printf("  Use Terminal-Notifier: %v\n", cfg.Notify.UseTerminalNotifier)
 			fmt.Printf("  Use Zellij Status: %v\n", cfg.Notify.UseZellijStatus)
 			fmt.Printf("  Use Zellij Notify: %v\n", cfg.Notify.UseZellijNotify)
 
@@ -68,15 +65,6 @@ func createDebugCmd() *cobra.Command {
 			beeepAvail := beeepNotifier.Available()
 			fmt.Printf("  Beeep: %s\n", availStatus(beeepAvail))
 
-			// Terminal-Notifier
-			terminalNotifier := &notify.TerminalNotifier{}
-			terminalAvail := terminalNotifier.Available()
-			fmt.Printf("  Terminal-Notifier: %s", availStatus(terminalAvail))
-			if !terminalAvail {
-				fmt.Print(" (install: brew install terminal-notifier)")
-			}
-			fmt.Println()
-
 			// Zellij
 			zellijNotifier := notify.NewZellijNotifier("debug", true, true)
 			zellijAvail := zellijNotifier.Available()
@@ -87,127 +75,47 @@ func createDebugCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Println()
 
-			// Determine which notifiers to use
-			var enabledNotifiers []string
-			var notifiers []notify.Notifier
-
-			// If individual test flags are set, use those
-			if testBeeep || testTerminal || testZellijStatus || testZellijNotify {
-				fmt.Println(style.YellowStyle.Render("Testing selected notifiers:"))
-				if testBeeep && beeepAvail {
-					enabledNotifiers = append(enabledNotifiers, "Beeep")
-					notifiers = append(notifiers, beeepNotifier)
-				}
-				if testTerminal && terminalAvail {
-					enabledNotifiers = append(enabledNotifiers, "Terminal-Notifier")
-					notifiers = append(notifiers, terminalNotifier)
-				}
-				if (testZellijStatus || testZellijNotify) && zellijAvail {
-					enabledNotifiers = append(enabledNotifiers, "Zellij")
-					notifiers = append(notifiers, notify.NewZellijNotifier("debug", testZellijStatus, testZellijNotify))
-				}
-			} else if respectConfig {
-				fmt.Println(style.YellowStyle.Render("Testing with config settings:"))
-				if cfg.Notify.UseBeeep && beeepAvail {
-					enabledNotifiers = append(enabledNotifiers, "Beeep")
-					notifiers = append(notifiers, beeepNotifier)
-				}
-				if cfg.Notify.UseTerminalNotifier && terminalAvail {
-					enabledNotifiers = append(enabledNotifiers, "Terminal-Notifier")
-					notifiers = append(notifiers, terminalNotifier)
-				}
-				if (cfg.Notify.UseZellijStatus || cfg.Notify.UseZellijNotify) && zellijAvail {
-					enabledNotifiers = append(enabledNotifiers, "Zellij")
-					notifiers = append(notifiers, notify.NewZellijNotifier("debug", cfg.Notify.UseZellijStatus, cfg.Notify.UseZellijNotify))
-				}
-			} else {
-				fmt.Println(style.YellowStyle.Render("Testing ALL available notifiers:"))
-				if beeepAvail {
-					enabledNotifiers = append(enabledNotifiers, "Beeep")
-					notifiers = append(notifiers, beeepNotifier)
-				}
-				if terminalAvail {
-					enabledNotifiers = append(enabledNotifiers, "Terminal-Notifier")
-					notifiers = append(notifiers, terminalNotifier)
-				}
-				if zellijAvail {
-					enabledNotifiers = append(enabledNotifiers, "Zellij")
-					notifiers = append(notifiers, zellijNotifier)
-				}
-			}
-
-			if len(enabledNotifiers) == 0 {
-				fmt.Println(style.RedStyle.Render("  ✗ No notifiers available or enabled"))
-				return fmt.Errorf("no notifiers available")
-			}
-
-			for _, name := range enabledNotifiers {
-				fmt.Printf("  ✓ %s\n", name)
-			}
-			fmt.Println()
-
-			// Context string
-			contextStr := buildContextString()
-			if contextStr != "" {
-				fmt.Println(style.YellowStyle.Render("Context String:"))
-				fmt.Printf("  %s\n", contextStr)
-				fmt.Println()
-			}
-
 			// Send test notification
 			fmt.Println(style.YellowStyle.Render("Sending Test Notification:"))
 
-			message := "Test"
-			if contextStr != "" {
-				message = message + " " + contextStr
-			}
-
 			testNotification := notify.Notification{
-				Title:    "CLY Notify Debug",
-				Subtitle: "",
-				Message:  message,
-				Sound:    "Ping",
-				Group:    "cly-debug",
+				Title:   "CLY Notify Debug",
+				Message: "Test notification with env vars",
+				Sound:   "Ping",
+				Group:   "cly-debug",
 			}
-
 
 			ctx := context.Background()
-			for i, notifier := range notifiers {
-				notifierName := enabledNotifiers[i]
-				fmt.Println(style.YellowStyle.Render(fmt.Sprintf("Testing %s:", notifierName)))
 
-				// Put notifier name in subtitle so it's always visible
-				testN := testNotification
-				testN.Subtitle = notifierName
+			// Test Beeep
+			fmt.Println(style.YellowStyle.Render("Testing Beeep:"))
+			fmt.Printf("  Title: %s\n", testNotification.Title)
+			fmt.Printf("  Message: %s\n", testNotification.Message)
+			fmt.Printf("  Sending... ")
+			if err := beeepNotifier.Send(ctx, testNotification); err != nil {
+				fmt.Println(style.RedStyle.Render("✗ Failed: " + err.Error()))
+			} else {
+				fmt.Println(style.GreenStyle.Render("✓ Sent"))
+			}
+			fmt.Println()
 
-				// Show what will actually be sent
-				switch notifierName {
-				case "Beeep":
-					fmt.Printf("  Title: %s\n", testN.Title+" - "+testN.Subtitle)
-					fmt.Printf("  Message: [beeep] %s\n", testN.Message)
-
-				case "Terminal-Notifier":
-					fmt.Printf("  Title: %s\n", testN.Title)
-					fmt.Printf("  Subtitle: %s\n", testN.Subtitle)
-					fmt.Printf("  Message: [terminal-notifier] %s\n", testN.Message)
-
-				case "Zellij":
-					paneID := os.Getenv("ZELLIJ_PANE_ID")
-					sessionName := os.Getenv("ZELLIJ_SESSION_NAME")
-					fmt.Printf("  Status Bar: zellij pipe \"zjstatus::notify::%s\"\n", testN.Title)
-					cmd := fmt.Sprintf("  Tab: zellij pipe -n notify")
-					if paneID != "" {
-						cmd += fmt.Sprintf(" -a pane_id=%s", paneID)
-					}
-					if sessionName != "" {
-						cmd += fmt.Sprintf(" -a session_name=%s", sessionName)
-					}
-					cmd += " debug"
-					fmt.Println(cmd)
+			// Test Zellij
+			if zellijAvail {
+				fmt.Println(style.YellowStyle.Render("Testing Zellij:"))
+				paneID := os.Getenv("ZELLIJ_PANE_ID")
+				sessionName := os.Getenv("ZELLIJ_SESSION_NAME")
+				fmt.Printf("  Status Bar: zellij pipe \"zjstatus::notify::%s\"\n", testNotification.Title)
+				cmd := fmt.Sprintf("  Tab: zellij pipe -n notify")
+				if paneID != "" {
+					cmd += fmt.Sprintf(" -a pane_id=%s", paneID)
 				}
-
+				if sessionName != "" {
+					cmd += fmt.Sprintf(" -a session_name=%s", sessionName)
+				}
+				cmd += " debug"
+				fmt.Println(cmd)
 				fmt.Printf("  Sending... ")
-				if err := notifier.Send(ctx, testN); err != nil {
+				if err := zellijNotifier.Send(ctx, testNotification); err != nil {
 					fmt.Println(style.RedStyle.Render("✗ Failed: " + err.Error()))
 				} else {
 					fmt.Println(style.GreenStyle.Render("✓ Sent"))
@@ -226,8 +134,6 @@ func createDebugCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&respectConfig, "config", false, "Only test notifiers enabled in config")
-	cmd.Flags().BoolVar(&testBeeep, "beeep", false, "Test only Beeep notifier")
-	cmd.Flags().BoolVar(&testTerminal, "terminal", false, "Test only Terminal-Notifier")
 	cmd.Flags().BoolVar(&testZellijStatus, "zellij-status", false, "Test only Zellij status bar")
 	cmd.Flags().BoolVar(&testZellijNotify, "zellij-notify", false, "Test only Zellij notify plugin")
 	return cmd

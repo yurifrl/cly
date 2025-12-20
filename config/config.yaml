@@ -14,57 +14,26 @@ theme:
   style: charm # Options: charm | dracula | catppuccin
 
 notify:
+  enabled: true
   sound: false
-  use_beeep: true
-  use_terminal_notifier: true
   use_zellij_status: true
   use_zellij_notify: true
   icon: ""
-  types:
+  hooks:
     notification:
+      enabled: true
       title: "🔔 Claude Task"
-      subtitle: "Starting"
-      message: "New task"
+      message: "Starting - New task [${ZELLIJ_SESSION_NAME}] ${CLAUDE_SESSION_NAME}"
       sound: "Glass"
-      group: "claude-task-start"
       zellij_status: "🔔 Task notification"
       zellij_event: "notification"
-      hook: "UserPromptSubmit"
     stop:
+      enabled: true
       title: "✅ Claude Complete"
-      subtitle: "Finished"
-      message: "Task completed"
+      message: "Finished - Task completed [${ZELLIJ_SESSION_NAME}] ${CLAUDE_SESSION_NAME}"
       sound: "Blow"
-      group: "claude-task-complete"
       zellij_status: "✅ Task completed"
       zellij_event: "stop"
-      hook: "Stop"
-    posttooluse:
-      title: ""
-      subtitle: ""
-      message: ""
-      sound: ""
-      group: ""
-      zellij_status: ""
-      zellij_event: "posttooluse"
-      hook: "PostToolUse"
-      matcher: "*"
-    hook:
-      title: "🪝 Claude Hook"
-      subtitle: "Triggered"
-      message: "Hook event received"
-      sound: "Submarine"
-      group: "claude-hook"
-      zellij_status: "🪝 Hook triggered"
-      zellij_event: "hook"
-    default:
-      title: "📢 Claude"
-      subtitle: "Notification"
-      message: "Claude notification received"
-      sound: "Ping"
-      group: "claude-default"
-      zellij_status: "📢 Claude notification"
-      zellij_event: "default"
 
 modules:
   uuid:

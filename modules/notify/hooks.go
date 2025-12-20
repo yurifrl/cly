@@ -199,28 +199,29 @@ func createVerifyCmd() *cobra.Command {
 	}
 }
 
-// getHooksFromConfig generates hooks from notification types config
+// getHooksFromConfig generates hooks from notification hooks config
 func getHooksFromConfig(cfg *pkgconfig.Config) map[string][]map[string]interface{} {
 	eventGroups := make(map[string][]map[string]interface{})
 
-	for typeName, typeConfig := range cfg.Notify.Types {
-		if typeConfig.Hook != "" {
-			entry := map[string]interface{}{
-				"hooks": []map[string]string{
-					{
-						"type":    "command",
-						"command": fmt.Sprintf("cly notify %s", typeName),
-					},
+	for hookName := range cfg.Notify.Hooks {
+		// Hook names are already lowercase (notification, stop, posttooluse)
+		entry := map[string]interface{}{
+			"hooks": []map[string]string{
+				{
+					"type":    "command",
+					"command": fmt.Sprintf("cly notify hook %s", hookName),
 				},
-			}
-
-			// Add matcher if specified
-			if typeConfig.Matcher != "" {
-				entry["matcher"] = typeConfig.Matcher
-			}
-
-			eventGroups[typeConfig.Hook] = append(eventGroups[typeConfig.Hook], entry)
+			},
 		}
+
+		// posttooluse needs a matcher to catch all tools
+		if hookName == "posttooluse" {
+			entry["matcher"] = "*"
+		}
+
+		// Map to Claude hook names (notification -> Notification, stop -> Stop)
+		claudeHookName := strings.ToUpper(string(hookName[0])) + hookName[1:]
+		eventGroups[claudeHookName] = append(eventGroups[claudeHookName], entry)
 	}
 
 	return eventGroups
