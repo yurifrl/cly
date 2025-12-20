@@ -17,12 +17,24 @@ var (
 )
 
 // Register adds the bundle command and subcommands to the root command.
-func Register(root *cobra.Command, s store.Store) {
-	bundlers := map[string]Bundler{
-		"brew":   NewBrewBundler(),
-		"go":     NewGoBundler(s),
-		"js":     NewJsBundler(s),
-		"python": NewPythonBundler(s),
+func Register(root *cobra.Command) {
+	getBundlers := func() (map[string]Bundler, func(), error) {
+		s, err := openStore()
+		if err != nil {
+			return nil, nil, err
+		}
+		bundlers := map[string]Bundler{
+			"brew":   NewBrewBundler(),
+			"go":     NewGoBundler(s),
+			"js":     NewJsBundler(s),
+			"python": NewPythonBundler(s),
+		}
+		cleanup := func() {
+			if err := s.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to close store: %v\n", err)
+			}
+		}
+		return bundlers, cleanup, nil
 	}
 
 	cmd := &cobra.Command{
@@ -39,6 +51,12 @@ Types:
   python  Sync Python tools from Pythonfile`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			bundlers, cleanup, err := getBundlers()
+			if err != nil {
+				return fmt.Errorf("failed to initialize bundlers: %w", err)
+			}
+			defer cleanup()
+
 			bundleType := "brew"
 			if len(args) > 0 {
 				bundleType = args[0]
@@ -55,18 +73,40 @@ Types:
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "skip interactive editor mode, just sync")
 	cmd.Flags().BoolVar(&forceFlag, "force", true, "force reinstall packages even if already installed")
 
-	cmd.AddCommand(checkCmd(bundlers))
-	cmd.AddCommand(cleanupCmd(bundlers))
+	cmd.AddCommand(checkCmd(getBundlers))
+	cmd.AddCommand(cleanupCmd(getBundlers))
 
 	root.AddCommand(cmd)
 }
 
-func checkCmd(bundlers map[string]Bundler) *cobra.Command {
+func openStore() (store.Store, error) {
+	dataDir := os.Getenv("XDG_DATA_HOME")
+	if dataDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		dataDir = home + "/.local/share/cly"
+	} else {
+		dataDir = dataDir + "/cly"
+	}
+
+	dbPath := dataDir + "/cly.db"
+	return store.New(dbPath)
+}
+
+func checkCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.Command {
 	return &cobra.Command{
 		Use:   "check [type]",
 		Short: "Show what would change without making changes",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			bundlers, cleanup, err := getBundlers()
+			if err != nil {
+				return fmt.Errorf("failed to initialize bundlers: %w", err)
+			}
+			defer cleanup()
+
 			bundleType := "brew"
 			if len(args) > 0 {
 				bundleType = args[0]
@@ -76,12 +116,18 @@ func checkCmd(bundlers map[string]Bundler) *cobra.Command {
 	}
 }
 
-func cleanupCmd(bundlers map[string]Bundler) *cobra.Command {
+func cleanupCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.Command {
 	return &cobra.Command{
 		Use:   "cleanup [type]",
 		Short: "Remove packages not in bundle file",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			bundlers, cleanup, err := getBundlers()
+			if err != nil {
+				return fmt.Errorf("failed to initialize bundlers: %w", err)
+			}
+			defer cleanup()
+
 			bundleType := "brew"
 			if len(args) > 0 {
 				bundleType = args[0]

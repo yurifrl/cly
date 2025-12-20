@@ -1,11 +1,14 @@
 package ai
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"os"
+	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/pkg/style"
 )
 
 // Register registers the ai command with the parent command
@@ -32,36 +35,60 @@ Examples:
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	// Get API key from environment
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
-	}
-
-	// Get model from flag
+	// Get flags
 	model, _ := cmd.Flags().GetString("model")
+	conversationID, _ := cmd.Flags().GetString("continue")
 
-	// Create model
-	m, err := NewModel(apiKey, model)
+	// Create client (mods will use its own config for API key)
+	client, err := NewClient("", model)
 	if err != nil {
 		return err
 	}
 
-	// Check for continue flag
-	continueID, _ := cmd.Flags().GetString("continue")
-	if continueID != "" {
-		m.conversationID = continueID
+	// Generate conversation ID if not continuing
+	if conversationID == "" {
+		conversationID = generateConversationID()
 	}
 
-	// Run TUI
-	p := tea.NewProgram(
-		m,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	// Welcome message
+	fmt.Println(style.SubtleStyle.Render(fmt.Sprintf("Conversation: %s", conversationID)))
+	fmt.Println()
 
-	if _, err := p.Run(); err != nil {
-		return err
+	// Chat loop
+	scanner := bufio.NewScanner(os.Stdin)
+	isFirstMessage := true
+	for {
+		// Prompt
+		fmt.Print(style.YellowStyle.Render("> "))
+
+		// Read input
+		if !scanner.Scan() {
+			break
+		}
+
+		prompt := strings.TrimSpace(scanner.Text())
+		if prompt == "" {
+			break
+		}
+
+		// Send to mods
+		ctx := context.Background()
+		response, err := client.SendMessage(ctx, conversationID, prompt, isFirstMessage)
+		if err != nil {
+			fmt.Println(style.RedStyle.Render(fmt.Sprintf("Error: %s", err)))
+			continue
+		}
+
+		// Print response
+		fmt.Print(response)
+		fmt.Println()
+
+		// After first message, switch to continue mode
+		isFirstMessage = false
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading input: %w", err)
 	}
 
 	return nil

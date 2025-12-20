@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"time"
 )
 
 // Client wraps mods binary for sending messages
@@ -14,31 +15,36 @@ type Client struct {
 
 // NewClient creates a new mods client wrapper
 func NewClient(apiKey, model string) (*Client, error) {
-	// Default model if not specified
-	if model == "" {
-		model = "claude-sonnet-4-5"
-	}
-
 	// Check if mods is available
 	if _, err := exec.LookPath("mods"); err != nil {
 		return nil, fmt.Errorf("mods binary not found in PATH: %w", err)
 	}
 
 	return &Client{
-		model: model,
+		model: model, // Empty means use mods default
 	}, nil
 }
 
 // SendMessage sends a message via mods and returns the response
-func (c *Client) SendMessage(ctx context.Context, conversationID, userMsg string) (string, error) {
-	args := []string{"-m", c.model}
+func (c *Client) SendMessage(ctx context.Context, conversationID, userMsg string, isFirstMessage bool) (string, error) {
+	var args []string
 
 	if conversationID != "" {
-		// Continue existing conversation
-		args = append(args, "-c", conversationID)
+		if isFirstMessage {
+			// Start new conversation with specific ID using -t
+			args = []string{"-t", conversationID}
+		} else {
+			// Continue existing conversation using -c
+			args = []string{"-c", conversationID}
+		}
 	} else {
-		// Start new conversation (mods will auto-generate ID)
-		args = append(args, "-t")
+		// No conversation ID provided
+		args = []string{}
+	}
+
+	// Only add model if specified (otherwise mods uses its config)
+	if c.model != "" {
+		args = append([]string{"-m", c.model}, args...)
 	}
 
 	cmd := exec.CommandContext(ctx, "mods", args...)
@@ -53,4 +59,9 @@ func (c *Client) SendMessage(ctx context.Context, conversationID, userMsg string
 	}
 
 	return stdout.String(), nil
+}
+
+// generateConversationID generates a unique conversation ID
+func generateConversationID() string {
+	return fmt.Sprintf("modsi-%d", time.Now().Unix())
 }

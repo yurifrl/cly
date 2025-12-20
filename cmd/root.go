@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"log"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/modules/ai"
@@ -17,7 +15,6 @@ import (
 	"github.com/yurifrl/cly/modules/mcp"
 	"github.com/yurifrl/cly/modules/uuid"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
-	"github.com/yurifrl/cly/pkg/store"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -53,18 +50,7 @@ func init() {
 	dotfiles.Register(RootCmd)
 	helpy.Register(RootCmd)
 	mcp.Register(RootCmd)
-
-	// Initialize store for bundle module
-	dataDir := pkgconfig.GetString("app.data_dir")
-	if dataDir == "" {
-		dataDir = "~/.local/share/cly"
-	}
-	db, err := store.New(filepath.Join(dataDir, "cly.db"))
-	if err != nil {
-		log.Printf("Warning: failed to initialize store: %v", err)
-		return
-	}
-	bundle.Register(RootCmd, db)
+	bundle.Register(RootCmd)
 }
 
 func Execute() error {

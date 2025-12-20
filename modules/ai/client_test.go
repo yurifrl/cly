@@ -84,7 +84,7 @@ func TestClient_SendMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			response, err := client.SendMessage(ctx, tt.conversationID, tt.userMsg)
+			response, err := client.SendMessage(ctx, tt.conversationID, tt.userMsg, true)
 
 			if tt.wantErr {
 				assert.Error(t, err)

@@ -167,7 +167,7 @@ func TestBaseBundlerCheck(t *testing.T) {
 		name:        "test",
 		defaultFile: bundleFile,
 		store:       s,
-		installFn:   func(pkg string, verbose bool) error { return nil },
+		installFn:   func(pkg string, verbose bool, force bool) error { return nil },
 		uninstallFn: func(pkg string, verbose bool) error { return nil },
 	}
 
