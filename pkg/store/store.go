@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/tursodatabase/go-libsql"
 )
 
 // Store provides namespace/key storage for persistent app state.
@@ -17,12 +17,12 @@ type Store interface {
 	Close() error
 }
 
-// DuckDBStore implements Store using DuckDB.
-type DuckDBStore struct {
+// SQLiteStore implements Store using libSQL (Turso).
+type SQLiteStore struct {
 	db *sql.DB
 }
 
-// New creates a new DuckDB-backed Store at the given path.
+// New creates a new libSQL-backed Store at the given path.
 // Creates the directory and database if they don't exist.
 func New(dbPath string) (Store, error) {
 	// Expand ~ to home directory
@@ -40,7 +40,7 @@ func New(dbPath string) (Store, error) {
 		return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
-	db, err := sql.Open("duckdb", dbPath)
+	db, err := sql.Open("libsql", "file:"+dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -48,9 +48,9 @@ func New(dbPath string) (Store, error) {
 	// Create schema
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS packages (
-			type VARCHAR NOT NULL,
-			name VARCHAR NOT NULL,
-			installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (type, name)
 		)
 	`)
@@ -59,11 +59,11 @@ func New(dbPath string) (Store, error) {
 		return nil, fmt.Errorf("failed to create schema: %w", err)
 	}
 
-	return &DuckDBStore{db: db}, nil
+	return &SQLiteStore{db: db}, nil
 }
 
 // List returns all keys in the given namespace.
-func (s *DuckDBStore) List(namespace string) ([]string, error) {
+func (s *SQLiteStore) List(namespace string) ([]string, error) {
 	rows, err := s.db.Query("SELECT name FROM packages WHERE type = ?", namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list packages: %w", err)
@@ -87,10 +87,9 @@ func (s *DuckDBStore) List(namespace string) ([]string, error) {
 }
 
 // Add inserts a key into the namespace. Idempotent - duplicate adds are no-ops.
-func (s *DuckDBStore) Add(namespace, key string) error {
+func (s *SQLiteStore) Add(namespace, key string) error {
 	_, err := s.db.Exec(`
-		INSERT INTO packages (type, name) VALUES (?, ?)
-		ON CONFLICT (type, name) DO NOTHING
+		INSERT OR IGNORE INTO packages (type, name) VALUES (?, ?)
 	`, namespace, key)
 	if err != nil {
 		return fmt.Errorf("failed to add package: %w", err)
@@ -99,7 +98,7 @@ func (s *DuckDBStore) Add(namespace, key string) error {
 }
 
 // Remove deletes a key from the namespace. Idempotent - removing non-existent key is no-op.
-func (s *DuckDBStore) Remove(namespace, key string) error {
+func (s *SQLiteStore) Remove(namespace, key string) error {
 	_, err := s.db.Exec("DELETE FROM packages WHERE type = ? AND name = ?", namespace, key)
 	if err != nil {
 		return fmt.Errorf("failed to remove package: %w", err)
@@ -108,6 +107,6 @@ func (s *DuckDBStore) Remove(namespace, key string) error {
 }
 
 // Close closes the database connection.
-func (s *DuckDBStore) Close() error {
+func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
