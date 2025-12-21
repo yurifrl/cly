@@ -55,7 +55,10 @@ func init() {
 	AliExpressCmd.Flags().StringVar(&outputFlag, "output", "products.json", "Output file path")
 	AliExpressCmd.Flags().BoolVar(&outputPerURL, "output-per-url", false, "Create separate file per product")
 	AliExpressCmd.Flags().StringVar(&outputDirFlag, "output-dir", "./scraped", "Output directory")
-	AliExpressCmd.Flags().StringVar(&browserURLFlag, "browser", "", "Connect to existing browser (e.g. http://localhost:9222)")
+
+	AliExpressCmd.Flags().StringVarP(&browserURLFlag, "browser", "b", "", "Connect to existing browser URL")
+	AliExpressCmd.Flags().Lookup("browser").NoOptDefVal = "http://localhost:9222"
+
 	AliExpressCmd.Flags().BoolVar(&autoStartFlag, "auto-start", false, "Auto-start browser and scraping")
 }
 
@@ -88,10 +91,13 @@ func runAliExpress(cmd *cobra.Command, args []string) error {
 	}
 
 	// Setup browser controller
-	externalBrowser := browserURLFlag != ""
+	browserURL, _ := cmd.Flags().GetString("browser")
+	externalBrowser := browserURL != ""
+
 	var ctrl *browser.Controller
 
 	if externalBrowser {
+		browserURLFlag = browserURL
 		// Connect to existing browser
 		ctrl = browser.NewController(browser.Options{
 			BrowserURL: browserURLFlag,
@@ -112,7 +118,11 @@ func runAliExpress(cmd *cobra.Command, args []string) error {
 			UserDataDir: userDataDir,
 		})
 	}
-	defer ctrl.Close()
+
+	// Only close browser if we're managing it (not external)
+	if !externalBrowser {
+		defer ctrl.Close()
+	}
 
 	// Setup output
 	outputMode := output.SingleFile
