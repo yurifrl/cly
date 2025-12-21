@@ -1,0 +1,20 @@
+{
+  "enabledMcpjsonServers": [
+    "bubbles_docs",
+    "bubbletea_docs",
+    "cobra_docs",
+    "filesystem",
+    "git",
+    "github",
+    "huh_docs",
+    "lipgloss_docs",
+    "serena",
+    "vectorcode",
+    "viper_docs"
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(openspec change --help:*)"
+    ]
+  }
+}

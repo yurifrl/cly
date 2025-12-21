@@ -1,0 +1,10 @@
+# Local configuration file (not committed to git)
+# Copy this to config.local.yaml and set your values
+
+modules:
+  backup:
+    gcs_bucket: op://my-gcs-bucket/backups
+
+  dotfiles:
+    directory: ~/.dotfiles
+    zellij_plugins_dir: ~/.config/zellij/plugins

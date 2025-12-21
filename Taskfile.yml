@@ -1,0 +1,96 @@
+version: '3'
+
+includes:
+  bump: ./taskfiles/bump.yaml
+
+vars:
+  VERSION:
+    sh: cat VERSION
+  BINARY_NAME: cly
+  BUILD_DIR: dist
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build cly for current platform
+    cmds:
+      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
+    sources:
+      - "**/*.go"
+    generates:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}"
+
+  build:mcp:
+    desc: Build mcp for current platform
+    cmds:
+      - go build -ldflags="-s -w -X main.version={{.VERSION}}" -o {{.BUILD_DIR}}/mcp ./cmd/mcp
+    sources:
+      - cmd/mcp/**/*.go
+      - modules/mcp/**/*.go
+    generates:
+      - "{{.BUILD_DIR}}/mcp"
+
+  build:all:
+    desc: Build both cly and mcp
+    deps: [build, build:mcp]
+
+  install:
+    desc: Install CLI to GOBIN
+    aliases: [i]
+    cmds:
+      - go install .
+      - go run . completion fish > ~/.config/fish/completions/cly.fish
+
+  install:mcp:
+    desc: Install mcp to GOBIN
+    cmds:
+      - go install ./cmd/mcp
+      - go run ./cmd/mcp completion fish > ~/.config/fish/completions/mcp.fish
+
+  install:all:
+    desc: Install both cly and mcp
+    deps: [install, install:mcp]
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
+  test:mcp:
+    desc: Run MCP tests
+    cmds:
+      - go test ./modules/mcp/... -v {{.CLI_ARGS}}
+
+  run:
+    desc: Run cly directly with args (use -- for args, e.g., task run -- --help)
+    cmds:
+      - go run . {{.CLI_ARGS}}
+
+  run:mcp:
+    desc: Run mcp directly with args (use -- for args, e.g., task run:mcp -- --help)
+    cmds:
+      - go run ./cmd/mcp {{.CLI_ARGS}}
+
+  version:
+    desc: Show current version
+    cmds:
+      - echo "v{{.VERSION}}"
+
+  worktree:
+    desc: Create git worktree in .worktrees/<name>
+    cmds:
+      - git worktree add .worktrees/{{.CLI_ARGS}} -b {{.CLI_ARGS}}
+
+  ref:init:
+    desc: Initialize submodules after clone
+    cmds:
+      - git submodule update --init --recursive
+
+  ref:update:
+    desc: Update submodules to latest
+    cmds:
+      - git submodule update --remote --merge

@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_exists: ${{ steps.check_tag.outputs.exists }}
+      should_release: ${{ steps.should_release.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read VERSION
+        id: version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "v$(cat VERSION)" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Should release?
+        id: should_release
+        run: |
+          if [ "${{ steps.check_tag.outputs.exists }}" = "false" ]; then
+            echo "result=true" >> $GITHUB_OUTPUT
+          else
+            echo "result=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-linux:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build Linux amd64 binaries
+        run: |
+          VERSION=$(cat VERSION)
+          mkdir -p dist
+          CGO_ENABLED=1 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-linux-amd64 .
+          CGO_ENABLED=1 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-linux-amd64 ./cmd/mcp
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: dist/*
+
+  build-macos-arm64:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build macOS arm64 binaries
+        run: |
+          VERSION=$(cat VERSION)
+          mkdir -p dist
+          CGO_ENABLED=1 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-darwin-arm64 .
+          CGO_ENABLED=1 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-darwin-arm64 ./cmd/mcp
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-binaries
+          path: dist/*
+
+  build-windows:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build Windows binaries
+        run: |
+          $VERSION = Get-Content VERSION
+          mkdir -Force dist
+          $env:CGO_ENABLED=1
+          go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v$VERSION" -o dist/cly-windows-amd64.exe .
+          go build -ldflags="-s -w -X main.version=v$VERSION" -o dist/mcp-windows-amd64.exe ./cmd/mcp
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: dist/*
+
+  release:
+    needs: [check-version, build-linux, build-macos-arm64, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-all
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p dist
+          find dist-all -type f -exec mv {} dist/ \;
+          cd dist && sha256sum * > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.check-version.outputs.version }}
+          name: CLY ${{ needs.check-version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

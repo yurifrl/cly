@@ -1,0 +1,638 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "click",
+#     "rich",
+#     "questionary",
+#     "pyyaml",
+#     "python-dateutil",
+# ]
+# ///
+"""
+claude-sessions - Search and manage Claude Code sessions
+
+Search, list, resume, and fork Claude Code sessions from the command line.
+"""
+
+import json
+import os
+import re
+import subprocess
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+import click
+import questionary
+import yaml
+from dateutil import parser as date_parser
+from dateutil.relativedelta import relativedelta
+from rich.console import Console
+from rich.table import Table
+
+console = Console()
+
+CLAUDE_DIR = Path.home() / ".claude"
+HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
+PROJECTS_DIR = CLAUDE_DIR / "projects"
+CHATS_DIR = Path.home() / "DotFiles" / "chats"
+
+UUID_PATTERN = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def is_session_id(text: str) -> bool:
+    """Check if text looks like a session ID (UUID)."""
+    return bool(UUID_PATTERN.match(text))
+
+
+def parse_since_date(since: str) -> datetime:
+    """Parse relative or absolute date strings."""
+    since_lower = since.lower()
+    now = datetime.now()
+
+    if since_lower in ["today", "now"]:
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif since_lower == "yesterday":
+        return now - relativedelta(days=1)
+    elif "hour" in since_lower or "hr" in since_lower:
+        hours = int(re.search(r"\d+", since_lower).group())
+        return now - relativedelta(hours=hours)
+    elif "day" in since_lower:
+        days = int(re.search(r"\d+", since_lower).group())
+        return now - relativedelta(days=days)
+    elif "week" in since_lower:
+        weeks = int(re.search(r"\d+", since_lower).group())
+        return now - relativedelta(weeks=weeks)
+    elif "month" in since_lower:
+        months = int(re.search(r"\d+", since_lower).group())
+        return now - relativedelta(months=months)
+    else:
+        # Try parsing as ISO date
+        return date_parser.parse(since)
+
+
+def format_relative_time(timestamp: int) -> str:
+    """Format timestamp as relative time (e.g., '2h ago', 'yesterday')."""
+    dt = datetime.fromtimestamp(timestamp / 1000)
+    now = datetime.now()
+    delta = now - dt
+
+    if delta.seconds < 60:
+        return "now"
+    elif delta.seconds < 3600:
+        mins = delta.seconds // 60
+        return f"{mins}m ago"
+    elif delta.seconds < 86400:
+        hours = delta.seconds // 3600
+        return f"{hours}h ago"
+    elif delta.days == 1:
+        return "yesterday"
+    elif delta.days < 7:
+        return f"{delta.days}d ago"
+    elif delta.days < 30:
+        weeks = delta.days // 7
+        return f"{weeks}w ago"
+    else:
+        return dt.strftime("%b %d")
+
+
+def format_size(size_bytes: int) -> str:
+    """Format file size in human-readable format."""
+    if size_bytes < 1024:
+        return f"{size_bytes}B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.0f}KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f}MB"
+
+
+def get_session_file(session_id: str) -> Optional[Path]:
+    """Find the .jsonl file for a session ID."""
+    for project_dir in PROJECTS_DIR.iterdir():
+        if project_dir.is_dir():
+            session_file = project_dir / f"{session_id}.jsonl"
+            if session_file.exists():
+                return session_file
+    return None
+
+
+def get_session_project(session_id: str) -> Optional[str]:
+    """Get project directory for a session from history."""
+    if not HISTORY_FILE.exists():
+        return None
+
+    with open(HISTORY_FILE) as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+                if entry.get("sessionId") == session_id:
+                    return entry.get("project")
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+def resolve_session_id(partial_id: str) -> Optional[str]:
+    """Resolve a partial session ID to full session ID."""
+    if is_session_id(partial_id):
+        # Already a full UUID
+        return partial_id
+
+    # Search for matching session ID in history
+    if not HISTORY_FILE.exists():
+        return None
+
+    with open(HISTORY_FILE) as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+                session_id = entry.get("sessionId")
+                if session_id and session_id.startswith(partial_id):
+                    return session_id
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+def get_session_metadata(session_id: str) -> dict:
+    """Get metadata about a session."""
+    session_file = get_session_file(session_id)
+    if not session_file:
+        return {"error": "Session not found"}
+
+    messages = []
+    user_count = 0
+    assistant_count = 0
+    thinking_blocks = 0
+    first_timestamp = None
+    last_timestamp = None
+    git_branch = None
+
+    with open(session_file) as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+
+                # Track timestamps (ensure they're integers in milliseconds)
+                if "timestamp" in entry:
+                    ts = entry["timestamp"]
+                    if isinstance(ts, str):
+                        # Try parsing ISO format
+                        try:
+                            dt = date_parser.parse(ts)
+                            ts = int(dt.timestamp() * 1000)
+                        except:
+                            # Skip invalid timestamps
+                            ts = None
+                    if ts is not None:
+                        if first_timestamp is None:
+                            first_timestamp = ts
+                        last_timestamp = ts
+
+                # Count messages
+                if entry.get("type") == "user":
+                    user_count += 1
+                    msg = entry.get("message", "")
+                    # Message can be string or dict
+                    msg_obj = msg
+                    if isinstance(msg, str):
+                        try:
+                            msg_obj = json.loads(msg)
+                        except json.JSONDecodeError:
+                            pass
+
+                    if isinstance(msg_obj, dict):
+                        content = msg_obj.get("content", "")
+                        if isinstance(content, list):
+                            # Skip tool results for display
+                            content = ""
+                        messages.append(("user", content if content else ""))
+                    else:
+                        messages.append(("user", str(msg_obj)))
+
+                elif entry.get("type") == "assistant":
+                    assistant_count += 1
+                    msg = entry.get("message", "")
+                    # Message can be string or dict
+                    msg_obj = msg
+                    if isinstance(msg, str):
+                        try:
+                            msg_obj = json.loads(msg)
+                        except json.JSONDecodeError:
+                            pass
+
+                    if isinstance(msg_obj, dict):
+                        content = msg_obj.get("content", "")
+                        if isinstance(content, list):
+                            # Extract text blocks from content
+                            text_parts = [
+                                block.get("text", "")
+                                for block in content
+                                if isinstance(block, dict) and block.get("type") == "text"
+                            ]
+                            content = "\n".join(text_parts)
+                        messages.append(("assistant", content if content else ""))
+                    else:
+                        messages.append(("assistant", str(msg_obj)))
+
+                # Count thinking blocks
+                if entry.get("thinkingMetadata"):
+                    thinking_blocks += 1
+
+                # Get git branch
+                if git_branch is None and "gitBranch" in entry:
+                    git_branch = entry["gitBranch"]
+
+            except json.JSONDecodeError:
+                continue
+
+    size = session_file.stat().st_size
+    project = get_session_project(session_id)
+
+    duration = None
+    if first_timestamp and last_timestamp:
+        duration_seconds = (last_timestamp - first_timestamp) / 1000
+        if duration_seconds < 60:
+            duration = f"{int(duration_seconds)}s"
+        elif duration_seconds < 3600:
+            duration = f"{int(duration_seconds / 60)}m"
+        else:
+            hours = int(duration_seconds / 3600)
+            mins = int((duration_seconds % 3600) / 60)
+            duration = f"{hours}h {mins}m" if mins > 0 else f"{hours}h"
+
+    # Estimate tokens (rough: 4 chars per token)
+    total_chars = sum(len(msg[1]) for msg in messages)
+    estimated_tokens = total_chars // 4
+
+    return {
+        "session_id": session_id,
+        "project": project,
+        "git_branch": git_branch,
+        "total_messages": user_count + assistant_count,
+        "user_messages": user_count,
+        "assistant_messages": assistant_count,
+        "thinking_blocks": thinking_blocks,
+        "size": size,
+        "duration": duration,
+        "first_timestamp": first_timestamp,
+        "last_timestamp": last_timestamp,
+        "messages": messages,
+        "estimated_tokens": estimated_tokens,
+    }
+
+
+def list_sessions(limit: int = 20, since: Optional[str] = None, project_filter: Optional[str] = None) -> list:
+    """List recent sessions from history."""
+    if not HISTORY_FILE.exists():
+        return []
+
+    since_dt = None
+    if since:
+        since_dt = parse_since_date(since)
+
+    sessions = {}
+    with open(HISTORY_FILE) as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+                session_id = entry.get("sessionId")
+                project = entry.get("project", "")
+                timestamp = entry.get("timestamp", 0)
+                display = entry.get("display", "")
+
+                if not session_id:
+                    continue
+
+                # Filter by project
+                if project_filter and project_filter not in project:
+                    continue
+
+                # Filter by date
+                if since_dt:
+                    entry_dt = datetime.fromtimestamp(timestamp / 1000)
+                    if entry_dt < since_dt:
+                        continue
+
+                # Store first prompt for each session
+                if session_id not in sessions:
+                    sessions[session_id] = {
+                        "session_id": session_id,
+                        "project": project,
+                        "timestamp": timestamp,
+                        "prompt": display,
+                    }
+            except json.JSONDecodeError:
+                continue
+
+    # Sort by timestamp (newest first) and limit
+    sorted_sessions = sorted(sessions.values(), key=lambda x: x["timestamp"], reverse=True)
+    return sorted_sessions[:limit]
+
+
+def search_sessions(query: str, limit: int = 20) -> list:
+    """Search for sessions matching query in history and content."""
+    if not HISTORY_FILE.exists():
+        return []
+
+    query_lower = query.lower()
+    matches = {}
+
+    # Search in history first (fast)
+    with open(HISTORY_FILE) as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+                session_id = entry.get("sessionId")
+                display = entry.get("display", "")
+
+                if query_lower in display.lower():
+                    if session_id not in matches:
+                        matches[session_id] = {
+                            "session_id": session_id,
+                            "project": entry.get("project", ""),
+                            "timestamp": entry.get("timestamp", 0),
+                            "prompt": display,
+                        }
+            except json.JSONDecodeError:
+                continue
+
+    # Sort by timestamp and limit
+    sorted_matches = sorted(matches.values(), key=lambda x: x["timestamp"], reverse=True)
+    return sorted_matches[:limit]
+
+
+def show_session_info(session_id: str):
+    """Display detailed session information."""
+    metadata = get_session_metadata(session_id)
+
+    if "error" in metadata:
+        console.print(f"[red]❌ {metadata['error']}[/red]")
+        return
+
+    # Short session ID for display
+    short_id = session_id[:8]
+
+    console.print()
+    console.print("═" * 79)
+    console.print(f"Session: [cyan]{short_id}[/cyan] ({session_id})")
+    console.print("═" * 79)
+
+    if metadata["project"]:
+        console.print(f"📁 Project:  [blue]{metadata['project']}[/blue]")
+    if metadata["git_branch"]:
+        console.print(f"🌿 Branch:   [green]{metadata['git_branch']}[/green]")
+
+    if metadata["first_timestamp"]:
+        age = format_relative_time(metadata["first_timestamp"])
+        dt = datetime.fromtimestamp(metadata["first_timestamp"] / 1000)
+        console.print(f"📅 Started:  {dt.strftime('%Y-%m-%d %H:%M:%S')} ([dim]{age}[/dim])")
+
+    if metadata["duration"]:
+        console.print(f"⏱️  Duration: {metadata['duration']}")
+
+    console.print(
+        f"💬 Messages: {metadata['total_messages']} total "
+        f"([cyan]{metadata['user_messages']} user[/cyan], "
+        f"[green]{metadata['assistant_messages']} assistant[/green])"
+    )
+
+    size_str = format_size(metadata["size"])
+    console.print(f"📊 Size:     {size_str}")
+
+    if metadata["thinking_blocks"] > 0:
+        console.print(f"🧠 Thinking: {metadata['thinking_blocks']} blocks")
+
+    if metadata["estimated_tokens"] > 0:
+        console.print(f"🎯 Tokens:   ~{metadata['estimated_tokens']:,} (estimated)")
+
+    console.print("═" * 79)
+
+    # Show first and last message previews
+    messages = metadata.get("messages", [])
+    if messages:
+        first_msg = messages[0][1][:100]
+        console.print(f"First: {first_msg}...")
+
+        if len(messages) > 1:
+            last_msg = messages[-1][1][:100]
+            console.print(f"Last:  {last_msg}...")
+
+    console.print("═" * 79)
+    console.print(f"Resume: [cyan]cs {short_id} -r[/cyan]")
+    console.print(f"Fork:   [cyan]cs {short_id} --fork-session[/cyan]")
+    console.print("═" * 79)
+    console.print()
+
+
+def show_session_conversation(session_id: str):
+    """Display full session conversation."""
+    metadata = get_session_metadata(session_id)
+
+    if "error" in metadata:
+        console.print(f"[red]❌ {metadata['error']}[/red]")
+        return
+
+    messages = metadata.get("messages", [])
+
+    console.print()
+    console.print("═" * 79)
+    console.print(f"Session: [cyan]{session_id[:8]}[/cyan]")
+    if metadata["project"]:
+        console.print(f"Project: [blue]{metadata['project']}[/blue]")
+    console.print("═" * 79)
+    console.print()
+
+    for role, content in messages:
+        if role == "user":
+            console.print("[cyan]👤 User[/cyan]")
+        else:
+            console.print("[green]🤖 Assistant[/green]")
+
+        console.print(content)
+        console.print()
+
+
+def print_session_list(sessions: list, format_type: str = "compact"):
+    """Print list of sessions in specified format."""
+    if not sessions:
+        console.print("[yellow]No sessions found[/yellow]")
+        return
+
+    if format_type == "json":
+        print(json.dumps(sessions, indent=2))
+        return
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("ID", style="cyan", width=8)
+    table.add_column("AGE", width=10)
+    table.add_column("PROJECT", style="blue", width=15)
+    table.add_column("MSGS", width=5)
+    table.add_column("SIZE", width=6)
+    table.add_column("FIRST PROMPT", style="dim")
+
+    for session in sessions:
+        session_id = session["session_id"]
+        short_id = session_id[:8]
+        age = format_relative_time(session["timestamp"])
+        project_name = Path(session["project"]).name if session["project"] else "?"
+        prompt = session["prompt"][:60] + "..." if len(session["prompt"]) > 60 else session["prompt"]
+
+        # Get message count and size
+        session_file = get_session_file(session_id)
+        if session_file and session_file.exists():
+            size = format_size(session_file.stat().st_size)
+            # Quick count of messages
+            msg_count = 0
+            with open(session_file) as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("type") in ["user", "assistant"]:
+                            msg_count += 1
+                    except json.JSONDecodeError:
+                        continue
+            msgs = str(msg_count) if msg_count > 0 else "?"
+        else:
+            size = "?"
+            msgs = "?"
+
+        table.add_row(short_id, age, project_name, msgs, size, prompt)
+
+    console.print(table)
+
+
+def print_completions():
+    """Generate Fish shell completions."""
+    completions = """# Completions for claude-sessions (auto-generated)
+complete -c claude-sessions -f
+complete -c claude-sessions -s i -l interactive -d "Interactive selection mode"
+complete -c claude-sessions -s r -l resume -d "Resume session"
+complete -c claude-sessions -l fork-session -d "Fork session"
+complete -c claude-sessions -l show -d "Show full conversation"
+complete -c claude-sessions -l export -d "Export to .paid format"
+complete -c claude-sessions -l project -r -d "Filter by project path"
+complete -c claude-sessions -l since -r -a "today yesterday '1 hour ago' '2 hours ago' '1 day ago' '2 days ago' '1 week ago' '2 weeks ago'" -d "Filter by date"
+complete -c claude-sessions -l limit -r -d "Limit number of results"
+complete -c claude-sessions -l format -r -a "compact markdown json" -d "Output format"
+complete -c claude-sessions -s c -l copy -d "Copy session ID to clipboard"
+complete -c claude-sessions -s h -l help -d "Show help message"
+complete -c claude-sessions -l generate-completions -d "Generate Fish completions"
+
+# Completions for 'cs' alias
+complete -c cs -w claude-sessions
+"""
+    print(completions)
+
+
+@click.command(context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument("query", required=False)
+@click.option("-i", "--interactive", is_flag=True, help="Interactive selection mode")
+@click.option("-r", "--resume", is_flag=True, help="Resume session")
+@click.option("--fork-session", is_flag=True, help="Fork session")
+@click.option("--show", is_flag=True, help="Show full conversation")
+@click.option("--export", is_flag=True, help="Export to .paid format")
+@click.option("--project", help="Filter by project path")
+@click.option("--since", help="Filter by date (e.g., 'yesterday', '2 days ago')")
+@click.option("--limit", default=20, help="Limit number of results")
+@click.option("--format", "format_type", default="compact", type=click.Choice(["compact", "markdown", "json"]))
+@click.option("-c", "--copy", is_flag=True, help="Copy session ID to clipboard")
+@click.option("--generate-completions", is_flag=True, hidden=True, help="Generate Fish completions")
+def cli(query, interactive, resume, fork_session, show, export, project, since, limit, format_type, copy, generate_completions):
+    """Search and manage Claude Code sessions.
+
+    \b
+    Examples:
+      cs                              List recent sessions
+      cs --limit 5                    List 5 most recent sessions
+      cs zellij                       Search for "zellij" in sessions
+      cs ffd4f550                     Show session info (partial ID works)
+      cs ffd4f550 --show              Display full conversation
+      eval (cs ffd4f550 -r)           Resume session (cd to project + resume)
+      eval (cs ffd4f550 --fork-session) Fork session in its directory
+      cs --since "2 days ago"         List sessions from last 2 days
+      cs --project DotFiles           Filter by project name
+    """
+    # Handle completion generation
+    if generate_completions:
+        print_completions()
+        return
+
+    if query:
+        # Try to resolve as session ID first
+        resolved_id = resolve_session_id(query)
+        if resolved_id:
+            # Query is a session ID - show info or perform action
+            if resume:
+                # Verify session file exists
+                session_file = get_session_file(resolved_id)
+                if not session_file:
+                    console.print(f"[red]❌ Session file not found for {resolved_id[:8]}[/red]")
+                    return
+
+                project_dir = get_session_project(resolved_id)
+                if not project_dir:
+                    console.print("[red]❌ Could not find project directory in history[/red]")
+                    return
+
+                # Check if project directory exists
+                project_path = Path(project_dir)
+                if not project_path.exists():
+                    console.print(f"[red]❌ Project directory does not exist: {project_dir}[/red]")
+                    return
+
+                # Execute resume command
+                console.print(f"[cyan]📂 Resuming session {resolved_id[:8]} in {project_dir}[/cyan]")
+                os.chdir(project_dir)
+                os.execvp("claude", ["claude", "--resume", resolved_id])
+
+            elif fork_session:
+                # Verify session file exists
+                session_file = get_session_file(resolved_id)
+                if not session_file:
+                    console.print(f"[red]❌ Session file not found for {resolved_id[:8]}[/red]")
+                    return
+
+                project_dir = get_session_project(resolved_id)
+                if not project_dir:
+                    console.print("[red]❌ Could not find project directory in history[/red]")
+                    return
+
+                # Check if project directory exists
+                project_path = Path(project_dir)
+                if not project_path.exists():
+                    console.print(f"[red]❌ Project directory does not exist: {project_dir}[/red]")
+                    return
+
+                # Execute fork command
+                console.print(f"[cyan]📂 Forking session {resolved_id[:8]} in {project_dir}[/cyan]")
+                os.chdir(project_dir)
+                os.execvp("claude", ["claude", "--fork", resolved_id])
+            elif show:
+                show_session_conversation(resolved_id)
+            elif export:
+                console.print("[yellow]Export not yet implemented[/yellow]")
+            else:
+                # Default: show info
+                show_session_info(resolved_id)
+        else:
+            # Not a session ID - treat as search query
+            sessions = search_sessions(query, limit)
+            if interactive:
+                # TODO: Interactive selection
+                console.print("[yellow]Interactive mode not yet implemented[/yellow]")
+            else:
+                print_session_list(sessions, format_type)
+    else:
+        # No query - list sessions
+        sessions = list_sessions(limit, since, project)
+        if interactive:
+            # TODO: Interactive selection
+            console.print("[yellow]Interactive mode not yet implemented[/yellow]")
+        else:
+            print_session_list(sessions, format_type)
+
+
+if __name__ == "__main__":
+    cli()

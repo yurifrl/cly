@@ -1,0 +1,29 @@
+version: '3'
+
+tasks:
+  patch:
+    desc: Bump patch version (0.1.0 -> 0.1.1)
+    cmds:
+      - |
+        current=$(cat VERSION)
+        new=$(echo $current | awk -F. '{printf "%d.%d.%d\n", $1, $2, $3+1}')
+        echo $new > VERSION
+        echo "Version bumped to $new"
+
+  minor:
+    desc: Bump minor version (0.1.0 -> 0.2.0)
+    cmds:
+      - |
+        current=$(cat VERSION)
+        new=$(echo $current | awk -F. '{printf "%d.%d.%d\n", $1, $2+1, 0}')
+        echo $new > VERSION
+        echo "Version bumped to $new"
+
+  major:
+    desc: Bump major version (0.1.0 -> 1.0.0)
+    cmds:
+      - |
+        current=$(cat VERSION)
+        new=$(echo $current | awk -F. '{printf "%d.%d.%d\n", $1+1, 0, 0}')
+        echo $new > VERSION
+        echo "Version bumped to $new"

@@ -1,0 +1,15 @@
+[submodule ".references/soft-serve"]
+	path = .references/soft-serve
+	url = https://github.com/charmbracelet/soft-serve
+[submodule ".references/bubbletea"]
+	path = .references/bubbletea
+	url = https://github.com/charmbracelet/bubbletea
+[submodule ".references/bubbles"]
+	path = .references/bubbles
+	url = https://github.com/charmbracelet/bubbles
+[submodule ".references/lipgloss"]
+	path = .references/lipgloss
+	url = https://github.com/charmbracelet/lipgloss
+[submodule ".references/huh"]
+	path = .references/huh
+	url = https://github.com/charmbracelet/huh

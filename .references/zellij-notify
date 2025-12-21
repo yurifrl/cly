@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Send notification to zjstatus
+# Usage: zellij-notify "Your message here"
+
+if [ -z "$1" ]; then
+    echo "Usage: zellij-notify <message>"
+    exit 1
+fi
+
+# Send notification to zjstatus using the zjstatus::notify:: protocol
+zellij pipe "zjstatus::notify::$1"
