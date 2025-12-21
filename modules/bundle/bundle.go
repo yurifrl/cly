@@ -15,6 +15,7 @@ var (
 	noItFlag    bool
 	forceFlag   bool
 	tapsFlag    bool
+	cleanupFlag bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -74,6 +75,7 @@ Types:
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "skip interactive editor mode, just sync")
 	cmd.Flags().BoolVar(&forceFlag, "force", true, "force reinstall packages even if already installed")
 	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "run Brewfile.taps first (brew only)")
+	cmd.Flags().BoolVar(&cleanupFlag, "cleanup", true, "run cleanup after sync to remove unlisted packages")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))
@@ -142,7 +144,13 @@ func cleanupCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.C
 func runSync(bundlers map[string]Bundler, bundleType string) error {
 	if bundleType == "all" {
 		return runAll(bundlers, func(b Bundler) error {
-			return b.Sync(getBundleFile(b), verboseFlag, forceFlag, tapsFlag)
+			if err := b.Sync(getBundleFile(b), verboseFlag, forceFlag, tapsFlag); err != nil {
+				return err
+			}
+			if cleanupFlag {
+				return b.Cleanup(getBundleFile(b), verboseFlag, forceFlag)
+			}
+			return nil
 		})
 	}
 
@@ -155,7 +163,15 @@ func runSync(bundlers map[string]Bundler, bundleType string) error {
 		return err
 	}
 
-	return bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, tapsFlag)
+	if err := bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, tapsFlag); err != nil {
+		return err
+	}
+
+	if cleanupFlag {
+		return bundler.Cleanup(getBundleFile(bundler), verboseFlag, forceFlag)
+	}
+
+	return nil
 }
 
 func runCheck(bundlers map[string]Bundler, bundleType string) error {
@@ -261,10 +277,27 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 
 	bundleFile := expandPath(getBundleFile(bundler))
 
+	// If --taps flag is set and bundler is brew, edit Brewfile.taps first
+	if tapsFlag && bundleType == "brew" {
+		tapsFile := bundleFile + ".taps"
+		if err := openInEditor(tapsFile); err != nil {
+			return fmt.Errorf("editor failed: %w", err)
+		}
+	}
+
+	// Always open the main bundle file
 	if err := openInEditor(bundleFile); err != nil {
 		return fmt.Errorf("editor failed: %w", err)
 	}
 
 	fmt.Println("\n=== Syncing ===")
-	return bundler.Sync(bundleFile, verboseFlag, forceFlag, tapsFlag)
+	if err := bundler.Sync(bundleFile, verboseFlag, forceFlag, tapsFlag); err != nil {
+		return err
+	}
+
+	if cleanupFlag {
+		return bundler.Cleanup(bundleFile, verboseFlag, forceFlag)
+	}
+
+	return nil
 }

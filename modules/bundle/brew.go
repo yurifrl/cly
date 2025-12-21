@@ -38,10 +38,23 @@ func (b *BrewBundler) CheckDeps() error {
 func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, taps bool) error {
 	bundleFile = expandPath(bundleFile)
 
-	// Check if --taps flag is set and Brewfile.taps exists
-	if taps {
-		tapsFile := bundleFile + ".taps"
-		if _, err := os.Stat(tapsFile); err == nil {
+	// Check if Brewfile.taps exists
+	tapsFile := bundleFile + ".taps"
+	if _, err := os.Stat(tapsFile); err == nil {
+		shouldInstall := false
+
+		if taps {
+			// --taps flag passed, install without checking
+			shouldInstall = true
+		} else {
+			// Check if there are differences
+			checkCmd := exec.Command("brew", "bundle", "check", "--file="+tapsFile)
+			checkCmd.Stdout = nil
+			checkCmd.Stderr = nil
+			shouldInstall = checkCmd.Run() != nil // non-zero exit = changes needed
+		}
+
+		if shouldInstall {
 			fmt.Printf("Syncing taps from %s\n\n", tapsFile)
 
 			args := []string{"bundle", "--file=" + tapsFile}
@@ -87,6 +100,22 @@ func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, taps boo
 
 func (b *BrewBundler) Check(bundleFile string) error {
 	bundleFile = expandPath(bundleFile)
+
+	// Check taps file if it exists
+	tapsFile := bundleFile + ".taps"
+	if _, err := os.Stat(tapsFile); err == nil {
+		fmt.Printf("Checking taps from %s\n\n", tapsFile)
+
+		cmd := exec.Command("brew", "bundle", "check", "--file="+tapsFile)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("taps changes needed")
+		}
+		fmt.Println()
+	}
+
 	fmt.Printf("Checking Homebrew packages from %s\n\n", bundleFile)
 
 	cmd := exec.Command("brew", "bundle", "check", "--file="+bundleFile)
