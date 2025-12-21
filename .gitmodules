@@ -13,3 +13,6 @@
 [submodule ".references/huh"]
 	path = .references/huh
 	url = https://github.com/charmbracelet/huh
+[submodule ".references/aliexpress-scraper"]
+	path = .references/aliexpress-scraper
+	url = https://github.com/yurifrl/aliexpress-scraper.git
