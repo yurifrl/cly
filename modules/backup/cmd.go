@@ -54,7 +54,7 @@ func runWorkdirBackup(cmd *cobra.Command, args []string) error {
 
 	bucket := getBucket()
 	if bucket == "" {
-		return fmt.Errorf("GCS bucket not configured. Set it in config.local.yaml:\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")
+		return fmt.Errorf("GCS bucket not configured. Set it in your config.yaml :\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")
 	}
 
 	if !isAuthenticated() {
@@ -235,7 +235,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 
 	bucket := getBucket()
 	if bucket == "" {
-		return fmt.Errorf("GCS bucket not configured. Set it in config.local.yaml:\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")
+		return fmt.Errorf("GCS bucket not configured. Set it in your config.yaml :\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")
 	}
 
 	if !isAuthenticated() {
