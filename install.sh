@@ -79,6 +79,12 @@ check_path() {
     fi
 }
 
+# Initialize config
+init_config() {
+    echo -e "${YELLOW}Initializing config...${NC}"
+    "$INSTALL_DIR/$BINARY_NAME" config init || true
+}
+
 # Main
 main() {
     echo -e "${GREEN}CLY Installer${NC}"
@@ -87,6 +93,7 @@ main() {
     detect_platform
     get_latest_version
     install_binary
+    init_config
     check_path
 
     echo ""
