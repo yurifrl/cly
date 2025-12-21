@@ -5,11 +5,22 @@ Modular Go CLI for day-to-day utilities with beautiful TUI interfaces powered by
 ## Features
 
 - **UUID Generator** - Interactive UUID generation (v4, v7, multiple)
+- **AliExpress Scraper** - Browser automation for product data extraction
 - **48 TUI Demos** - Complete Bubbletea component showcase
 - **Modular Architecture** - Zero-coupling design, easy to extend
 - **Single Binary** - No runtime dependencies
 
 ## Installation
+
+### Quick Install (Recommended)
+```bash
+curl -sSL https://raw.githubusercontent.com/yurifrl/cly/main/install.sh | bash
+```
+
+The script installs to `~/.local/bin/cly` by default. Set `INSTALL_DIR` to customize:
+```bash
+INSTALL_DIR=/usr/local/bin ./install.sh
+```
 
 ### Via go install
 ```bash
@@ -20,8 +31,7 @@ go install github.com/yurifrl/cly@latest
 ```bash
 git clone https://github.com/yurifrl/cly
 cd cly
-go build
-./cly --help
+go run main.go --help
 ```
 
 ## Usage
@@ -30,6 +40,17 @@ go build
 ```bash
 cly uuid
 # Interactive selection: v4 (random), v7 (time-ordered), multiple (5x)
+```
+
+### AliExpress Scraper
+```bash
+# Launch persistent browser (solve CAPTCHA once)
+cly scraper browser
+
+# In another terminal, scrape products
+cly scraper aliexpress --url 1005003618976317
+cly scraper aliexpress --url "1005003618976317,1005010081760632"
+cly scraper aliexpress -f products.txt
 ```
 
 ### TUI Component Demos
@@ -50,6 +71,9 @@ cly demo file-picker      # File picker
 | Command | Description |
 |---------|-------------|
 | `uuid` | Generate UUIDs interactively (v4, v7, multiple) |
+| `scraper` | Web scraping with browser automation |
+| `scraper browser` | Launch persistent browser for scraping |
+| `scraper aliexpress` | Scrape AliExpress product data |
 
 ### Demos (48 Total)
 

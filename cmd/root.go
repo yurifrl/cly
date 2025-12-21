@@ -14,6 +14,7 @@ import (
 	"github.com/yurifrl/cly/modules/helpy"
 	"github.com/yurifrl/cly/modules/mcp"
 	"github.com/yurifrl/cly/modules/notify"
+	"github.com/yurifrl/cly/modules/scraper/cmd"
 	"github.com/yurifrl/cly/modules/uuid"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
@@ -53,6 +54,7 @@ func init() {
 	mcp.Register(RootCmd)
 	bundle.Register(RootCmd)
 	notify.Register(RootCmd)
+	cmd.Register(RootCmd)
 }
 
 func Execute() error {
