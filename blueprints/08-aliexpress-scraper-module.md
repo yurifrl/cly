@@ -542,3 +542,342 @@ github.com/rs/zerolog   // Already in cly
 - ✅ Output JSON validates against schema
 - ✅ TUI updates in real-time, responsive to Ctrl+C
 - ✅ Single binary distribution, no external dependencies
+
+
+# Expected output
+
+https://github.com/sudheer-ranga/aliexpress-product-scraper?tab=readme-ov-file#sample-json-response
+
+```
+{
+  "title": "Belts Famous Brand Belt Men Mens Belts Quality Genuine Luxury Leather Belt For Men Belt Male Strap Male Metal Automatic Buckle",
+  "categoryId": 200000298,
+  "productId": 1005005167379524,
+  "quantity": {
+    "total": 2915,
+    "available": 2915
+  },
+  "description": "<div class=\"detailmodule_image\"><span style=\"font-size:0px\">Belts Famous Brand Belt Men Mens belts Quality Genuine Luxury Leather belt for Men Belt male Strap Male Metal Automatic Buckle</span><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A67e7e00c22a34c03a2fd6abd8335ca94o.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A4eb2fb78352e4a75a5d5af99291bf3c0O.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A724b1b680ea144ec97177a675436afe0X.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A3a884f6c417443f294445df4caabe2d8g.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A66887b28887f4a9bb7cd413c87871e4b3.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A6953b334519346ea8a5e70b1bc7e4d30x.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A43c07db96f144772aab4b867348c5042K.jpg\" slate-data-type=\"image\"></div><div class=\"detailmodule_image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A8a5a2cc0cbff47f19839818817af211df.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Abee28c446a5b4a5cb2e5e37597a0950eZ.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A092cc17e08c74e5d92658ebbb01cb1a6W.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A89f6efe8339944e1a6981a3660575c01l.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Aca2a75bbd4514c9ea128ebf6eedbf8f6K.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Aed711ad0c4e844c7ba50a37ba2a2f3cbt.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Ab5ba00118c274f1ebe3ad2a69b1c3ce8U.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A00ca9a7d4d0b4c8bb76f0554bc1d6d85x.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Aeac414ae848a4c6b8ca23c35651363a9Q.jpg\" slate-data-type=\"image\"></div><div class=\"detailmodule_image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A3babd7dd86594ffa8ea7b913e561e003C.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A9f119a0b783746539e75d123e9aed02br.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A57418fd34de9439c99c81c36291b3c00P.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A54705ead34374411bd209b1da3683111p.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Aebecf8b1b81d47e3b0e95935211b65a56.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Acd3c6355f8dd443ca4ce764072497b95A.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A41516c4213b2410db8f0e7326ebe0bb27.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A6dbe49a93a5843049fd6bfa90868b6c0b.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A6fac50b7b99c487890eddb1b55862009z.jpg\" slate-data-type=\"image\"><img style=\"margin-bottom:10px\" class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Ae37039e03add42e691707f66bcf42137m.jpg\" slate-data-type=\"image\"></div><div class=\"detailmodule_image\"><img class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Aa8adab71a10a4d27ab4c6826970d0319L.jpg\" slate-data-type=\"image\"><img class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/Ade85a37af1dd41b8b58061d37ccfb2e4c.jpg\" slate-data-type=\"image\"><img class=\"detail-desc-decorate-image\" src=\"https://ae01.alicdn.com/kf/A7af7c1061767464081a8d458c9755b8aj.jpg\" slate-data-type=\"image\"></div><p><br></p>\n<script>window.adminAccountId=2673771248;</script>\n",
+  "orders": "5,000+",
+  "storeInfo": {
+    "name": "SaengQ Belt Store",
+    "logo": "https://ae01.alicdn.com/kf/S7f770946de0d4e8c80e7d06d15f6009d7.png",
+    "companyId": 2673771248,
+    "storeNumber": 1102598020,
+    "isTopRated": false,
+    "hasPayPalAccount": false,
+    "ratingCount": 5267,
+    "rating": "96.1"
+  },
+  "ratings": {
+    "totalStar": 5,
+    "averageStar": "4.7",
+    "totalStartCount": 1664,
+    "fiveStarCount": 1358,
+    "fourStarCount": 221,
+    "threeStarCount": 42,
+    "twoStarCount": 15,
+    "oneStarCount": 28
+  },
+  "images": [
+    "https://ae01.alicdn.com/kf/S06fcac1cfaeb467b94a00e5fadcceebb3/Belts-Famous-Brand-Belt-Men-Mens-Belts-Quality-Genuine-Luxury-Leather-Belt-For-Men-Belt-Male.jpg",
+    "https://ae01.alicdn.com/kf/Sbf8be40921594b3d9143e504403386c6I/Belts-Famous-Brand-Belt-Men-Mens-Belts-Quality-Genuine-Luxury-Leather-Belt-For-Men-Belt-Male.jpg",
+    "https://ae01.alicdn.com/kf/S98ab69e7fab24e6487df043a14e094eel/Belts-Famous-Brand-Belt-Men-Mens-Belts-Quality-Genuine-Luxury-Leather-Belt-For-Men-Belt-Male.jpg",
+    "https://ae01.alicdn.com/kf/S7da80d421c2047aab0f642ea76b435a5U/Belts-Famous-Brand-Belt-Men-Mens-Belts-Quality-Genuine-Luxury-Leather-Belt-For-Men-Belt-Male.jpg",
+    "https://ae01.alicdn.com/kf/Sc40414c08e6f449a8e55a17f2e8700efs/Belts-Famous-Brand-Belt-Men-Mens-Belts-Quality-Genuine-Luxury-Leather-Belt-For-Men-Belt-Male.jpg",
+    "https://ae01.alicdn.com/kf/S7d6212feb2bd403a908e1b2b128f562bD/Belts-Famous-Brand-Belt-Men-Mens-Belts-Quality-Genuine-Luxury-Leather-Belt-For-Men-Belt-Male.jpg"
+  ],
+  "reviews": [
+    {
+      "anonymous": false,
+      "name": "o***o",
+      "displayName": "Anna Collier",
+      "gender": "female",
+      "country": "FR",
+      "rating": 2,
+      "info": "Color:NE309 Belt Length:115CM ",
+      "date": "06 Nov 2023",
+      "content": "la boucle s'est détachée seule au bout de quelques semaines d'utilisation, logique puisque celle-ci n'est retenue que par deux petits clous de mediocre qualité.",
+      "photos": [
+        "https://ae01.alicdn.com/kf/Aeafa83229d3447dcaae2060bdfcf92bdM.jpg",
+        "https://ae01.alicdn.com/kf/A4976cf60c06d4033b37aee6bbac673efp.jpg",
+        "https://ae01.alicdn.com/kf/A7082aa4dbdf74ef6a879161d576d4243w.jpg",
+        "https://ae01.alicdn.com/kf/Ab0b320321ed845c3a56156c436b7a7fe5.jpg"
+      ],
+      "thumbnails": [
+        "https://ae01.alicdn.com/kf/Aeafa83229d3447dcaae2060bdfcf92bdM.jpg_220x220.jpg",
+        "https://ae01.alicdn.com/kf/A4976cf60c06d4033b37aee6bbac673efp.jpg_220x220.jpg",
+        "https://ae01.alicdn.com/kf/A7082aa4dbdf74ef6a879161d576d4243w.jpg_220x220.jpg",
+        "https://ae01.alicdn.com/kf/Ab0b320321ed845c3a56156c436b7a7fe5.jpg_220x220.jpg"
+      ]
+    },
+    {
+      "anonymous": true,
+      "name": "AliExpress Shopper",
+      "displayName": "Christy Willms",
+      "gender": "female",
+      "country": "NG",
+      "rating": 2,
+      "info": "Color:NE304 silvery Belt Length:115CM ",
+      "date": "17 Oct 2023",
+      "content": "I received my belt shattered, so sad about it ",
+      "photos": [
+        "https://ae01.alicdn.com/kf/A8ef4ca261ec54a748e828447a2aaab13K.jpg",
+        "https://ae01.alicdn.com/kf/A34003a19cf4249b58f80f7c380497355d.jpg",
+        "https://ae01.alicdn.com/kf/Af3ad1dfcf3184128a212ec1a324c324fv.jpg"
+      ],
+      "thumbnails": [
+        "https://ae01.alicdn.com/kf/A8ef4ca261ec54a748e828447a2aaab13K.jpg_220x220.jpg",
+        "https://ae01.alicdn.com/kf/A34003a19cf4249b58f80f7c380497355d.jpg_220x220.jpg",
+        "https://ae01.alicdn.com/kf/Af3ad1dfcf3184128a212ec1a324c324fv.jpg_220x220.jpg"
+      ]
+    },
+    {
+      "anonymous": false,
+      "name": "s***r",
+      "displayName": "Helen VonRueden",
+      "gender": "female",
+      "country": "KR",
+      "rating": 2,
+      "info": "Color:NE305 silvery Belt Length:115CM ",
+      "date": "18 Nov 2023",
+      "content": "버클 검정부분이 떠서 본드로 붙여서 사용해야되나?싶음",
+      "photos": [
+        "https://ae01.alicdn.com/kf/Aeb23160bc4b646dd8bea7332c0c4294bn.jpg",
+        "https://ae01.alicdn.com/kf/A9ad776ee8955410a9f4053c6b7ed4f2f9.jpg"
+      ],
+      "thumbnails": [
+        "https://ae01.alicdn.com/kf/Aeb23160bc4b646dd8bea7332c0c4294bn.jpg_220x220.jpg",
+        "https://ae01.alicdn.com/kf/A9ad776ee8955410a9f4053c6b7ed4f2f9.jpg_220x220.jpg"
+      ]
+    },
+    {
+      "anonymous": false,
+      "name": "L***D",
+      "displayName": "Dr. Lewis Baumbach",
+      "gender": "male",
+      "country": "KR",
+      "rating": 2,
+      "info": "Color:NE701 Belt Length:120cm ",
+      "date": "02 Dec 2023",
+      "content": "절대",
+      "photos": [],
+      "thumbnails": []
+    },
+    {
+      "anonymous": false,
+      "name": "a***a",
+      "displayName": "Diana Mertz",
+      "gender": "female",
+      "country": "CH",
+      "rating": 2,
+      "info": "Color:NE305 silvery Belt Length:130cm ",
+      "date": "26 Sep 2023",
+      "content": "Trop grande",
+      "photos": [],
+      "thumbnails": []
+    }
+  ],
+  "variants": {
+    "options": [
+      {
+        "id": 14,
+        "name": "Color",
+        "values": [
+          {
+            "id": 29,
+            "name": "WHITE",
+            "displayName": "NE336-silvery",
+            "image": "https://ae01.alicdn.com/kf/S0b481aeb168146c0bcfc80622a14c3a31/Belts-Famous-Brand-Belt-Men-Mens-Belts-Quality-Genuine-Luxury-Leather-Belt-For-Men-Belt-Male.jpg_640x640.jpg"
+          },
+          {
+            "id": 496,
+            "name": "PURPLE",
+            "displayName": "NE701",
+            "image": "https://ae01.alicdn.com/kf/A881e74e49d4a466393de16a414955943n/Belts-Famous-Brand-Belt-Men-Mens-Belts-Quality-Genuine-Luxury-Leather-Belt-For-Men-Belt-Male.jpg_640x640.jpg"
+          }
+        ]
+      },
+      {
+        "id": 200000858,
+        "name": "Belt Length",
+        "values": [
+          {
+            "id": 201447587,
+            "name": "115CM",
+            "displayName": "115CM"
+          },
+          {
+            "id": 200006543,
+            "name": "120cm",
+            "displayName": "120cm"
+          },
+          {
+            "id": 201447589,
+            "name": "130cm",
+            "displayName": "130cm"
+          }
+        ]
+      }
+    ],
+    "prices": [
+      {
+        "skuId": 12000031946221040,
+        "optionValueIds": "193,201447589",
+        "availableQuantity": 169,
+        "originalPrice": {
+          "currency": "GBP",
+          "formatedAmount": "￡16.44",
+          "value": 16.44
+        },
+        "salePrice": {
+          "currency": "GBP",
+          "formatedAmount": "￡0.40",
+          "value": 0.4
+        }
+      },
+      {
+        "skuId": 12000031946221038,
+        "optionValueIds": "193,200006543",
+        "availableQuantity": 180,
+        "originalPrice": {
+          "currency": "GBP",
+          "formatedAmount": "￡16.08",
+          "value": 16.08
+        },
+        "salePrice": {
+          "currency": "GBP",
+          "formatedAmount": "￡0.40",
+          "value": 0.4
+        }
+      },
+      {
+        "skuId": 12000034561692836,
+        "optionValueIds": "1254,201447587",
+        "availableQuantity": 12,
+        "originalPrice": {
+          "currency": "GBP",
+          "formatedAmount": "￡15.58",
+          "value": 15.58
+        },
+        "salePrice": {
+          "currency": "GBP",
+          "formatedAmount": "￡0.40",
+          "value": 0.4
+        }
+      }
+    ]
+  },
+  "specs": [
+    {
+      "attrValue": "China (Mainland)",
+      "attrName": "Place Of Origin"
+    },
+    {
+      "attrValue": "3.5cm",
+      "attrName": "Belt Width"
+    },
+    {
+      "attrValue": "7cm",
+      "attrName": "Buckle Length"
+    },
+    {
+      "attrValue": "4cm",
+      "attrName": "Buckle Width"
+    },
+    {
+      "attrValue": "Plaid",
+      "attrName": "Pattern Type"
+    },
+    {
+      "attrValue": "Casual",
+      "attrName": "Style"
+    },
+    {
+      "attrValue": "Metal,Cowskin,Faux Leather",
+      "attrName": "Belts Material"
+    },
+    {
+      "attrValue": "Adult",
+      "attrName": "Department Name"
+    },
+    {
+      "attrValue": "MEN",
+      "attrName": "Gender"
+    },
+    {
+      "attrValue": "saengQ",
+      "attrName": "Brand Name"
+    },
+    {
+      "attrValue": "Mainland China",
+      "attrName": "Origin"
+    },
+    {
+      "attrValue": "Zhejiang",
+      "attrName": "CN"
+    },
+    {
+      "attrValue": "BELTS",
+      "attrName": "Item Type"
+    }
+  ],
+  "currencyInfo": {
+    "baseCurrencyCode": "CNY",
+    "enableTransaction": true,
+    "currencySymbol": "￡",
+    "symbolFront": false,
+    "currencyRate": 0.1139,
+    "baseSymbolFront": false,
+    "currencyCode": "GBP",
+    "baseCurrencySymbol": "CN￥",
+    "multiCurrency": true
+  },
+  "originalPrice": {
+    "min": {
+      "currency": "GBP",
+      "formatedAmount": "￡14.99",
+      "value": 14.99
+    },
+    "max": {
+      "currency": "GBP",
+      "formatedAmount": "￡17.85",
+      "value": 17.85
+    }
+  },
+  "salePrice": {
+    "min": {
+      "currency": "GBP",
+      "formatedAmount": "￡0.40",
+      "value": 0.4
+    },
+    "max": {
+      "currency": "GBP",
+      "formatedAmount": "￡0.40",
+      "value": 0.4
+    }
+  },
+  "shipping": [
+    {
+      "deliveryProviderName": "Aliexpress Selection Premium shipping",
+      "tracking": "invisible",
+      "provider": "cainiao",
+      "company": "Aliexpress Selection Premium shipping",
+      "deliveryInfo": {
+        "min": 5,
+        "max": 5
+      },
+      "shippingInfo": {
+        "from": "China",
+        "fromCode": "CN",
+        "to": "United Kingdom",
+        "toCode": "UK",
+        "fees": "￡1.61",
+        "displayAmount": 1.61,
+        "displayCurrency": "GBP"
+      },
+      "warehouseType": "own_warehouse"
+    }
+  ]
+}
+```

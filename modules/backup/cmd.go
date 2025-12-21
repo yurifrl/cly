@@ -1,28 +1,217 @@
 package backup
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
 var (
-	gcpFlag    bool
-	outputPath string
+	gcpFlag         bool
+	outputPath      string
+	showSkippedFlag bool
 )
+
+type operationType int
+
+const (
+	opUpload operationType = iota
+	opSkipped
+	opError
+	opProgress
+	opInfo
+)
+
+type syncStats struct {
+	uploaded int
+	skipped  int
+	failed   int
+	mu       sync.Mutex
+}
+
+func (s *syncStats) increment(op operationType) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch op {
+	case opUpload:
+		s.uploaded++
+	case opSkipped:
+		s.skipped++
+	case opError:
+		s.failed++
+	}
+}
+
+func categorizeGsutilLine(line string) (operationType, bool, bool) {
+	// Returns: (opType, shouldPrint, shouldCount)
+	line = strings.TrimSpace(line)
+
+	// Actual file copying/syncing - count this
+	if (strings.Contains(line, "Copying") || strings.Contains(line, "Uploading")) && strings.Contains(line, "gs://") {
+		return opUpload, true, true
+	}
+
+	// Also catch lines that show file operations
+	if strings.HasPrefix(line, "Operation completed") {
+		return opInfo, true, false
+	}
+
+	// Skipped files (both files and directories)
+	if strings.Contains(line, "Skipping symbolic link") ||
+	   strings.Contains(line, "Skipping symlink") {
+		return opSkipped, showSkippedFlag, true
+	}
+
+	// Progress indicators - show but don't count
+	if (strings.Contains(line, "[") && strings.Contains(line, "]")) ||
+		strings.HasPrefix(line, "At source listing") ||
+		strings.HasPrefix(line, "At destination listing") {
+		return opProgress, true, false
+	}
+
+	// Errors - count
+	if strings.Contains(line, "CommandException") ||
+		strings.Contains(line, "Error") ||
+		strings.Contains(line, "failed") {
+		return opError, true, true
+	}
+
+	// Building state, warnings - show but don't count
+	if strings.HasPrefix(line, "Building synchronization") ||
+		strings.HasPrefix(line, "Starting synchronization") ||
+		strings.HasPrefix(line, "WARNING:") ||
+		strings.HasPrefix(line, "If you experience problems") ||
+		strings.HasPrefix(line, "Updates are available") {
+		return opInfo, true, false
+	}
+
+	// Default - show but don't count
+	return opInfo, len(line) > 0, false
+}
+
+func printStyledLine(line string, opType operationType) {
+	switch opType {
+	case opUpload:
+		fmt.Printf("%s %s\n", style.BlueStyle.Render("📤"), line)
+	case opSkipped:
+		if showSkippedFlag {
+			fmt.Printf("%s %s\n", style.YellowStyle.Render("⏭️ "), line)
+		}
+	case opError:
+		fmt.Printf("%s %s\n", style.RedStyle.Render("❌"), line)
+	case opProgress:
+		fmt.Printf("%s %s\n", style.GreenStyle.Render("⚡"), line)
+	case opInfo:
+		fmt.Println(line)
+	}
+}
+
+func processOutputStream(reader io.Reader, logFile *os.File, stats *syncStats, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Always write to log file for record keeping
+		if logFile != nil {
+			fmt.Fprintln(logFile, line)
+		}
+
+		opType, shouldPrint, shouldCount := categorizeGsutilLine(line)
+
+		// Update stats if needed
+		if shouldCount {
+			stats.increment(opType)
+		}
+
+		// Print with styling if appropriate
+		if shouldPrint {
+			printStyledLine(line, opType)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		// Only show error if it's not a normal EOF/close
+		if !strings.Contains(err.Error(), "file already closed") {
+			fmt.Printf("%s Error reading output: %s\n",
+				style.RedStyle.Render("❌"), err)
+		}
+	}
+}
+
+func printSyncSummary(stats *syncStats, logPath string) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+
+	fmt.Println()
+
+	// Header
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("212")).
+		Padding(0, 1)
+
+	rowStyle := lipgloss.NewStyle().Padding(0, 1)
+
+	header := headerStyle.Render("📊 Sync Summary")
+	fmt.Println(header)
+	fmt.Println()
+
+	// Stats rows
+	if stats.uploaded > 0 {
+		fmt.Printf("%s %s: %d\n",
+			style.GreenStyle.Render("✓"),
+			rowStyle.Render("Uploaded"),
+			stats.uploaded)
+	}
+
+	fmt.Printf("%s %s: %d\n",
+		style.YellowStyle.Render("⏭"),
+		rowStyle.Render("Skipped"),
+		stats.skipped)
+
+	if stats.failed > 0 {
+		fmt.Printf("%s %s: %d\n",
+			style.RedStyle.Render("✗"),
+			rowStyle.Render("Failed"),
+			stats.failed)
+	}
+
+	fmt.Println()
+
+	// Log file location
+	if logPath != "" {
+		fmt.Printf("%s Full log saved to: %s\n",
+			style.SubtleStyle.Render("📝"),
+			logPath)
+		fmt.Println()
+	}
+}
+
+func defaultBackupHandler(cmd *cobra.Command, args []string) error {
+	// If called without subcommand, run workdir backup
+	return runWorkdirBackup(cmd, args)
+}
 
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "backup",
 		Short: "Backup operations",
-		Long:  "Backup operations for various directories and services",
+		Long:  "Backup operations for various directories and services. Defaults to workdir backup.",
+		RunE:  defaultBackupHandler,
 	}
 
 	workdirCmd := &cobra.Command{
@@ -40,6 +229,7 @@ func Register(parent *cobra.Command) {
 	}
 
 	workdirCmd.Flags().BoolVar(&gcpFlag, "gcp", true, "Backup to GCP (default)")
+	workdirCmd.Flags().BoolVar(&showSkippedFlag, "show-skipped", false, "Show skipped files (symbolic links)")
 	downloadCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path (default: workdir-backup-YYYYMMDD-HHMMSS.tar.gz)")
 	downloadCmd.Flags().BoolVar(&gcpFlag, "gcp", true, "Download from GCP (default)")
 
@@ -114,6 +304,15 @@ func syncToGCS(workdir, bucketPath string) error {
 	excludePattern := buildExcludePattern()
 	parallelProcesses := calculateParallelProcesses()
 
+	// Create log file in tmp directory
+	timestamp := time.Now().Format("20060102-150405")
+	logPath := filepath.Join(os.TempDir(), fmt.Sprintf("cly-backup-%s.log", timestamp))
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		return fmt.Errorf("failed to create log file: %w", err)
+	}
+	defer logFile.Close()
+
 	fmt.Printf("%s Using %d parallel processes for faster sync...\n",
 		style.BlueStyle.Render("⚡"),
 		parallelProcesses)
@@ -138,11 +337,47 @@ func syncToGCS(workdir, bucketPath string) error {
 		"GSUTIL_COPY_TIMEOUT_SEC=1",
 		"GSUTIL_PARALLEL_COMPOSITE_UPLOAD_THRESHOLD=150M",
 	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("%s Some errors occurred during sync, but continuing...\n",
+	// Create pipes for capturing output
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	// Initialize stats
+	stats := &syncStats{}
+
+	// Start command
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start gsutil: %w", err)
+	}
+
+	// WaitGroup to ensure all output is processed
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Process stdout
+	go processOutputStream(stdoutPipe, logFile, stats, &wg)
+
+	// Process stderr
+	go processOutputStream(stderrPipe, logFile, stats, &wg)
+
+	// Wait for all output to be processed first
+	wg.Wait()
+
+	// Then wait for command to complete
+	cmdErr := cmd.Wait()
+
+	// Print summary
+	printSyncSummary(stats, logPath)
+
+	if cmdErr != nil {
+		fmt.Printf("%s Some errors occurred during sync\n",
 			style.YellowStyle.Render("⚠️ "))
 	}
 
