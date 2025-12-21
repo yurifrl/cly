@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/yurifrl/cly/modules/scraper/browser"
 )
 
 // ProductStatus represents the status of a product scrape
@@ -52,12 +54,31 @@ type ControlMsg struct {
 	Data interface{}
 }
 
+// BrowserState represents browser lifecycle state
+type BrowserState int
+
+const (
+	BrowserNotStarted BrowserState = iota
+	BrowserStarting
+	BrowserReady
+	BrowserError
+)
+
+// ScrapingState represents scraping lifecycle state
+type ScrapingState int
+
+const (
+	ScrapingIdle ScrapingState = iota
+	ScrapingActive
+	ScrapingPaused
+	ScrapingComplete
+)
+
 // DashboardModel is the Bubbletea model for scraping dashboard
 type DashboardModel struct {
 	// Product tracking
 	products []ProductItem
 	current  int
-	paused   bool
 
 	// UI components
 	progress    progress.Model
@@ -74,8 +95,14 @@ type DashboardModel struct {
 	failedCount   int
 	startTime     time.Time
 
-	// Browser status
-	browserStatus BrowserStatus
+	// Browser management
+	browserState    BrowserState
+	browserPID      int
+	browserCtrl     *browser.Controller
+	externalBrowser bool
+
+	// Scraping state
+	scrapingState ScrapingState
 
 	// Logs
 	logs    []LogEntry
@@ -87,16 +114,20 @@ type DashboardModel struct {
 
 	// Control
 	done        bool
+	autoStart   bool
 	controlChan chan<- ControlMsg
 }
 
 type keymap struct {
-	pause      key.Binding
-	skip       key.Binding
-	retry      key.Binding
-	scrollUp   key.Binding
-	scrollDown key.Binding
-	quit       key.Binding
+	pause         key.Binding
+	skip          key.Binding
+	retry         key.Binding
+	killBrowser   key.Binding
+	restartBrowser key.Binding
+	startScraping key.Binding
+	scrollUp      key.Binding
+	scrollDown    key.Binding
+	quit          key.Binding
 }
 
 func newKeymap() keymap {
@@ -113,13 +144,25 @@ func newKeymap() keymap {
 			key.WithKeys("r"),
 			key.WithHelp("r", "retry failed"),
 		),
+		killBrowser: key.NewBinding(
+			key.WithKeys("k"),
+			key.WithHelp("k", "kill browser"),
+		),
+		restartBrowser: key.NewBinding(
+			key.WithKeys("b"),
+			key.WithHelp("b", "restart browser"),
+		),
+		startScraping: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "start"),
+		),
 		scrollUp: key.NewBinding(
-			key.WithKeys("k", "up"),
-			key.WithHelp("k/↑", "scroll up"),
+			key.WithKeys("up"),
+			key.WithHelp("↑", "scroll up"),
 		),
 		scrollDown: key.NewBinding(
-			key.WithKeys("j", "down"),
-			key.WithHelp("j/↓", "scroll down"),
+			key.WithKeys("down"),
+			key.WithHelp("↓", "scroll down"),
 		),
 		quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
@@ -150,9 +193,28 @@ func NewDashboardModel(productIDs []string, controlChan chan<- ControlMsg) Dashb
 		keymap:        newKeymap(),
 		maxLogs:       10,
 		startTime:     time.Now(),
-		browserStatus: BrowserStatus{Connected: true, Message: "Connected"},
+		browserState:  BrowserNotStarted,
+		scrapingState: ScrapingIdle,
 		controlChan:   controlChan,
 	}
+}
+
+// SetBrowserController sets the browser controller
+func (m *DashboardModel) SetBrowserController(ctrl *browser.Controller) {
+	m.browserCtrl = ctrl
+}
+
+// SetExternalBrowser marks if using external browser
+func (m *DashboardModel) SetExternalBrowser(external bool) {
+	m.externalBrowser = external
+	if external {
+		m.browserState = BrowserReady
+	}
+}
+
+// SetAutoStart sets auto-start flag
+func (m *DashboardModel) SetAutoStart(auto bool) {
+	m.autoStart = auto
 }
 
 // Messages
@@ -185,16 +247,49 @@ type StatsUpdateMsg struct {
 }
 type TickMsg time.Time
 
+// Browser control messages
+type StartBrowserMsg struct{}
+type BrowserStartedMsg struct{ PID int }
+type BrowserErrorMsg struct{ Error string }
+type KillBrowserMsg struct{}
+type RestartBrowserMsg struct{}
+type StartScrapingMsg struct{}
+
 func (m DashboardModel) Init() tea.Cmd {
-	return tea.Batch(
-		tickCmd(),
-	)
+	cmds := []tea.Cmd{tickCmd()}
+
+	// Auto-start browser if flag set and not using external
+	if m.autoStart && !m.externalBrowser && m.browserCtrl != nil {
+		cmds = append(cmds, m.startBrowserCmd())
+	}
+
+	return tea.Batch(cmds...)
 }
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
+}
+
+func (m *DashboardModel) startBrowserCmd() tea.Cmd {
+	return func() tea.Msg {
+		m.addLog("INFO", "Starting browser on port 9222...")
+		ctx := context.Background()
+		if err := m.browserCtrl.Launch(ctx); err != nil {
+			return BrowserErrorMsg{Error: err.Error()}
+		}
+		return BrowserStartedMsg{PID: 0}
+	}
+}
+
+func (m *DashboardModel) killBrowserCmd() tea.Cmd {
+	return func() tea.Msg {
+		if m.browserCtrl != nil {
+			m.browserCtrl.Close()
+		}
+		return KillBrowserMsg{}
+	}
 }
 
 func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -223,29 +318,71 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keymap.quit):
 			m.done = true
+			// Kill browser if we own it
+			if !m.externalBrowser && m.browserCtrl != nil {
+				m.browserCtrl.Close()
+			}
 			if m.controlChan != nil {
 				m.controlChan <- ControlMsg{Type: "stop"}
 			}
 			return m, tea.Quit
 
+		case key.Matches(msg, m.keymap.startScraping):
+			// Start browser if not started
+			if m.browserState == BrowserNotStarted && !m.externalBrowser {
+				m.browserState = BrowserStarting
+				m.addLog("INFO", "Starting browser...")
+				return m, m.startBrowserCmd()
+			}
+			// Start scraping if browser ready
+			if m.browserState == BrowserReady && m.scrapingState == ScrapingIdle {
+				m.scrapingState = ScrapingActive
+				if m.controlChan != nil {
+					m.controlChan <- ControlMsg{Type: "start"}
+				}
+				m.addLog("INFO", "Starting scraping...")
+			}
+
 		case key.Matches(msg, m.keymap.pause):
-			m.paused = !m.paused
-			if m.controlChan != nil {
-				if m.paused {
+			if m.scrapingState == ScrapingActive {
+				m.scrapingState = ScrapingPaused
+				if m.controlChan != nil {
 					m.controlChan <- ControlMsg{Type: "pause"}
 					m.addLog("INFO", "Scraping paused")
-				} else {
+				}
+			} else if m.scrapingState == ScrapingPaused {
+				m.scrapingState = ScrapingActive
+				if m.controlChan != nil {
 					m.controlChan <- ControlMsg{Type: "resume"}
 					m.addLog("INFO", "Scraping resumed")
 				}
 			}
 
 		case key.Matches(msg, m.keymap.skip):
-			if m.current >= 0 && m.current < len(m.products) && !m.paused {
+			if m.current >= 0 && m.current < len(m.products) && m.scrapingState == ScrapingActive {
 				if m.controlChan != nil {
 					m.controlChan <- ControlMsg{Type: "skip"}
 					m.addLog("INFO", "Skipped product: "+m.products[m.current].ID)
 				}
+			}
+
+		case key.Matches(msg, m.keymap.killBrowser):
+			if !m.externalBrowser && m.browserCtrl != nil {
+				m.addLog("INFO", "Killing browser...")
+				return m, m.killBrowserCmd()
+			}
+
+		case key.Matches(msg, m.keymap.restartBrowser):
+			if !m.externalBrowser && m.browserCtrl != nil {
+				m.addLog("INFO", "Restarting browser...")
+				// Kill first
+				m.browserCtrl.Close()
+				m.browserState = BrowserStarting
+				// Pause scraping
+				if m.scrapingState == ScrapingActive {
+					m.scrapingState = ScrapingPaused
+				}
+				return m, m.startBrowserCmd()
 			}
 
 		case key.Matches(msg, m.keymap.retry):
@@ -271,6 +408,28 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.totalElapsed = time.Since(m.startTime)
 		cmds = append(cmds, tickCmd())
 
+	case BrowserStartedMsg:
+		m.browserState = BrowserReady
+		m.browserPID = msg.PID
+		m.addLog("INFO", "Browser ready!")
+
+		// Auto-start scraping if flag set
+		if m.autoStart && m.scrapingState == ScrapingIdle {
+			m.scrapingState = ScrapingActive
+			if m.controlChan != nil {
+				m.controlChan <- ControlMsg{Type: "start"}
+			}
+		}
+
+	case BrowserErrorMsg:
+		m.browserState = BrowserError
+		m.addLog("ERROR", "Browser error: "+msg.Error)
+
+	case KillBrowserMsg:
+		m.browserState = BrowserNotStarted
+		m.browserPID = 0
+		m.addLog("INFO", "Browser killed")
+
 	case ProductStartMsg:
 		m.current = msg.Index
 		m.products[msg.Index].Status = StatusScraping
@@ -295,12 +454,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case BrowserStatusMsg:
-		m.browserStatus = BrowserStatus{
-			Connected: msg.Connected,
-			Message:   msg.Message,
-		}
 		if !msg.Connected {
+			m.browserState = BrowserError
 			m.addLog("WARN", "Browser: "+msg.Message)
+		} else {
+			m.browserState = BrowserReady
 		}
 
 	case LogMsg:
@@ -348,18 +506,34 @@ func (m DashboardModel) renderHeader() string {
 	title := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("212")).
-		Render("🌐 Scraping AliExpress Products")
+		Render("🌐 AliExpress Scraper Dashboard")
 
-	statusIcon := "✓"
-	statusColor := lipgloss.Color("34")
-	if !m.browserStatus.Connected {
+	var statusIcon string
+	var statusText string
+	var statusColor lipgloss.Color
+
+	switch m.browserState {
+	case BrowserNotStarted:
+		statusIcon = "○"
+		statusText = "Not started"
+		statusColor = lipgloss.Color("241")
+	case BrowserStarting:
+		statusIcon = "⏳"
+		statusText = "Starting..."
+		statusColor = lipgloss.Color("220")
+	case BrowserReady:
+		statusIcon = "✓"
+		statusText = "Connected"
+		statusColor = lipgloss.Color("34")
+	case BrowserError:
 		statusIcon = "✗"
+		statusText = "Error"
 		statusColor = lipgloss.Color("196")
 	}
 
 	status := lipgloss.NewStyle().
 		Foreground(statusColor).
-		Render(fmt.Sprintf("[Browser: %s %s]", statusIcon, m.browserStatus.Message))
+		Render(fmt.Sprintf("[Browser: %s %s]", statusIcon, statusText))
 
 	header := lipgloss.JoinHorizontal(lipgloss.Top, title, strings.Repeat(" ", m.width-50), status)
 
@@ -395,12 +569,12 @@ func (m DashboardModel) renderStats() string {
 	line2 := fmt.Sprintf("Avg Time: %s/product | ETA: %s | Total: %s",
 		avgTimeStr, etaStr, formatDuration(m.totalElapsed))
 
-	pauseIndicator := ""
-	if m.paused {
-		pauseIndicator = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(" [PAUSED]")
+	stateIndicator := ""
+	if m.scrapingState == ScrapingPaused {
+		stateIndicator = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(" [PAUSED]")
 	}
 
-	content := line1 + "\n" + line2 + pauseIndicator
+	content := line1 + "\n" + line2 + stateIndicator
 
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color("33")).
@@ -525,14 +699,31 @@ func (m DashboardModel) renderFooter() string {
 
 	progressBar := m.progress.ViewAs(percent)
 
-	// Hotkey help
-	keys := []string{
-		m.keymap.pause.Help().Key + ": pause",
-		m.keymap.skip.Help().Key + ": skip",
-		m.keymap.retry.Help().Key + ": retry failed",
-		"j/k: scroll",
-		m.keymap.quit.Help().Key + ": quit",
+	// Dynamic hotkey help based on state
+	var keys []string
+
+	if m.scrapingState == ScrapingIdle {
+		if m.browserState == BrowserNotStarted && !m.externalBrowser {
+			keys = append(keys, "Enter: start browser")
+		} else if m.browserState == BrowserReady {
+			keys = append(keys, "Enter: start scraping")
+		}
 	}
+
+	if m.scrapingState == ScrapingActive || m.scrapingState == ScrapingPaused {
+		if m.scrapingState == ScrapingActive {
+			keys = append(keys, "Space: pause")
+		} else {
+			keys = append(keys, "Space: resume")
+		}
+		keys = append(keys, "S: skip")
+	}
+
+	if !m.externalBrowser {
+		keys = append(keys, "K: kill browser", "B: restart")
+	}
+
+	keys = append(keys, "↑/↓: scroll", "Q: quit")
 
 	helpText := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).

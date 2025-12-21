@@ -17,12 +17,13 @@ import (
 )
 
 var (
-	urlFlag       string
-	fileFlag      string
-	outputFlag    string
-	outputPerURL  bool
-	outputDirFlag string
+	urlFlag        string
+	fileFlag       string
+	outputFlag     string
+	outputPerURL   bool
+	outputDirFlag  string
 	browserURLFlag string
+	autoStartFlag  bool
 )
 
 // AliExpressCmd scrapes AliExpress products
@@ -54,7 +55,8 @@ func init() {
 	AliExpressCmd.Flags().StringVar(&outputFlag, "output", "products.json", "Output file path")
 	AliExpressCmd.Flags().BoolVar(&outputPerURL, "output-per-url", false, "Create separate file per product")
 	AliExpressCmd.Flags().StringVar(&outputDirFlag, "output-dir", "./scraped", "Output directory")
-	AliExpressCmd.Flags().StringVar(&browserURLFlag, "browser-url", "http://localhost:9222", "Browser debugging URL")
+	AliExpressCmd.Flags().StringVar(&browserURLFlag, "browser", "", "Connect to existing browser (e.g. http://localhost:9222)")
+	AliExpressCmd.Flags().BoolVar(&autoStartFlag, "auto-start", false, "Auto-start browser and scraping")
 }
 
 func runAliExpress(cmd *cobra.Command, args []string) error {
@@ -85,14 +87,30 @@ func runAliExpress(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no valid product IDs found")
 	}
 
-	// Setup browser
-	ctrl := browser.NewController(browser.Options{
-		BrowserURL: browserURLFlag,
-	})
+	// Setup browser controller
+	externalBrowser := browserURLFlag != ""
+	var ctrl *browser.Controller
 
-	ctx := context.Background()
-	if err := ctrl.Connect(ctx, browserURLFlag); err != nil {
-		return fmt.Errorf("failed to connect to browser (is it running?): %w", err)
+	if externalBrowser {
+		// Connect to existing browser
+		ctrl = browser.NewController(browser.Options{
+			BrowserURL: browserURLFlag,
+		})
+		ctx := context.Background()
+		if err := ctrl.Connect(ctx, browserURLFlag); err != nil {
+			return fmt.Errorf("failed to connect to browser: %w", err)
+		}
+	} else {
+		// TUI will manage browser lifecycle
+		userDataDir, err := browser.GetDefaultUserDataDir()
+		if err != nil {
+			return fmt.Errorf("failed to get user data dir: %w", err)
+		}
+		ctrl = browser.NewController(browser.Options{
+			DebugPort:   9222,
+			Headless:    false,
+			UserDataDir: userDataDir,
+		})
 	}
 	defer ctrl.Close()
 
@@ -122,6 +140,10 @@ func runAliExpress(cmd *cobra.Command, args []string) error {
 
 	// Setup TUI
 	progModel := tui.NewDashboardModel(validIDs, controlChan)
+	progModel.SetBrowserController(ctrl)
+	progModel.SetExternalBrowser(externalBrowser)
+	progModel.SetAutoStart(autoStartFlag)
+
 	p := tea.NewProgram(progModel)
 
 	// Track current index for progress callback
@@ -139,23 +161,35 @@ func runAliExpress(cmd *cobra.Command, args []string) error {
 	go func() {
 		defer close(controlChan)
 
+		// Wait for start signal (unless auto-start)
+		if !autoStartFlag {
+			waiting := true
+			for waiting {
+				msg := <-controlChan
+				if msg.Type == "start" {
+					waiting = false
+				} else if msg.Type == "stop" {
+					return
+				}
+			}
+		}
+
 		pauseChan := make(chan struct{})
 		isPaused := false
 
 		for i, id := range validIDs {
 			currentIndex = i
-			// Check control messages
+
+			// Check control messages (non-blocking)
 			select {
 			case msg := <-controlChan:
 				switch msg.Type {
 				case "pause":
 					isPaused = true
-					p.Send(tui.LogMsg{Level: "INFO", Message: "Paused"})
 				case "resume":
 					isPaused = false
 					close(pauseChan)
 					pauseChan = make(chan struct{})
-					p.Send(tui.LogMsg{Level: "INFO", Message: "Resumed"})
 				case "skip":
 					p.Send(tui.ProductFailMsg{Index: i, Error: "Skipped by user"})
 					continue

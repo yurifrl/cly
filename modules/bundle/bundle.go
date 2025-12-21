@@ -14,6 +14,7 @@ var (
 	verboseFlag bool
 	noItFlag    bool
 	forceFlag   bool
+	tapsFlag    bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -72,6 +73,7 @@ Types:
 	cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "show detailed output")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "skip interactive editor mode, just sync")
 	cmd.Flags().BoolVar(&forceFlag, "force", true, "force reinstall packages even if already installed")
+	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "run Brewfile.taps first (brew only)")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))
@@ -140,7 +142,7 @@ func cleanupCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.C
 func runSync(bundlers map[string]Bundler, bundleType string) error {
 	if bundleType == "all" {
 		return runAll(bundlers, func(b Bundler) error {
-			return b.Sync(getBundleFile(b), verboseFlag, forceFlag)
+			return b.Sync(getBundleFile(b), verboseFlag, forceFlag, tapsFlag)
 		})
 	}
 
@@ -153,7 +155,7 @@ func runSync(bundlers map[string]Bundler, bundleType string) error {
 		return err
 	}
 
-	return bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag)
+	return bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, tapsFlag)
 }
 
 func runCheck(bundlers map[string]Bundler, bundleType string) error {
@@ -264,5 +266,5 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 	}
 
 	fmt.Println("\n=== Syncing ===")
-	return bundler.Sync(bundleFile, verboseFlag, forceFlag)
+	return bundler.Sync(bundleFile, verboseFlag, forceFlag, tapsFlag)
 }

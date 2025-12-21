@@ -77,6 +77,11 @@ func (b *GoBundler) install(pkg string, verbose bool, force bool) error {
 	env := os.Environ()
 	env = append(env, "GOBIN="+b.gobin)
 
+	// Strip existing version suffix if present
+	if idx := strings.Index(pkg, "@"); idx != -1 {
+		pkg = pkg[:idx]
+	}
+
 	args := []string{"install", pkg + "@latest"}
 	cmd := exec.Command("go", args...)
 	cmd.Env = env

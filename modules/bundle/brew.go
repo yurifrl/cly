@@ -35,8 +35,34 @@ func (b *BrewBundler) CheckDeps() error {
 	return nil
 }
 
-func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool) error {
+func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, taps bool) error {
 	bundleFile = expandPath(bundleFile)
+
+	// Check if --taps flag is set and Brewfile.taps exists
+	if taps {
+		tapsFile := bundleFile + ".taps"
+		if _, err := os.Stat(tapsFile); err == nil {
+			fmt.Printf("Syncing taps from %s\n\n", tapsFile)
+
+			args := []string{"bundle", "--file=" + tapsFile}
+			if verbose {
+				args = append(args, "--verbose")
+			}
+			if force {
+				args = append(args, "--force")
+			}
+
+			cmd := exec.Command("brew", args...)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("Warning: brew bundle taps had errors: %v\n", err)
+			}
+			fmt.Println()
+		}
+	}
+
 	fmt.Printf("Syncing Homebrew packages from %s\n\n", bundleFile)
 
 	args := []string{"bundle", "--file=" + bundleFile}

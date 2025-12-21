@@ -3,7 +3,6 @@ package extractors
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/chromedp/chromedp"
 )
@@ -18,10 +17,51 @@ func (e *Images) Name() string {
 func (e *Images) Extract(ctx context.Context, productID string) (interface{}, error) {
 	var imageURLs []string
 
-	// Extract image URLs from page
+	// Extract image URLs from page - port from Node.js reference
 	err := chromedp.Run(ctx,
 		chromedp.Evaluate(`
-			Array.from(document.querySelectorAll('img[class*="magnifier"]')).map(img => img.src)
+			(() => {
+				const urls = [];
+				const gallery = document.querySelector('[class*="gallery"], [class*="image-view"], [class*="ImageView"], [class*="slider"]');
+
+				if (gallery) {
+					const imageElements = gallery.querySelectorAll('img[src*="/kf/"]');
+
+					imageElements.forEach(img => {
+						let src = img.src || img.getAttribute('src');
+						if (!src || !src.includes('/kf/')) return;
+
+						// Clean up URL to get base
+						let cleanUrl = src
+							.replace(/_\d+x\d+q?\d*\.jpg_\.avif?$/i, '')
+							.replace(/_\d+x\d+q?\d*\.jpg_\.avi$/i, '')
+							.replace(/_\d+x\d+\.png_\.avif?$/i, '')
+							.replace(/_\d+x\d+q?\d*\.jpg$/i, '')
+							.replace(/_\d+x\d+\.png$/i, '')
+							.replace(/\.avif$/i, '')
+							.replace(/\.webp$/i, '');
+
+						const kfMatch = cleanUrl.match(/(https?:\/\/[^\/]+\/kf\/[A-Za-z0-9]+)/);
+						if (!kfMatch) return;
+
+						let baseUrl = kfMatch[1];
+						const isPng = src.match(/\.png/i) && !src.match(/\.jpe?g/i);
+
+						let highRes;
+						if (baseUrl.match(/\.(jpe?g|png)$/i)) {
+							highRes = baseUrl;
+						} else {
+							highRes = isPng ? baseUrl + '.png' : baseUrl + '.jpg';
+						}
+
+						if (!urls.includes(highRes)) {
+							urls.push(highRes);
+						}
+					});
+				}
+
+				return urls;
+			})()
 		`, &imageURLs),
 	)
 
@@ -29,14 +69,5 @@ func (e *Images) Extract(ctx context.Context, productID string) (interface{}, er
 		return nil, fmt.Errorf("failed to extract images: %w", err)
 	}
 
-	// Convert thumbnail URLs to high-res
-	var highResURLs []string
-	for _, url := range imageURLs {
-		// Convert _220x220.jpg to full resolution
-		url = strings.ReplaceAll(url, "_220x220", "")
-		url = strings.ReplaceAll(url, ".jpg_.webp", ".jpg")
-		highResURLs = append(highResURLs, url)
-	}
-
-	return highResURLs, nil
+	return imageURLs, nil
 }
