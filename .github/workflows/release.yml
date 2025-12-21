@@ -44,26 +44,26 @@ jobs:
             echo "result=false" >> $GITHUB_OUTPUT
           fi
 
-  build-linux:
+  build-macos-amd64:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Build Linux amd64 binaries
+      - name: Build macOS amd64 binaries
         run: |
           VERSION=$(cat VERSION)
           mkdir -p dist
-          CGO_ENABLED=1 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-linux-amd64 .
-          CGO_ENABLED=1 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-linux-amd64 ./cmd/mcp
+          CGO_ENABLED=1 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v${VERSION}" -o dist/cly-darwin-amd64 .
+          CGO_ENABLED=1 go build -ldflags="-s -w -X main.version=v${VERSION}" -o dist/mcp-darwin-amd64 ./cmd/mcp
 
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-binaries
+          name: macos-amd64-binaries
           path: dist/*
 
   build-macos-arm64:
@@ -88,31 +88,8 @@ jobs:
           name: macos-arm64-binaries
           path: dist/*
 
-  build-windows:
-    needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: Build Windows binaries
-        run: |
-          $VERSION = Get-Content VERSION
-          mkdir -Force dist
-          $env:CGO_ENABLED=1
-          go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=v$VERSION" -o dist/cly-windows-amd64.exe .
-          go build -ldflags="-s -w -X main.version=v$VERSION" -o dist/mcp-windows-amd64.exe ./cmd/mcp
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-binaries
-          path: dist/*
-
   release:
-    needs: [check-version, build-linux, build-macos-arm64, build-windows]
+    needs: [check-version, build-macos-amd64, build-macos-arm64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
