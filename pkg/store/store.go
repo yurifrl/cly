@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/tursodatabase/go-libsql"
+	_ "modernc.org/sqlite"
 )
 
 // Store provides namespace/key storage for persistent app state.
@@ -17,12 +17,12 @@ type Store interface {
 	Close() error
 }
 
-// SQLiteStore implements Store using libSQL (Turso).
+// SQLiteStore implements Store using SQLite (modernc.org/sqlite - pure Go).
 type SQLiteStore struct {
 	db *sql.DB
 }
 
-// New creates a new libSQL-backed Store at the given path.
+// New creates a new SQLite-backed Store at the given path.
 // Creates the directory and database if they don't exist.
 func New(dbPath string) (Store, error) {
 	// Expand ~ to home directory
@@ -40,7 +40,7 @@ func New(dbPath string) (Store, error) {
 		return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
-	db, err := sql.Open("libsql", "file:"+dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
