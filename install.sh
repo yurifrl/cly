@@ -10,7 +10,7 @@ NC='\033[0m'
 # Configuration
 REPO="yurifrl/cly"
 BINARY_NAME="cly"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 # Detect OS and Architecture
 detect_platform() {
