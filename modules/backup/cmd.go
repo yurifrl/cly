@@ -221,6 +221,13 @@ func Register(parent *cobra.Command) {
 		RunE:  runWorkdirBackup,
 	}
 
+	syncCmd := &cobra.Command{
+		Use:   "sync",
+		Short: "Sync ~/Workdir (add only)",
+		Long:  "Sync ~/Workdir to Google Cloud Storage - only adds new files, doesn't delete",
+		RunE:  runWorkdirSync,
+	}
+
 	downloadCmd := &cobra.Command{
 		Use:   "download",
 		Short: "Download backup as tar.gz",
@@ -230,10 +237,12 @@ func Register(parent *cobra.Command) {
 
 	workdirCmd.Flags().BoolVar(&gcpFlag, "gcp", true, "Backup to GCP (default)")
 	workdirCmd.Flags().BoolVar(&showSkippedFlag, "show-skipped", false, "Show skipped files (symbolic links)")
+	syncCmd.Flags().BoolVar(&gcpFlag, "gcp", true, "Sync to GCP (default)")
+	syncCmd.Flags().BoolVar(&showSkippedFlag, "show-skipped", false, "Show skipped files (symbolic links)")
 	downloadCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path (default: workdir-backup-YYYYMMDD-HHMMSS.tar.gz)")
 	downloadCmd.Flags().BoolVar(&gcpFlag, "gcp", true, "Download from GCP (default)")
 
-	cmd.AddCommand(workdirCmd, downloadCmd)
+	cmd.AddCommand(workdirCmd, syncCmd, downloadCmd)
 	parent.AddCommand(cmd)
 }
 
@@ -267,13 +276,93 @@ func runWorkdirBackup(cmd *cobra.Command, args []string) error {
 	bucketPath := fmt.Sprintf("gs://%s/", bucket)
 	workdir := filepath.Join(os.Getenv("HOME"), "Workdir")
 
-	fmt.Printf("%s Backing up %s to %s...\n", style.BlueStyle.Render("🔄"), workdir, bucketPath)
+	// Confirm before starting backup
+	fmt.Printf("\n%s About to backup:\n", style.YellowStyle.Render("⚠️ "))
+	fmt.Printf("  Source: %s\n", style.BlueStyle.Render(workdir))
+	fmt.Printf("  Target: %s\n", style.BlueStyle.Render(bucketPath))
+	fmt.Printf("  Note: Will include .git directories\n")
+	fmt.Printf("  Note: Will NOT delete remote files\n\n")
+	fmt.Print("Continue? (y/N): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read input: %w", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "y" && response != "yes" {
+		fmt.Println(style.YellowStyle.Render("Backup cancelled"))
+		return nil
+	}
+
+	fmt.Printf("\n%s Backing up %s to %s...\n", style.BlueStyle.Render("🔄"), workdir, bucketPath)
 
 	if err := syncToGCS(workdir, bucketPath); err != nil {
 		return fmt.Errorf("backup failed: %w", err)
 	}
 
 	fmt.Printf("%s Backup completed successfully!\n", style.GreenStyle.Render("✅"))
+	return nil
+}
+
+func runWorkdirSync(cmd *cobra.Command, args []string) error {
+	if !gcpFlag {
+		return fmt.Errorf("only GCP sync is currently supported")
+	}
+
+	bucket := getBucket()
+	if bucket == "" {
+		return fmt.Errorf("GCS bucket not configured. Set it in your config.yaml :\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")
+	}
+
+	if !isAuthenticated() {
+		fmt.Println(style.YellowStyle.Render("⚠️  No active gcloud authentication found. Initiating login..."))
+		if err := login(); err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+	}
+
+	if !isAuthenticated() {
+		return fmt.Errorf("authentication failed or canceled")
+	}
+
+	account, err := getActiveAccount()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Authenticated as %s\n", style.GreenStyle.Render("✓"), account)
+
+	bucketPath := fmt.Sprintf("gs://%s/", bucket)
+	workdir := filepath.Join(os.Getenv("HOME"), "Workdir")
+
+	// Confirm before starting sync
+	fmt.Printf("\n%s About to sync:\n", style.YellowStyle.Render("⚠️ "))
+	fmt.Printf("  Source: %s\n", style.BlueStyle.Render(workdir))
+	fmt.Printf("  Target: %s\n", style.BlueStyle.Render(bucketPath))
+	fmt.Printf("  Note: Will include .git directories\n")
+	fmt.Printf("  Note: Will NOT delete remote files\n\n")
+	fmt.Print("Continue? (y/N): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read input: %w", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "y" && response != "yes" {
+		fmt.Println(style.YellowStyle.Render("Sync cancelled"))
+		return nil
+	}
+
+	fmt.Printf("\n%s Syncing %s to %s...\n", style.BlueStyle.Render("🔄"), workdir, bucketPath)
+
+	if err := syncToGCS(workdir, bucketPath); err != nil {
+		return fmt.Errorf("sync failed: %w", err)
+	}
+
+	fmt.Printf("%s Sync completed successfully!\n", style.GreenStyle.Render("✅"))
 	return nil
 }
 
@@ -316,7 +405,7 @@ func syncToGCS(workdir, bucketPath string) error {
 	fmt.Printf("%s Using %d parallel processes for faster sync...\n",
 		style.BlueStyle.Render("⚡"),
 		parallelProcesses)
-	fmt.Printf("%s Excluding artifacts and dependencies, keeping git history\n",
+	fmt.Printf("%s Excluding artifacts and dependencies, including .git directories\n",
 		style.BlueStyle.Render("📋"))
 
 	args := []string{
@@ -425,7 +514,6 @@ func buildExcludePattern() string {
 		".*\\.eggs/.*",
 		".*\\.egg-info/.*",
 		".*\\.direnv/.*",
-		".*\\.git/objects/.*",
 		".*tmp/.*",
 		".*temp/.*",
 		".*\\.tmp$",
