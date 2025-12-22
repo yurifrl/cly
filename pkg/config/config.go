@@ -16,6 +16,7 @@ var defaultConfig = []byte(`app:
   debug: false
   config_dir: ~/.config/cly
   data_dir: ~/.local/share/cly
+  dotfiles_dir: ~/DotFiles
 
 bundle:
   go_file: ~/.config/Gofile
@@ -54,7 +55,6 @@ modules:
   demo:
     show_count: true
   dotfiles:
-    directory: ~/DotFiles
     zellij_plugins_dir: ~/.config/zellij/plugins
   # Example: Use 1Password secrets with op:// references
   # backup:
@@ -72,20 +72,21 @@ type HookConfig struct {
 }
 
 type NotifyConfig struct {
-	Enabled         bool                   `yaml:"enabled" mapstructure:"enabled"`
-	Sound           bool                   `yaml:"sound" mapstructure:"sound"`
-	UseZellijStatus bool                   `yaml:"use_zellij_status" mapstructure:"use_zellij_status"` // zjstatus plugin
-	UseZellijNotify bool                   `yaml:"use_zellij_notify" mapstructure:"use_zellij_notify"` // notify plugin
-	Icon            string                 `yaml:"icon" mapstructure:"icon"`
-	Hooks           map[string]HookConfig  `yaml:"hooks" mapstructure:"hooks"`
+	Enabled         bool                  `yaml:"enabled" mapstructure:"enabled"`
+	Sound           bool                  `yaml:"sound" mapstructure:"sound"`
+	UseZellijStatus bool                  `yaml:"use_zellij_status" mapstructure:"use_zellij_status"` // zjstatus plugin
+	UseZellijNotify bool                  `yaml:"use_zellij_notify" mapstructure:"use_zellij_notify"` // notify plugin
+	Icon            string                `yaml:"icon" mapstructure:"icon"`
+	Hooks           map[string]HookConfig `yaml:"hooks" mapstructure:"hooks"`
 }
 
 type Config struct {
 	App struct {
-		Name      string `yaml:"name"`
-		Debug     bool   `yaml:"debug"`
-		ConfigDir string `yaml:"config_dir"`
-		DataDir   string `yaml:"data_dir"`
+		Name        string `yaml:"name"`
+		Debug       bool   `yaml:"debug"`
+		ConfigDir   string `yaml:"config_dir"`
+		DataDir     string `yaml:"data_dir"`
+		DotFilesDir string `yaml:"dotfiles_dir"`
 	} `yaml:"app"`
 	Bundle struct {
 		GoFile     string `yaml:"go_file"`

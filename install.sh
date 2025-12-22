@@ -52,20 +52,20 @@ install_binary() {
     echo -e "${YELLOW}Downloading from $DOWNLOAD_URL${NC}"
 
     # Create install directory if it doesn't exist
-    mkdir -p "$INSTALL_DIR"
+    sudo mkdir -p "$INSTALL_DIR"
 
     # Download binary
     if command -v curl >/dev/null 2>&1; then
-        curl -L -o "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL"
+        sudo curl -L -o "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL"
     elif command -v wget >/dev/null 2>&1; then
-        wget -O "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL"
+        sudo wget -O "$INSTALL_DIR/$BINARY_NAME" "$DOWNLOAD_URL"
     else
         echo -e "${RED}Neither curl nor wget found. Please install one.${NC}"
         exit 1
     fi
 
     # Make executable
-    chmod +x "$INSTALL_DIR/$BINARY_NAME"
+    sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
     echo -e "${GREEN}✓ Installed to $INSTALL_DIR/$BINARY_NAME${NC}"
 }

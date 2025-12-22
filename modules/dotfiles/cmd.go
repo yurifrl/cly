@@ -49,9 +49,10 @@ func getConfigPath() (string, error) {
 		return configFlag, nil
 	}
 
-	dotfilesDir := pkgconfig.GetString("modules.dotfiles.directory")
-	if dotfilesDir == "" {
-		dotfilesDir = "~/DotFiles"
+	cfg := pkgconfig.Get()
+	dotfilesDir := "~/DotFiles"
+	if cfg != nil && cfg.App.DotFilesDir != "" {
+		dotfilesDir = cfg.App.DotFilesDir
 	}
 	dotfilesDir = expandTilde(dotfilesDir)
 

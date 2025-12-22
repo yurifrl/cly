@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/pkg/config"
 )
 
 const defaultFilePath = "~/DotFiles/HELP.md"
@@ -53,14 +54,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return runClaude(cmd, args)
 	}
 
-	path := expandPath(fileFlag)
-
-	if !fileExists(path) {
-		msg := fmt.Sprintf("Help file not found: %s", path)
-		fmt.Println(errorStyle.Render(msg))
-		return nil
-	}
-
+	path := resolveFilePath(fileFlag)
 	content, err := readFileContent(path)
 	if err != nil {
 		msg := fmt.Sprintf("Error reading file: %v", err)
@@ -79,6 +73,23 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func resolveFilePath(filePath string) string {
+	cfg := config.Get()
+	dotfilesDir := "~/DotFiles"
+	if cfg != nil && cfg.App.DotFilesDir != "" {
+		dotfilesDir = cfg.App.DotFilesDir
+	}
+
+	dir := expandPath(dotfilesDir)
+	entries, _ := os.ReadDir(dir)
+	for _, entry := range entries {
+		if strings.EqualFold(entry.Name(), "HELP.md") {
+			return filepath.Join(dir, entry.Name())
+		}
+	}
+	return filepath.Join(dir, "HELP.md")
 }
 
 func expandPath(path string) string {
@@ -106,7 +117,12 @@ func readFileContent(path string) (string, error) {
 }
 
 func runClaude(cmd *cobra.Command, args []string) error {
-	dotfilesPath := expandPath("~/DotFiles")
+	cfg := config.Get()
+	dotfilesDir := "~/DotFiles"
+	if cfg != nil && cfg.App.DotFilesDir != "" {
+		dotfilesDir = cfg.App.DotFilesDir
+	}
+	dotfilesPath := expandPath(dotfilesDir)
 
 	systemPrompt := "You are a question answerer for system configuration in ~/DotFiles. Your role is to explain configurations, find settings, and answer questions about the dotfiles, neovim config, shell configs, and system utilities. ONLY modify or change files if explicitly instructed. Default to reading and explaining, not editing."
 
