@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(openspec change --help:*)"
+    ]
+  },
   "enabledMcpjsonServers": [
     "bubbles_docs",
     "bubbletea_docs",
@@ -12,9 +17,5 @@
     "vectorcode",
     "viper_docs"
   ],
-  "permissions": {
-    "allow": [
-      "Bash(openspec change --help:*)"
-    ]
-  }
+  "enableAllProjectMcpServers": true
 }

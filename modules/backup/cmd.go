@@ -276,6 +276,14 @@ func runWorkdirBackup(cmd *cobra.Command, args []string) error {
 	bucketPath := fmt.Sprintf("gs://%s/", bucket)
 	workdir := filepath.Join(os.Getenv("HOME"), "Workdir")
 
+	// Create workdir if it doesn't exist
+	if _, err := os.Stat(workdir); os.IsNotExist(err) {
+		if err := os.MkdirAll(workdir, 0755); err != nil {
+			return fmt.Errorf("failed to create workdir: %w", err)
+		}
+		fmt.Printf("%s Created directory: %s\n", style.BlueStyle.Render("📁"), workdir)
+	}
+
 	// Confirm before starting backup
 	fmt.Printf("\n%s About to backup:\n", style.YellowStyle.Render("⚠️ "))
 	fmt.Printf("  Source: %s\n", style.BlueStyle.Render(workdir))
@@ -335,6 +343,14 @@ func runWorkdirSync(cmd *cobra.Command, args []string) error {
 
 	bucketPath := fmt.Sprintf("gs://%s/", bucket)
 	workdir := filepath.Join(os.Getenv("HOME"), "Workdir")
+
+	// Create workdir if it doesn't exist
+	if _, err := os.Stat(workdir); os.IsNotExist(err) {
+		if err := os.MkdirAll(workdir, 0755); err != nil {
+			return fmt.Errorf("failed to create workdir: %w", err)
+		}
+		fmt.Printf("%s Created directory: %s\n", style.BlueStyle.Render("📁"), workdir)
+	}
 
 	// Confirm before starting sync
 	fmt.Printf("\n%s About to sync:\n", style.YellowStyle.Render("⚠️ "))
