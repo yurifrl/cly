@@ -38,23 +38,10 @@ func (b *BrewBundler) CheckDeps() error {
 func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, taps bool) error {
 	bundleFile = expandPath(bundleFile)
 
-	// Check if Brewfile.taps exists
-	tapsFile := bundleFile + ".taps"
-	if _, err := os.Stat(tapsFile); err == nil {
-		shouldInstall := false
-
-		if taps {
-			// --taps flag passed, install without checking
-			shouldInstall = true
-		} else {
-			// Check if there are differences
-			checkCmd := exec.Command("brew", "bundle", "check", "--file="+tapsFile)
-			checkCmd.Stdout = nil
-			checkCmd.Stderr = nil
-			shouldInstall = checkCmd.Run() != nil // non-zero exit = changes needed
-		}
-
-		if shouldInstall {
+	// Only install taps if --taps flag is passed
+	if taps {
+		tapsFile := bundleFile + ".taps"
+		if _, err := os.Stat(tapsFile); err == nil {
 			fmt.Printf("Syncing taps from %s\n\n", tapsFile)
 
 			args := []string{"bundle", "--file=" + tapsFile}
