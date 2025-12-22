@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.4] - 2025-12-22
+
+- fix: backup commands now create ~/Workdir if it doesn't exist
+- chore: reorganize release command to .claude/commands
+
 ## [1.0.3] - 2025-12-22
 
 - refactor: centralize dotfiles_dir configuration at app level
