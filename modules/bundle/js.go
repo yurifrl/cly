@@ -24,12 +24,11 @@ func NewJsBundler(s store.Store) *JsBundler {
 		jsFile = "~/.config/Jsfile"
 	}
 	b.baseBundler = &baseBundler{
-		name:            "js",
-		defaultFile:     jsFile,
-		store:           s,
-		installFn:       b.install,
-		uninstallFn:     b.uninstall,
-		listInstalledFn: b.ListInstalled,
+		name:        "js",
+		defaultFile: jsFile,
+		store:       s,
+		installFn:   b.install,
+		uninstallFn: b.uninstall,
 	}
 	return b
 }
@@ -62,42 +61,6 @@ func (b *JsBundler) install(pkg string, verbose bool, force bool) error {
 		return fmt.Errorf("bun install failed: %w", err)
 	}
 	return nil
-}
-
-// ListInstalled returns packages actually installed via bun pm ls -g
-func (b *JsBundler) ListInstalled() ([]string, error) {
-	cmd := exec.Command("bun", "pm", "ls", "-g", "--depth=0")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list installed packages: %w", err)
-	}
-
-	var packages []string
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		// Parse lines like "├── @fission-ai/openspec@0.16.0"
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "├──") || strings.HasPrefix(line, "└──") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				// Split package@version to get just package name
-				pkgWithVersion := parts[1]
-				pkg := strings.Split(pkgWithVersion, "@")
-				if strings.HasPrefix(pkgWithVersion, "@") {
-					// Scoped package like @foo/bar@1.0.0
-					if len(pkg) >= 3 {
-						packages = append(packages, "@"+pkg[1])
-					}
-				} else {
-					// Regular package like foo@1.0.0
-					if len(pkg) >= 1 {
-						packages = append(packages, pkg[0])
-					}
-				}
-			}
-		}
-	}
-	return packages, nil
 }
 
 func (b *JsBundler) uninstall(pkg string, verbose bool) error {
