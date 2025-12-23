@@ -3,4 +3,4 @@
 - [ ] Fix helpy - Go to goes to the wrong place 
 - [ ] helpy - Show a help panel on pressing ?
 - [ ] helpy - Go to, should highlight
-
+- [ ] the old claudext had completions, this version does not, maybe `cly claude xt ...` xt to not conflict

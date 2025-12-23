@@ -45,3 +45,12 @@ Thumbs.db
 
 # config
 *.local
+
+# AI tool directories (synced from .ai/)
+.claude/
+.cursor/
+.crush/
+.opencode/
+
+# Keep source
+!.ai/
