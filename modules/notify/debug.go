@@ -23,6 +23,7 @@ func createDebugCmd() *cobra.Command {
 		Long:  "Send test notifications through all notifiers and show detailed debug output",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := pkgconfig.Get()
+			notifyConfig := cfg.GetNotify()
 
 			fmt.Println(style.BlueStyle.Render("=== CLY Notify Debug ==="))
 			fmt.Println()
@@ -39,15 +40,15 @@ func createDebugCmd() *cobra.Command {
 			// Configuration
 			fmt.Println(style.YellowStyle.Render("Configuration:"))
 			soundFile := getSoundFilePath()
-			soundEnabled := isSoundEnabled(soundFile, cfg.Notify.Sound)
-			fmt.Printf("  Enabled: %v\n", cfg.Notify.Enabled)
+			soundEnabled := isSoundEnabled(soundFile, notifyConfig.Sound)
+			fmt.Printf("  Enabled: %v\n", notifyConfig.Enabled)
 			fmt.Printf("  Sound Enabled: %v\n", soundEnabled)
 			fmt.Printf("  Sound File: %s (exists: %v)\n", soundFile, fileExists(soundFile))
-			fmt.Printf("  Use Zellij Status: %v\n", cfg.Notify.UseZellijStatus)
-			fmt.Printf("  Use Zellij Notify: %v\n", cfg.Notify.UseZellijNotify)
+			fmt.Printf("  Use Zellij Status: %v\n", notifyConfig.UseZellijStatus)
+			fmt.Printf("  Use Zellij Notify: %v\n", notifyConfig.UseZellijNotify)
 
 			// Icon path
-			iconPath := cfg.Notify.Icon
+			iconPath := notifyConfig.Icon
 			if iconPath == "" {
 				iconPath, _ = notify.GetIconPath()
 				fmt.Printf("  Icon: %s (embedded, extracted)\n", iconPath)

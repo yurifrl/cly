@@ -18,38 +18,36 @@ var defaultConfig = []byte(`app:
   data_dir: ~/.local/share/cly
   dotfiles_dir: ~/DotFiles
 
-bundle:
-  go_file: ~/.config/Gofile
-  js_file: ~/.config/Jsfile
-  python_file: ~/.config/Pythonfile
-  brew_file: ~/.config/Brewfile
-
 theme:
   style: charm
 
-notify:
-  enabled: true
-  sound: false
-  use_zellij_status: true
-  use_zellij_notify: true
-  icon: ""
-  hooks:
-    Notification:
-      enabled: true
-      title: "🔔 Claude Task"
-      message: "Starting - New task [${ZELLIJ_SESSION_NAME}] ${CLAUDE_SESSION_NAME}"
-      sound: "Glass"
-      zellij_status: "🔔 Task notification"
-      zellij_event: "notification"
-    Stop:
-      enabled: true
-      title: "✅ Claude Complete"
-      message: "Finished - Task completed [${ZELLIJ_SESSION_NAME}] ${CLAUDE_SESSION_NAME}"
-      sound: "Blow"
-      zellij_status: "✅ Task completed"
-      zellij_event: "stop"
-
 modules:
+  bundle:
+    go_file: ~/.config/Gofile
+    js_file: ~/.config/Jsfile
+    python_file: ~/.config/Pythonfile
+    brew_file: ~/.config/Brewfile
+  notify:
+    enabled: true
+    sound: false
+    use_zellij_status: true
+    use_zellij_notify: true
+    icon: ""
+    hooks:
+      notification:
+        enabled: true
+        title: "🔔 Claude Task"
+        message: "Starting - New task [${ZELLIJ_SESSION_NAME}] ${CLAUDE_SESSION_NAME}"
+        sound: "Glass"
+        zellij_status: "🔔 Task notification"
+        zellij_event: "notification"
+      stop:
+        enabled: true
+        title: "✅ Claude Complete"
+        message: "Finished - Task completed [${ZELLIJ_SESSION_NAME}] ${CLAUDE_SESSION_NAME}"
+        sound: "Blow"
+        zellij_status: "✅ Task completed"
+        zellij_event: "stop"
   uuid:
     default_version: v4
   demo:
@@ -88,16 +86,9 @@ type Config struct {
 		DataDir     string `yaml:"data_dir"`
 		DotFilesDir string `yaml:"dotfiles_dir"`
 	} `yaml:"app"`
-	Bundle struct {
-		GoFile     string `yaml:"go_file"`
-		JsFile     string `yaml:"js_file"`
-		PythonFile string `yaml:"python_file"`
-		BrewFile   string `yaml:"brew_file"`
-	} `yaml:"bundle"`
 	Theme struct {
 		Style string `yaml:"style"`
 	} `yaml:"theme"`
-	Notify  NotifyConfig                      `yaml:"notify" mapstructure:"notify"`
 	Modules map[string]map[string]interface{} `yaml:"modules"`
 }
 
@@ -124,6 +115,7 @@ func Load() (*Config, error) {
 	for _, configName := range []string{"config.local", "config"} {
 		v.SetConfigName(configName)
 		v.AddConfigPath(configDir)
+		v.AddConfigPath("modules/config")
 		v.AddConfigPath(".")
 
 		if err := v.ReadInConfig(); err == nil {
@@ -142,16 +134,6 @@ func Load() (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
-	}
-
-	// Expand environment variables in notify hooks
-	for hookName, hookConfig := range cfg.Notify.Hooks {
-		hookConfig.Title = os.ExpandEnv(hookConfig.Title)
-		hookConfig.Message = os.ExpandEnv(hookConfig.Message)
-		hookConfig.Sound = os.ExpandEnv(hookConfig.Sound)
-		hookConfig.ZellijStatus = os.ExpandEnv(hookConfig.ZellijStatus)
-		hookConfig.ZellijEvent = os.ExpandEnv(hookConfig.ZellijEvent)
-		cfg.Notify.Hooks[hookName] = hookConfig
 	}
 
 	// Resolve secrets in modules section
@@ -176,6 +158,57 @@ func Get() *Config {
 	return globalConfig
 }
 
+// GetNotify returns the notify configuration from modules
+func (c *Config) GetNotify() NotifyConfig {
+	var notify NotifyConfig
+	if notifyData, ok := c.Modules["notify"]; ok {
+		// Convert map to NotifyConfig struct
+		if enabled, ok := notifyData["enabled"].(bool); ok {
+			notify.Enabled = enabled
+		}
+		if sound, ok := notifyData["sound"].(bool); ok {
+			notify.Sound = sound
+		}
+		if useZellijStatus, ok := notifyData["use_zellij_status"].(bool); ok {
+			notify.UseZellijStatus = useZellijStatus
+		}
+		if useZellijNotify, ok := notifyData["use_zellij_notify"].(bool); ok {
+			notify.UseZellijNotify = useZellijNotify
+		}
+		if icon, ok := notifyData["icon"].(string); ok {
+			notify.Icon = icon
+		}
+		if hooks, ok := notifyData["hooks"].(map[string]interface{}); ok {
+			notify.Hooks = make(map[string]HookConfig)
+			for hookName, hookData := range hooks {
+				if hookMap, ok := hookData.(map[string]interface{}); ok {
+					hook := HookConfig{}
+					if enabled, ok := hookMap["enabled"].(bool); ok {
+						hook.Enabled = enabled
+					}
+					if title, ok := hookMap["title"].(string); ok {
+						hook.Title = os.ExpandEnv(title)
+					}
+					if message, ok := hookMap["message"].(string); ok {
+						hook.Message = os.ExpandEnv(message)
+					}
+					if sound, ok := hookMap["sound"].(string); ok {
+						hook.Sound = os.ExpandEnv(sound)
+					}
+					if zellijStatus, ok := hookMap["zellij_status"].(string); ok {
+						hook.ZellijStatus = os.ExpandEnv(zellijStatus)
+					}
+					if zellijEvent, ok := hookMap["zellij_event"].(string); ok {
+						hook.ZellijEvent = os.ExpandEnv(zellijEvent)
+					}
+					notify.Hooks[hookName] = hook
+				}
+			}
+		}
+	}
+	return notify
+}
+
 func GetString(key string) string {
 	v := viper.New()
 	v.SetConfigType("yaml")
@@ -191,6 +224,7 @@ func GetString(key string) string {
 	for _, configName := range []string{"config.local", "config"} {
 		v.SetConfigName(configName)
 		v.AddConfigPath(configDir)
+		v.AddConfigPath("modules/config")
 		v.AddConfigPath(".")
 
 		if err := v.ReadInConfig(); err == nil {
@@ -205,6 +239,38 @@ func GetString(key string) string {
 	}
 
 	return v.GetString(key)
+}
+
+func GetBool(key string) bool {
+	v := viper.New()
+	v.SetConfigType("yaml")
+
+	homeDir, _ := os.UserHomeDir()
+	configDir := filepath.Join(homeDir, ".config/cly")
+
+	v.SetEnvPrefix("CLY")
+	v.AutomaticEnv()
+
+	// Try config.local.yaml first, then config.yaml
+	configFound := false
+	for _, configName := range []string{"config.local", "config"} {
+		v.SetConfigName(configName)
+		v.AddConfigPath(configDir)
+		v.AddConfigPath("modules/config")
+		v.AddConfigPath(".")
+
+		if err := v.ReadInConfig(); err == nil {
+			configFound = true
+			break
+		}
+	}
+
+	// Fall back to defaults if no config found
+	if !configFound {
+		v.ReadConfig(bytes.NewBuffer(defaultConfig))
+	}
+
+	return v.GetBool(key)
 }
 
 func Set(key string, value interface{}) error {

@@ -20,7 +20,7 @@ type GoBundler struct {
 // NewGoBundler creates a new GoBundler.
 func NewGoBundler(s store.Store) *GoBundler {
 	b := &GoBundler{}
-	goFile := pkgconfig.GetString("bundle.go_file")
+	goFile := pkgconfig.GetString("modules.bundle.go_file")
 	if goFile == "" {
 		goFile = "~/.config/Gofile"
 	}

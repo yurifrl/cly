@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	gcpFlag         bool
-	outputPath      string
-	showSkippedFlag bool
+	outputPath   string
+	uploadFlag   bool
+	downloadFlag bool
 )
 
 type operationType int
@@ -71,7 +71,7 @@ func categorizeGsutilLine(line string) (operationType, bool, bool) {
 	// Skipped files (both files and directories)
 	if strings.Contains(line, "Skipping symbolic link") ||
 	   strings.Contains(line, "Skipping symlink") {
-		return opSkipped, showSkippedFlag, true
+		return opSkipped, pkgconfig.GetBool("modules.backup.show_skipped"), true
 	}
 
 	// Progress indicators - show but don't count
@@ -106,7 +106,7 @@ func printStyledLine(line string, opType operationType) {
 	case opUpload:
 		fmt.Printf("%s %s\n", style.BlueStyle.Render("📤"), line)
 	case opSkipped:
-		if showSkippedFlag {
+		if pkgconfig.GetBool("modules.backup.show_skipped") {
 			fmt.Printf("%s %s\n", style.YellowStyle.Render("⏭️ "), line)
 		}
 	case opError:
@@ -201,124 +201,29 @@ func printSyncSummary(stats *syncStats, logPath string) {
 	}
 }
 
-func defaultBackupHandler(cmd *cobra.Command, args []string) error {
-	// If called without subcommand, run workdir backup
-	return runWorkdirBackup(cmd, args)
-}
-
 func Register(parent *cobra.Command) {
-	cmd := &cobra.Command{
-		Use:   "backup",
-		Short: "Backup operations",
-		Long:  "Backup operations for various directories and services. Defaults to workdir backup.",
-		RunE:  defaultBackupHandler,
+	backupCmd := &cobra.Command{
+		Use:     "backup",
+		Aliases: []string{"bkp"},
+		Short:   "Backup ~/Workdir to/from GCS",
+		Long:    "Upload ~/Workdir to GCS (default) or download as tar.gz",
+		RunE:    runBackup,
 	}
+	backupCmd.Flags().BoolVar(&uploadFlag, "upload", false, "Upload to GCS (default behavior)")
+	backupCmd.Flags().BoolVar(&downloadFlag, "download", false, "Download backup as tar.gz")
+	backupCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path for download (default: workdir-backup-YYYYMMDD-HHMMSS.tar.gz)")
 
-	workdirCmd := &cobra.Command{
-		Use:   "workdir",
-		Short: "Backup ~/Workdir",
-		Long:  "Backup ~/Workdir to Google Cloud Storage",
-		RunE:  runWorkdirBackup,
-	}
-
-	syncCmd := &cobra.Command{
-		Use:   "sync",
-		Short: "Sync ~/Workdir (add only)",
-		Long:  "Sync ~/Workdir to Google Cloud Storage - only adds new files, doesn't delete",
-		RunE:  runWorkdirSync,
-	}
-
-	downloadCmd := &cobra.Command{
-		Use:   "download",
-		Short: "Download backup as tar.gz",
-		Long:  "Download everything from GCS backup as a compressed tar.gz archive",
-		RunE:  runDownload,
-	}
-
-	workdirCmd.Flags().BoolVar(&gcpFlag, "gcp", true, "Backup to GCP (default)")
-	workdirCmd.Flags().BoolVar(&showSkippedFlag, "show-skipped", false, "Show skipped files (symbolic links)")
-	syncCmd.Flags().BoolVar(&gcpFlag, "gcp", true, "Sync to GCP (default)")
-	syncCmd.Flags().BoolVar(&showSkippedFlag, "show-skipped", false, "Show skipped files (symbolic links)")
-	downloadCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path (default: workdir-backup-YYYYMMDD-HHMMSS.tar.gz)")
-	downloadCmd.Flags().BoolVar(&gcpFlag, "gcp", true, "Download from GCP (default)")
-
-	cmd.AddCommand(workdirCmd, syncCmd, downloadCmd)
-	parent.AddCommand(cmd)
+	parent.AddCommand(backupCmd)
 }
 
-func runWorkdirBackup(cmd *cobra.Command, args []string) error {
-	if !gcpFlag {
-		return fmt.Errorf("only GCP backup is currently supported")
+func runBackup(cmd *cobra.Command, args []string) error {
+	if downloadFlag {
+		return runDownload(cmd, args)
 	}
-
-	bucket := getBucket()
-	if bucket == "" {
-		return fmt.Errorf("GCS bucket not configured. Set it in your config.yaml :\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")
-	}
-
-	if !isAuthenticated() {
-		fmt.Println(style.YellowStyle.Render("⚠️  No active gcloud authentication found. Initiating login..."))
-		if err := login(); err != nil {
-			return fmt.Errorf("authentication failed: %w", err)
-		}
-	}
-
-	if !isAuthenticated() {
-		return fmt.Errorf("authentication failed or canceled")
-	}
-
-	account, err := getActiveAccount()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("%s Authenticated as %s\n", style.GreenStyle.Render("✓"), account)
-
-	bucketPath := fmt.Sprintf("gs://%s/", bucket)
-	workdir := filepath.Join(os.Getenv("HOME"), "Workdir")
-
-	// Create workdir if it doesn't exist
-	if _, err := os.Stat(workdir); os.IsNotExist(err) {
-		if err := os.MkdirAll(workdir, 0755); err != nil {
-			return fmt.Errorf("failed to create workdir: %w", err)
-		}
-		fmt.Printf("%s Created directory: %s\n", style.BlueStyle.Render("📁"), workdir)
-	}
-
-	// Confirm before starting backup
-	fmt.Printf("\n%s About to backup:\n", style.YellowStyle.Render("⚠️ "))
-	fmt.Printf("  Source: %s\n", style.BlueStyle.Render(workdir))
-	fmt.Printf("  Target: %s\n", style.BlueStyle.Render(bucketPath))
-	fmt.Printf("  Note: Will include .git directories\n")
-	fmt.Printf("  Note: Will NOT delete remote files\n\n")
-	fmt.Print("Continue? (y/N): ")
-
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("failed to read input: %w", err)
-	}
-
-	response = strings.TrimSpace(strings.ToLower(response))
-	if response != "y" && response != "yes" {
-		fmt.Println(style.YellowStyle.Render("Backup cancelled"))
-		return nil
-	}
-
-	fmt.Printf("\n%s Backing up %s to %s...\n", style.BlueStyle.Render("🔄"), workdir, bucketPath)
-
-	if err := syncToGCS(workdir, bucketPath); err != nil {
-		return fmt.Errorf("backup failed: %w", err)
-	}
-
-	fmt.Printf("%s Backup completed successfully!\n", style.GreenStyle.Render("✅"))
-	return nil
+	return runWorkdirSync(cmd, args)
 }
 
 func runWorkdirSync(cmd *cobra.Command, args []string) error {
-	if !gcpFlag {
-		return fmt.Errorf("only GCP sync is currently supported")
-	}
-
 	bucket := getBucket()
 	if bucket == "" {
 		return fmt.Errorf("GCS bucket not configured. Set it in your config.yaml :\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")
@@ -568,10 +473,6 @@ func getBucket() string {
 }
 
 func runDownload(cmd *cobra.Command, args []string) error {
-	if !gcpFlag {
-		return fmt.Errorf("only GCP download is currently supported")
-	}
-
 	bucket := getBucket()
 	if bucket == "" {
 		return fmt.Errorf("GCS bucket not configured. Set it in your config.yaml :\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")

@@ -17,7 +17,7 @@ type PythonBundler struct {
 // NewPythonBundler creates a new PythonBundler.
 func NewPythonBundler(s store.Store) *PythonBundler {
 	b := &PythonBundler{}
-	pythonFile := pkgconfig.GetString("bundle.python_file")
+	pythonFile := pkgconfig.GetString("modules.bundle.python_file")
 	if pythonFile == "" {
 		pythonFile = "~/.config/Pythonfile"
 	}

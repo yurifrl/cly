@@ -1,9 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(openspec change --help:*)"
+      "Bash(openspec change --help:*)",
+      "WebSearch"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "bubbles_docs",
     "bubbletea_docs",
@@ -16,6 +18,5 @@
     "serena",
     "vectorcode",
     "viper_docs"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

@@ -1,0 +1,6 @@
+- [ ] Make config init copy a icon
+- [ ] Make notify use the global icon, no overrides, just global
+- [ ] Fix helpy - Go to goes to the wrong place 
+- [ ] helpy - Show a help panel on pressing ?
+- [ ] helpy - Go to, should highlight
+

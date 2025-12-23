@@ -52,13 +52,15 @@ func createHookCmd() *cobra.Command {
 				return fmt.Errorf("failed to load config")
 			}
 
+			notifyConfig := cfg.GetNotify()
+
 			// Check if notifications are enabled
-			if !cfg.Notify.Enabled {
+			if !notifyConfig.Enabled {
 				return nil
 			}
 
 			// Get hook config
-			hookConfig, ok := cfg.Notify.Hooks[hookName]
+			hookConfig, ok := notifyConfig.Hooks[hookName]
 			if !ok {
 				return fmt.Errorf("hook '%s' not configured", hookName)
 			}
@@ -80,7 +82,7 @@ func createHookCmd() *cobra.Command {
 			}
 
 			// Get icon path (use embedded if not configured)
-			iconPath := cfg.Notify.Icon
+			iconPath := notifyConfig.Icon
 			if iconPath == "" {
 				iconPath, _ = notify.GetIconPath()
 			}
@@ -88,8 +90,8 @@ func createHookCmd() *cobra.Command {
 			// Send to all enabled notifiers
 			notifier := notify.New(
 				hookName,
-				cfg.Notify.UseZellijStatus,
-				cfg.Notify.UseZellijNotify,
+				notifyConfig.UseZellijStatus,
+				notifyConfig.UseZellijNotify,
 				iconPath,
 			)
 			return notifier.Send(context.Background(), n)
@@ -105,6 +107,7 @@ func createSoundCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			soundFile := getSoundFilePath()
 			cfg := pkgconfig.Get()
+			notifyConfig := cfg.GetNotify()
 
 			action := "status"
 			if len(args) > 0 {
@@ -125,7 +128,7 @@ func createSoundCmd() *cobra.Command {
 				fmt.Println(style.YellowStyle.Render("🔇 Sound notifications disabled"))
 
 			case "status", "":
-				enabled := isSoundEnabled(soundFile, cfg.Notify.Sound)
+				enabled := isSoundEnabled(soundFile, notifyConfig.Sound)
 				if enabled {
 					fmt.Println(style.BlueStyle.Render("🔔 Sound is currently ON"))
 				} else {
@@ -154,18 +157,19 @@ func createConfigCmd() *cobra.Command {
 		Short: "Display notify settings",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := pkgconfig.Get()
+			notifyConfig := cfg.GetNotify()
 			soundFile := getSoundFilePath()
-			soundEnabled := isSoundEnabled(soundFile, cfg.Notify.Sound)
+			soundEnabled := isSoundEnabled(soundFile, notifyConfig.Sound)
 
 			fmt.Println(style.BlueStyle.Render("Notify Configuration:"))
-			fmt.Printf("  Enabled: %v\n", cfg.Notify.Enabled)
+			fmt.Printf("  Enabled: %v\n", notifyConfig.Enabled)
 			fmt.Printf("  Sound: %v\n", soundEnabled)
-			fmt.Printf("  Use Zellij Status: %v\n", cfg.Notify.UseZellijStatus)
-			fmt.Printf("  Use Zellij Notify: %v\n", cfg.Notify.UseZellijNotify)
-			fmt.Printf("  Icon: %s\n", cfg.Notify.Icon)
+			fmt.Printf("  Use Zellij Status: %v\n", notifyConfig.UseZellijStatus)
+			fmt.Printf("  Use Zellij Notify: %v\n", notifyConfig.UseZellijNotify)
+			fmt.Printf("  Icon: %s\n", notifyConfig.Icon)
 			fmt.Println()
 			fmt.Println(style.BlueStyle.Render("Hooks:"))
-			for name, hookConfig := range cfg.Notify.Hooks {
+			for name, hookConfig := range notifyConfig.Hooks {
 				fmt.Printf("  %s:\n", name)
 				fmt.Printf("    Enabled: %v\n", hookConfig.Enabled)
 				fmt.Printf("    Title: %s\n", hookConfig.Title)

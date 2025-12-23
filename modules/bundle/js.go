@@ -19,7 +19,7 @@ type JsBundler struct {
 // NewJsBundler creates a new JsBundler.
 func NewJsBundler(s store.Store) *JsBundler {
 	b := &JsBundler{}
-	jsFile := pkgconfig.GetString("bundle.js_file")
+	jsFile := pkgconfig.GetString("modules.bundle.js_file")
 	if jsFile == "" {
 		jsFile = "~/.config/Jsfile"
 	}

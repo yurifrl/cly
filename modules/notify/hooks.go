@@ -202,8 +202,9 @@ func createVerifyCmd() *cobra.Command {
 // getHooksFromConfig generates hooks from notification hooks config
 func getHooksFromConfig(cfg *pkgconfig.Config) map[string][]map[string]interface{} {
 	eventGroups := make(map[string][]map[string]interface{})
+	notifyConfig := cfg.GetNotify()
 
-	for hookName := range cfg.Notify.Hooks {
+	for hookName := range notifyConfig.Hooks {
 		// Hook names are already lowercase (notification, stop, posttooluse)
 		entry := map[string]interface{}{
 			"hooks": []map[string]string{
