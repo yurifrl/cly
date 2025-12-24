@@ -9,25 +9,19 @@ import (
 	"strings"
 
 	"github.com/yurifrl/cly/pkg/store"
-)
-
-const (
-	colorRed    = "\033[0;31m"
-	colorGreen  = "\033[0;32m"
-	colorYellow = "\033[1;33m"
-	colorReset  = "\033[0m"
+	"github.com/yurifrl/cly/pkg/style"
 )
 
 func printGreen(msg string) {
-	fmt.Printf("%s%s%s\n", colorGreen, msg, colorReset)
+	fmt.Println(style.GreenStyle.Render(msg))
 }
 
 func printYellow(msg string) {
-	fmt.Printf("%s%s%s\n", colorYellow, msg, colorReset)
+	fmt.Println(style.YellowStyle.Render(msg))
 }
 
 func printRed(msg string) {
-	fmt.Printf("%s%s%s\n", colorRed, msg, colorReset)
+	fmt.Println(style.RedStyle.Render(msg))
 }
 
 // expandPath expands ~ to home directory.
@@ -110,7 +104,7 @@ func (b *baseBundler) DefaultFile() string {
 	return b.defaultFile
 }
 
-func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, taps bool) error {
+func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool) error {
 	desired, err := parseFile(bundleFile)
 	if err != nil {
 		return err

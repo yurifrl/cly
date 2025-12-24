@@ -44,14 +44,14 @@ tasks:
     cmds:
       - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
       - sudo mv {{.BUILD_DIR}}/{{.BINARY_NAME}} /usr/local/bin/{{.BINARY_NAME}}
-      - go run . completion fish > ~/.config/fish/completions/cly.fish
+      - go run . completion fish > ~/.cache/fish_completions/cly.fish
 
   install:mcp:
     desc: Install mcp to /usr/local/bin
     cmds:
       - go build -ldflags="-s -w -X main.version={{.VERSION}}" -o {{.BUILD_DIR}}/mcp ./cmd/mcp
       - sudo mv {{.BUILD_DIR}}/mcp /usr/local/bin/mcp
-      - go run ./cmd/mcp completion fish > ~/.config/fish/completions/mcp.fish
+      - go run ./cmd/mcp completion fish > ~/.cache/fish_completions/mcp.fish
 
   install:all:
     desc: Install both cly and mcp

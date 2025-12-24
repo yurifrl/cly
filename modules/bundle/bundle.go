@@ -10,12 +10,13 @@ import (
 )
 
 var (
-	fileFlag    string
-	verboseFlag bool
-	noItFlag    bool
-	forceFlag   bool
-	tapsFlag    bool
-	cleanupFlag bool
+	fileFlag      string
+	verboseFlag   bool
+	noItFlag      bool
+	forceFlag     bool
+	noUpdateFlag  bool
+	tapsFlag      bool
+	noCleanupFlag bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -27,7 +28,6 @@ func Register(root *cobra.Command) {
 		}
 		bundlers := map[string]Bundler{
 			"brew":   NewBrewBundler(),
-			"go":     NewGoBundler(s),
 			"js":     NewJsBundler(s),
 			"python": NewPythonBundler(s),
 		}
@@ -42,13 +42,12 @@ func Register(root *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "bundle [type]",
 		Short: "Edit and sync packages from declarative bundle files",
-		Long: `Unified declarative package management for brew, go, js, and python.
+		Long: `Unified declarative package management for brew, js, and python.
 
 Opens bundle file in $EDITOR, syncs after save, prompts to continue editing.
 
 Types:
   brew    Sync Homebrew packages from Brewfile (default)
-  go      Sync Go binaries from Gofile
   js      Sync JavaScript packages from Jsfile
   python  Sync Python tools from Pythonfile`,
 		Args: cobra.MaximumNArgs(1),
@@ -73,9 +72,10 @@ Types:
 	cmd.Flags().StringVarP(&fileFlag, "file", "f", "", "override bundle file path")
 	cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "show detailed output")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "skip interactive editor mode, just sync")
-	cmd.Flags().BoolVar(&forceFlag, "force", true, "force reinstall packages even if already installed")
-	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "run Brewfile.taps first (brew only)")
-	cmd.Flags().BoolVar(&cleanupFlag, "cleanup", true, "run cleanup after sync to remove unlisted packages")
+	cmd.Flags().BoolVar(&forceFlag, "force", false, "force reinstall packages even if already installed")
+	cmd.Flags().BoolVar(&noUpdateFlag, "no-update", false, "skip brew upgrade (brew only)")
+	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "install taps first (brew only)")
+	cmd.Flags().BoolVar(&noCleanupFlag, "no-cleanup", false, "skip cleanup after sync")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))
@@ -144,34 +144,20 @@ func cleanupCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.C
 func runSync(bundlers map[string]Bundler, bundleType string) error {
 	if bundleType == "all" {
 		return runAll(bundlers, func(b Bundler) error {
-			if err := b.Sync(getBundleFile(b), verboseFlag, forceFlag, tapsFlag); err != nil {
-				return err
-			}
-			if cleanupFlag {
-				return b.Cleanup(getBundleFile(b), verboseFlag, forceFlag)
-			}
-			return nil
+			return b.Sync(getBundleFile(b), verboseFlag, forceFlag, noUpdateFlag, tapsFlag)
 		})
 	}
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, go, js, python, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
 		return err
 	}
 
-	if err := bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, tapsFlag); err != nil {
-		return err
-	}
-
-	if cleanupFlag {
-		return bundler.Cleanup(getBundleFile(bundler), verboseFlag, forceFlag)
-	}
-
-	return nil
+	return bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, noUpdateFlag, tapsFlag)
 }
 
 func runCheck(bundlers map[string]Bundler, bundleType string) error {
@@ -183,7 +169,7 @@ func runCheck(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, go, js, python, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -202,7 +188,7 @@ func runCleanup(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, go, js, python, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -213,7 +199,7 @@ func runCleanup(bundlers map[string]Bundler, bundleType string) error {
 }
 
 func runAll(bundlers map[string]Bundler, fn func(Bundler) error) error {
-	order := []string{"brew", "go", "js", "python"}
+	order := []string{"brew", "js", "python"}
 	var errs []error
 
 	for _, name := range order {
@@ -268,7 +254,7 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, go, js, python)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -277,27 +263,11 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 
 	bundleFile := expandPath(getBundleFile(bundler))
 
-	// If --taps flag is set and bundler is brew, edit Brewfile.taps first
-	if tapsFlag && bundleType == "brew" {
-		tapsFile := bundleFile + ".taps"
-		if err := openInEditor(tapsFile); err != nil {
-			return fmt.Errorf("editor failed: %w", err)
-		}
-	}
-
 	// Always open the main bundle file
 	if err := openInEditor(bundleFile); err != nil {
 		return fmt.Errorf("editor failed: %w", err)
 	}
 
 	fmt.Println("\n=== Syncing ===")
-	if err := bundler.Sync(bundleFile, verboseFlag, forceFlag, tapsFlag); err != nil {
-		return err
-	}
-
-	if cleanupFlag {
-		return bundler.Cleanup(bundleFile, verboseFlag, forceFlag)
-	}
-
-	return nil
+	return bundler.Sync(bundleFile, verboseFlag, forceFlag, noUpdateFlag, tapsFlag)
 }
