@@ -60,7 +60,7 @@ This plan adds AI-focused documentation to help Claude navigate the codebase eff
 - `modules/*/README.md` - Module context
 
 ## Implementation Tooling (NOT docs)
-- `.ai/blueprints/` - Implementation instructions for spec-driven tools
+- `.ai/drafts/` - Implementation instructions for spec-driven tools
 - `openspec/` - Formal specifications and change tracking
 
 ## For Humans (if they show up)

@@ -11,7 +11,7 @@
 ├── commands/     Slash commands for AI tools
 ├── skills/       Domain expertise (testing, TUI, Go patterns)
 ├── agents/       Advisory specialists (go-specialist)
-└── blueprints/   Rough feature specs (opinionated, HOW-focused)
+└── drafts/       Rough feature specs (opinionated, HOW-focused)
 ```
 
 ---
@@ -30,7 +30,7 @@
 **agents/** - Advisory only
 - go-specialist (consults, doesn't implement)
 
-**blueprints/** - Rough specs
+**drafts/** - Rough specs
 - Pass to OpenSpec instead of simple strings
 - Opinionated (includes HOW, not just WHAT)
 - Less formal than OpenSpec proposals
