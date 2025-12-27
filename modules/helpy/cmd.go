@@ -10,13 +10,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
-	"github.com/yurifrl/cly/pkg/config"
 )
 
 const defaultFilePath = "~/DotFiles/HELP.md"
 
 var fileFlag string
-var claudeFlag bool
+var ideFlag bool
 
 var errorStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
@@ -34,7 +33,7 @@ func Register(parent *cobra.Command) {
 	}
 
 	cmd.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
-	cmd.Flags().BoolVarP(&claudeFlag, "claude", "c", false, "open Claude Code for DotFiles Q&A")
+	cmd.Flags().BoolVarP(&ideFlag, "ide", "i", false, "open Claude Code with IDE")
 
 	// Create alias command
 	alias := &cobra.Command{
@@ -43,14 +42,14 @@ func Register(parent *cobra.Command) {
 		RunE:  run,
 	}
 	alias.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
-	alias.Flags().BoolVarP(&claudeFlag, "claude", "c", false, "open Claude Code for DotFiles Q&A")
+	alias.Flags().BoolVarP(&ideFlag, "ide", "i", false, "open Claude Code with IDE")
 
 	parent.AddCommand(cmd)
 	parent.AddCommand(alias)
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	if claudeFlag {
+	if ideFlag {
 		return runClaude(cmd, args)
 	}
 
@@ -76,20 +75,13 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 func resolveFilePath(filePath string) string {
-	cfg := config.Get()
-	dotfilesDir := "~/DotFiles"
-	if cfg != nil && cfg.App.DotFilesDir != "" {
-		dotfilesDir = cfg.App.DotFilesDir
+	if filePath == defaultFilePath {
+		// Fast path - default file, skip config and dir scan
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, "DotFiles", "HELP.md")
 	}
-
-	dir := expandPath(dotfilesDir)
-	entries, _ := os.ReadDir(dir)
-	for _, entry := range entries {
-		if strings.EqualFold(entry.Name(), "HELP.md") {
-			return filepath.Join(dir, entry.Name())
-		}
-	}
-	return filepath.Join(dir, "HELP.md")
+	// User-specified file - just expand ~
+	return expandPath(filePath)
 }
 
 func expandPath(path string) string {
@@ -117,16 +109,12 @@ func readFileContent(path string) (string, error) {
 }
 
 func runClaude(cmd *cobra.Command, args []string) error {
-	cfg := config.Get()
-	dotfilesDir := "~/DotFiles"
-	if cfg != nil && cfg.App.DotFilesDir != "" {
-		dotfilesDir = cfg.App.DotFilesDir
-	}
-	dotfilesPath := expandPath(dotfilesDir)
+	dotfilesPath := expandPath("~/DotFiles")
 
 	systemPrompt := "You are a question answerer for system configuration in ~/DotFiles. Your role is to explain configurations, find settings, and answer questions about the dotfiles, neovim config, shell configs, and system utilities. ONLY modify or change files if explicitly instructed. Default to reading and explaining, not editing."
 
-	claudeCmd := exec.Command("claude", "--system-prompt", systemPrompt)
+	claudeArgs := []string{"--system-prompt", systemPrompt, "--ide"}
+	claudeCmd := exec.Command("claude", claudeArgs...)
 	claudeCmd.Dir = dotfilesPath
 	claudeCmd.Stdin = os.Stdin
 	claudeCmd.Stdout = os.Stdout

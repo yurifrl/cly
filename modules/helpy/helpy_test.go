@@ -167,3 +167,9 @@ func TestExtractHeadersEmpty(t *testing.T) {
 	headers := extractHeaders("no headers here")
 	assert.Empty(t, headers)
 }
+
+func TestIdeFlag(t *testing.T) {
+	t.Run("ideFlag is false by default", func(t *testing.T) {
+		assert.False(t, ideFlag)
+	})
+}

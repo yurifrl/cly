@@ -27,6 +27,8 @@ modules:
     js_file: ~/.config/Jsfile
     python_file: ~/.config/Pythonfile
     brew_file: ~/.config/Brewfile
+  helpy:
+    default_editor: ""
   notify:
     enabled: true
     sound: false

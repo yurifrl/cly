@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openspec change --help:*)",
+      "WebSearch"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "bubbles_docs",
+    "bubbletea_docs",
+    "cobra_docs",
+    "filesystem",
+    "git",
+    "github",
+    "huh_docs",
+    "lipgloss_docs",
+    "serena",
+    "vectorcode",
+    "viper_docs"
+  ]
+}
