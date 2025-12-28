@@ -24,9 +24,10 @@ theme:
 modules:
   bundle:
     go_file: ~/.config/Gofile
-    js_file: ~/.config/Jsfile
+    js_file: ~/.config/cly/package.json
     python_file: ~/.config/Pythonfile
     brew_file: ~/.config/Brewfile
+    rust_file: ~/.config/Rsfile
   helpy:
     default_editor: ""
   notify:
