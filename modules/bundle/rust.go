@@ -36,7 +36,7 @@ func NewRustBundler(s store.Store) *RustBundler {
 
 func (b *RustBundler) CheckDeps() error {
 	if !commandExists("cargo") {
-		return fmt.Errorf("cargo not found. Install: https://rustup.rs")
+		return fmt.Errorf("cargo not found. Add to Brewfile: 'rust', then run: cly bundle brew")
 	}
 	return nil
 }

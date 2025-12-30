@@ -47,7 +47,7 @@ func NewJsBundler(s store.Store) *JsBundler {
 
 func (b *JsBundler) CheckDeps() error {
 	if !commandExists("pnpm") {
-		return fmt.Errorf("pnpm not found. Install: npm install -g pnpm")
+		return fmt.Errorf("pnpm not found. Add to Brewfile: 'pnpm', then run: cly bundle brew")
 	}
 	return nil
 }
