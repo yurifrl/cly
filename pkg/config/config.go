@@ -23,11 +23,11 @@ theme:
 
 modules:
   bundle:
-    go_file: ~/.config/Gofile
-    js_file: ~/.config/cly/package.json
-    python_file: ~/.config/Pythonfile
-    brew_file: ~/.config/Brewfile
-    rust_file: ~/.config/Rsfile
+    go_file: ~/.config/cly/bundles/Gofile
+    js_file: ~/.config/cly/bundles/packages.json
+    python_file: ~/.config/cly/bundles/Pythonfile
+    brew_file: ~/.config/cly/bundles/Brewfile
+    rust_file: ~/.config/cly/bundles/Rustfile
   helpy:
     default_editor: ""
   notify:

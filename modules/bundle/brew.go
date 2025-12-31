@@ -25,7 +25,7 @@ func (b *BrewBundler) Name() string {
 func (b *BrewBundler) DefaultFile() string {
 	brewFile := pkgconfig.GetString("modules.bundle.brew_file")
 	if brewFile == "" {
-		brewFile = "~/.config/Brewfile"
+		brewFile = "~/.config/cly/bundles/Brewfile"
 	}
 	return brewFile
 }

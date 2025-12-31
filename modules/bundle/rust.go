@@ -21,7 +21,7 @@ func NewRustBundler(s store.Store) *RustBundler {
 	b := &RustBundler{}
 	rustFile := pkgconfig.GetString("modules.bundle.rust_file")
 	if rustFile == "" {
-		rustFile = "~/.config/Rsfile"
+		rustFile = "~/.config/cly/bundles/Rustfile"
 	}
 	b.baseBundler = &baseBundler{
 		name:            "rust",

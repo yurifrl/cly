@@ -10,10 +10,11 @@ theme:
 
 modules:
   bundle:
-    go_file: ~/.config/Gofile
-    js_file: ~/.config/Jsfile
-    python_file: ~/.config/Pythonfile
-    brew_file: ~/.config/Brewfile
+    go_file: ~/.config/cly/bundles/Gofile
+    js_file: ~/.config/cly/bundles/packages.json
+    python_file: ~/.config/cly/bundles/Pythonfile
+    brew_file: ~/.config/cly/bundles/Brewfile
+    rust_file: ~/.config/cly/bundles/Rustfile
   notify:
     enabled: true
     sound: false

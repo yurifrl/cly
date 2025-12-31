@@ -19,7 +19,7 @@ func NewPythonBundler(s store.Store) *PythonBundler {
 	b := &PythonBundler{}
 	pythonFile := pkgconfig.GetString("modules.bundle.python_file")
 	if pythonFile == "" {
-		pythonFile = "~/.config/Pythonfile"
+		pythonFile = "~/.config/cly/bundles/Pythonfile"
 	}
 	b.baseBundler = &baseBundler{
 		name:        "python",
@@ -39,11 +39,9 @@ func (b *PythonBundler) CheckDeps() error {
 }
 
 func (b *PythonBundler) install(pkg string, verbose bool, force bool) error {
-	args := []string{"tool", "install", pkg}
-	if force {
-		args = append(args, "--force")
-	}
-	cmd := exec.Command("uv", args...)
+	// Always use --force and --upgrade for idempotent syncs
+	args := []string{"uv", "tool", "install", "--force", "--upgrade", pkg}
+	cmd := exec.Command("sudo", args...)
 
 	if verbose {
 		cmd.Stdout = os.Stdout
@@ -56,11 +54,12 @@ func (b *PythonBundler) install(pkg string, verbose bool, force bool) error {
 	return nil
 }
 
+
 func (b *PythonBundler) uninstall(pkg string, verbose bool) error {
 	// Extract base package name (remove extras like [lsp,mcp] and version specs)
 	basePkg := extractBasePkg(pkg)
 
-	cmd := exec.Command("uv", "tool", "uninstall", basePkg)
+	cmd := exec.Command("sudo", "uv", "tool", "uninstall", basePkg)
 
 	if verbose {
 		cmd.Stdout = os.Stdout
