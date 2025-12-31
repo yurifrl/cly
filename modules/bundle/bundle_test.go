@@ -67,25 +67,6 @@ func TestDiff(t *testing.T) {
 	})
 }
 
-func TestNormalizePackage(t *testing.T) {
-	tests := []struct {
-		pkg      string
-		expected string
-	}{
-		{"lodash", "lodash"},
-		{"@scope/package", "@scope/package"},
-		{"user/repo", "github:user/repo"},
-		{"user/repo@v1.0.0", "github:user/repo#v1.0.0"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.pkg, func(t *testing.T) {
-			result := normalizePackage(tt.pkg)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestExtractBasePkg(t *testing.T) {
 	tests := []struct {
 		pkg      string

@@ -30,6 +30,7 @@ func Register(root *cobra.Command) {
 			"brew":   NewBrewBundler(),
 			"js":     NewJsBundler(s),
 			"python": NewPythonBundler(s),
+			"py":     NewPythonBundler(s),
 			"rust":   NewRustBundler(s),
 		}
 		cleanup := func() {
@@ -41,17 +42,18 @@ func Register(root *cobra.Command) {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "bundle [type]",
-		Short: "Edit and sync packages from declarative bundle files",
+		Use:          "bundle [type]",
+		Short:        "Edit and sync packages from declarative bundle files",
+		SilenceUsage: true,
 		Long: `Unified declarative package management for brew, js, python, and rust.
 
 Opens bundle file in $EDITOR, syncs after save, prompts to continue editing.
 
 Types:
-  brew    Sync Homebrew packages from Brewfile (default)
-  js      Sync JavaScript packages from package.json
-  python  Sync Python tools from Pythonfile
-  rust    Sync Rust crates from Rsfile`,
+  brew       Sync Homebrew packages from Brewfile (default)
+  js         Sync JavaScript packages from package.json
+  python/py  Sync Python tools from Pythonfile
+  rust       Sync Rust crates from Rsfile`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			bundlers, cleanup, err := getBundlers()
@@ -152,7 +154,7 @@ func runSync(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python, rust, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -171,7 +173,7 @@ func runCheck(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python, rust, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -190,7 +192,7 @@ func runCleanup(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python, rust, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -256,7 +258,7 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python, rust)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {

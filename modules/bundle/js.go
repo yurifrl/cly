@@ -1,11 +1,10 @@
 package bundle
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"strings"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/store"
@@ -16,31 +15,19 @@ type JsBundler struct {
 	*baseBundler
 }
 
-// PackageJSON represents a package.json file.
-type PackageJSON struct {
-	Dependencies map[string]string `json:"dependencies"`
-}
-
-// pnpmPackage represents a package from pnpm list --json output.
-type pnpmPackage struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
 // NewJsBundler creates a new JsBundler.
 func NewJsBundler(s store.Store) *JsBundler {
 	b := &JsBundler{}
 	jsFile := pkgconfig.GetString("modules.bundle.js_file")
 	if jsFile == "" {
-		jsFile = "~/.config/cly/package.json"
+		jsFile = "~/.config/cly/bundles/Jsfile"
 	}
 	b.baseBundler = &baseBundler{
-		name:            "js",
-		defaultFile:     jsFile,
-		store:           s,
-		installFn:       b.install,
-		uninstallFn:     b.uninstall,
-		listInstalledFn: b.listInstalled,
+		name:        "js",
+		defaultFile: jsFile,
+		store:       s,
+		installFn:   b.install,
+		uninstallFn: b.uninstall,
 	}
 	return b
 }
@@ -48,6 +35,17 @@ func NewJsBundler(s store.Store) *JsBundler {
 func (b *JsBundler) CheckDeps() error {
 	if !commandExists("pnpm") {
 		return fmt.Errorf("pnpm not found. Add to Brewfile: 'pnpm', then run: cly bundle brew")
+	}
+	// Ensure PNPM_HOME is set and in PATH for global installs
+	pnpmHome := os.Getenv("PNPM_HOME")
+	if pnpmHome == "" {
+		home, _ := os.UserHomeDir()
+		pnpmHome = home + "/Library/pnpm"
+		os.Setenv("PNPM_HOME", pnpmHome)
+	}
+	path := os.Getenv("PATH")
+	if !strings.Contains(path, pnpmHome) {
+		os.Setenv("PATH", pnpmHome+":"+path)
 	}
 	return nil
 }
@@ -64,20 +62,17 @@ func (b *JsBundler) install(pkg string, verbose bool, force bool) error {
 		cmd.Stderr = os.Stderr
 	}
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pnpm add failed: %w", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pnpm add failed: %s", string(output))
 	}
-
-	// Always prune after install
-	if err := b.prune(verbose); err != nil {
-		return fmt.Errorf("pnpm prune failed: %w", err)
-	}
-
 	return nil
 }
 
 func (b *JsBundler) uninstall(pkg string, verbose bool) error {
-	cmd := exec.Command("pnpm", "remove", "-g", pkg)
+	// Extract base package name (remove version spec)
+	basePkg := extractJsBasePkg(pkg)
+	cmd := exec.Command("pnpm", "remove", "-g", basePkg)
 
 	if verbose {
 		cmd.Stdout = os.Stdout
@@ -90,196 +85,125 @@ func (b *JsBundler) uninstall(pkg string, verbose bool) error {
 	return nil
 }
 
-func (b *JsBundler) listInstalled() ([]string, error) {
-	cmd := exec.Command("pnpm", "list", "-g", "--json")
+// listInstalled returns map of package name -> version
+func (b *JsBundler) listInstalled() (map[string]string, error) {
+	cmd := exec.Command("pnpm", "list", "-g", "--depth=0")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("pnpm list failed: %w", err)
 	}
 
-	var packages []pnpmPackage
-	if err := json.Unmarshal(output, &packages); err != nil {
-		return nil, fmt.Errorf("failed to parse pnpm output: %w", err)
+	packages := make(map[string]string)
+	lines := strings.Split(string(output), "\n")
+	inDeps := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "dependencies:" {
+			inDeps = true
+			continue
+		}
+		if !inDeps || line == "" {
+			continue
+		}
+		// Format: "@scope/name version" or "name version"
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			packages[parts[0]] = parts[1]
+		} else if len(parts) == 1 {
+			packages[parts[0]] = ""
+		}
 	}
-
-	var names []string
-	for _, pkg := range packages {
-		names = append(names, pkg.Name)
-	}
-	return names, nil
+	return packages, nil
 }
 
-func (b *JsBundler) prune(verbose bool) error {
-	cmd := exec.Command("pnpm", "prune", "--global")
-	if verbose {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	}
-	return cmd.Run()
-}
-
-// Sync overrides baseBundler.Sync to handle package.json format.
+// Sync installs/updates/removes packages to match Jsfile.
 func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool) error {
 	bundleFile = expandPath(bundleFile)
 
-	// Ensure directory exists
-	dir := filepath.Dir(bundleFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	// Create package.json if it doesn't exist
-	if _, err := os.Stat(bundleFile); os.IsNotExist(err) {
-		emptyPkg := PackageJSON{Dependencies: make(map[string]string)}
-		data, _ := json.MarshalIndent(emptyPkg, "", "  ")
-		if err := os.WriteFile(bundleFile, data, 0644); err != nil {
-			return fmt.Errorf("failed to create package.json: %w", err)
-		}
-	}
-
-	// Read package.json
-	pkg, err := parsePackageJSON(bundleFile)
+	desired, err := parseFile(bundleFile)
 	if err != nil {
 		return err
 	}
 
-	// Convert dependencies to package list
-	var desired []string
-	for name, version := range pkg.Dependencies {
-		if version != "" && version != "latest" && version != "*" {
-			desired = append(desired, fmt.Sprintf("%s@%s", name, version))
-		} else {
-			desired = append(desired, name)
-		}
-	}
-
-	// Get installed packages
+	// Get installed packages (name -> version)
 	installed, err := b.listInstalled()
 	if err != nil {
 		return fmt.Errorf("failed to list installed packages: %w", err)
 	}
 
+	// Build desired map (name -> version)
+	desiredMap := make(map[string]string)
+	for _, pkg := range desired {
+		base := extractJsBasePkg(pkg)
+		version := "latest"
+		if len(pkg) > len(base)+1 {
+			version = pkg[len(base)+1:]
+		}
+		desiredMap[base] = version
+	}
+
 	// Remove packages not in desired
-	toRemove := diff(installed, desired)
-	for _, pkg := range toRemove {
-		printYellow(fmt.Sprintf("Removing: %s", pkg))
-		if err := b.uninstall(pkg, verbose); err != nil {
-			printRed(fmt.Sprintf("Warning: failed to uninstall %s: %v", pkg, err))
-		}
-		if err := b.store.Remove(b.name, pkg); err != nil {
-			printRed(fmt.Sprintf("Warning: failed to remove %s from store: %v", pkg, err))
+	for pkg := range installed {
+		if _, want := desiredMap[pkg]; !want {
+			printYellow(fmt.Sprintf("Removing: %s", pkg))
+			if err := b.uninstall(pkg, verbose); err != nil {
+				printRed(fmt.Sprintf("Warning: failed to uninstall %s: %v", pkg, err))
+			}
 		}
 	}
 
-	// Install missing packages
+	// Find packages to install/upgrade
 	var toInstall []string
-	if force {
-		toInstall = desired
-	} else {
-		toInstall = diff(desired, installed)
-	}
+	for _, pkg := range desired {
+		base := extractJsBasePkg(pkg)
+		desiredVer := desiredMap[base]
+		installedVer, exists := installed[base]
 
-	var failed []string
-	for _, pkg := range toInstall {
-		printGreen(fmt.Sprintf("Installing: %s", pkg))
-		if err := b.install(pkg, verbose, force); err != nil {
-			printRed(fmt.Sprintf("Failed to install %s: %v", pkg, err))
-			failed = append(failed, pkg)
-			continue
-		}
-		// Extract base name for store (remove version specs)
-		baseName := pkg
-		if idx := indexOf(pkg, '@'); idx > 0 {
-			baseName = pkg[:idx]
-		}
-		if err := b.store.Add(b.name, baseName); err != nil {
-			printRed(fmt.Sprintf("Warning: failed to add %s to store: %v", pkg, err))
+		if !exists {
+			toInstall = append(toInstall, pkg)
+		} else if desiredVer != "latest" && installedVer != desiredVer {
+			// Version mismatch - upgrade/downgrade
+			toInstall = append(toInstall, pkg)
+		} else if force {
+			toInstall = append(toInstall, pkg)
 		}
 	}
 
-	if len(failed) > 0 {
-		return fmt.Errorf("failed to install %d package(s): %v", len(failed), failed)
+	if len(toInstall) > 0 {
+		printGreen(fmt.Sprintf("Installing %d packages...", len(toInstall)))
+		args := append([]string{"add", "-g"}, toInstall...)
+		cmd := exec.Command("pnpm", args...)
+		if verbose {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("pnpm add failed: %s", string(output))
+		}
 	}
 
 	printGreen("\nDone!")
 	return nil
 }
 
-// Check overrides baseBundler.Check to handle package.json format.
-func (b *JsBundler) Check(bundleFile string) error {
-	bundleFile = expandPath(bundleFile)
-
-	// Read package.json
-	pkg, err := parsePackageJSON(bundleFile)
-	if err != nil {
-		return err
-	}
-
-	// Convert dependencies to package list
-	var desired []string
-	for name, version := range pkg.Dependencies {
-		if version != "" && version != "latest" && version != "*" {
-			desired = append(desired, fmt.Sprintf("%s@%s", name, version))
-		} else {
-			desired = append(desired, name)
+// extractJsBasePkg extracts base package name from spec.
+// @scope/pkg@1.0.0 → @scope/pkg
+// pkg@1.0.0 → pkg
+func extractJsBasePkg(pkg string) string {
+	// Handle scoped packages (@scope/name@version)
+	if strings.HasPrefix(pkg, "@") {
+		// Find the second @ which is the version separator
+		rest := pkg[1:]
+		if idx := strings.Index(rest, "@"); idx > 0 {
+			return pkg[:idx+1]
 		}
+		return pkg
 	}
-
-	// Get installed packages
-	installed, err := b.listInstalled()
-	if err != nil {
-		return fmt.Errorf("failed to list installed packages: %w", err)
+	// Regular package
+	if idx := strings.Index(pkg, "@"); idx > 0 {
+		return pkg[:idx]
 	}
-
-	toInstall := diff(desired, installed)
-	toRemove := diff(installed, desired)
-
-	if len(toInstall) == 0 && len(toRemove) == 0 {
-		printGreen("Everything is in sync")
-		return nil
-	}
-
-	if len(toInstall) > 0 {
-		printGreen("Would install:")
-		for _, pkg := range toInstall {
-			fmt.Printf("  + %s\n", pkg)
-		}
-	}
-
-	if len(toRemove) > 0 {
-		printYellow("Would remove:")
-		for _, pkg := range toRemove {
-			fmt.Printf("  - %s\n", pkg)
-		}
-	}
-
-	return fmt.Errorf("changes needed")
-}
-
-// parsePackageJSON reads and parses a package.json file.
-func parsePackageJSON(path string) (*PackageJSON, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read package.json: %w", err)
-	}
-
-	var pkg PackageJSON
-	if err := json.Unmarshal(data, &pkg); err != nil {
-		return nil, fmt.Errorf("failed to parse package.json: %w", err)
-	}
-
-	if pkg.Dependencies == nil {
-		pkg.Dependencies = make(map[string]string)
-	}
-
-	return &pkg, nil
-}
-
-func indexOf(s string, c rune) int {
-	for i, r := range s {
-		if r == c {
-			return i
-		}
-	}
-	return -1
+	return pkg
 }
