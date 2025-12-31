@@ -57,6 +57,18 @@ modules:
     show_count: true
   dotfiles:
     zellij_plugins_dir: ~/.config/zellij/plugins
+  statusline:
+    format: "$context │ $model │ $cost │ $custom"
+    context:
+      enabled: false
+    model:
+      enabled: false
+    cost:
+      enabled: false
+    custom:
+      enabled: false
+      command: ""
+      timeout: 500
   # Example: Use 1Password secrets with op:// references
   # backup:
   #   gcs_bucket: op://Personal/gcs-backup/bucket-name
@@ -70,6 +82,24 @@ type HookConfig struct {
 	Sound        string `yaml:"sound" mapstructure:"sound"`
 	ZellijStatus string `yaml:"zellij_status" mapstructure:"zellij_status"`
 	ZellijEvent  string `yaml:"zellij_event" mapstructure:"zellij_event"`
+}
+
+type StatuslineConfig struct {
+	Format  string                `yaml:"format" mapstructure:"format"`
+	Context StatuslineItemConfig  `yaml:"context" mapstructure:"context"`
+	Model   StatuslineItemConfig  `yaml:"model" mapstructure:"model"`
+	Cost    StatuslineItemConfig  `yaml:"cost" mapstructure:"cost"`
+	Custom  StatuslineCustomConfig `yaml:"custom" mapstructure:"custom"`
+}
+
+type StatuslineItemConfig struct {
+	Enabled bool `yaml:"enabled" mapstructure:"enabled"`
+}
+
+type StatuslineCustomConfig struct {
+	Enabled bool   `yaml:"enabled" mapstructure:"enabled"`
+	Command string `yaml:"command" mapstructure:"command"`
+	Timeout int    `yaml:"timeout" mapstructure:"timeout"`
 }
 
 type NotifyConfig struct {
@@ -210,6 +240,46 @@ func (c *Config) GetNotify() NotifyConfig {
 		}
 	}
 	return notify
+}
+
+// GetStatusline returns the statusline configuration from modules
+func (c *Config) GetStatusline() StatuslineConfig {
+	cfg := StatuslineConfig{
+		Format: "$context │ $model │ $cost │ $custom",
+		Custom: StatuslineCustomConfig{Timeout: 500},
+	}
+	if statuslineData, ok := c.Modules["statusline"]; ok {
+		if format, ok := statuslineData["format"].(string); ok {
+			cfg.Format = format
+		}
+		if contextData, ok := statuslineData["context"].(map[string]interface{}); ok {
+			if enabled, ok := contextData["enabled"].(bool); ok {
+				cfg.Context.Enabled = enabled
+			}
+		}
+		if modelData, ok := statuslineData["model"].(map[string]interface{}); ok {
+			if enabled, ok := modelData["enabled"].(bool); ok {
+				cfg.Model.Enabled = enabled
+			}
+		}
+		if costData, ok := statuslineData["cost"].(map[string]interface{}); ok {
+			if enabled, ok := costData["enabled"].(bool); ok {
+				cfg.Cost.Enabled = enabled
+			}
+		}
+		if customData, ok := statuslineData["custom"].(map[string]interface{}); ok {
+			if enabled, ok := customData["enabled"].(bool); ok {
+				cfg.Custom.Enabled = enabled
+			}
+			if command, ok := customData["command"].(string); ok {
+				cfg.Custom.Command = command
+			}
+			if timeout, ok := customData["timeout"].(int); ok {
+				cfg.Custom.Timeout = timeout
+			}
+		}
+	}
+	return cfg
 }
 
 func GetString(key string) string {

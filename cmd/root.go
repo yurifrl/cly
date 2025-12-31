@@ -15,6 +15,7 @@ import (
 	"github.com/yurifrl/cly/modules/mcp"
 	"github.com/yurifrl/cly/modules/notify"
 	"github.com/yurifrl/cly/modules/scraper/cmd"
+	"github.com/yurifrl/cly/modules/statusline"
 	"github.com/yurifrl/cly/modules/update"
 	"github.com/yurifrl/cly/modules/uuid"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
@@ -55,6 +56,7 @@ func init() {
 	mcp.Register(RootCmd)
 	bundle.Register(RootCmd)
 	notify.Register(RootCmd)
+	statusline.Register(RootCmd)
 	update.Register(RootCmd)
 	cmd.Register(RootCmd)
 }
