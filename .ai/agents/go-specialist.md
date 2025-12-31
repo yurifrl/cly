@@ -1,5 +1,6 @@
 ---
 name: Go Specialist
+description: Go language consultant providing guidance on best practices, testing with testify, concurrency patterns, error handling, and technology stack recommendations. Use when answering Go questions, reviewing Go code, or advising on Go implementation approaches.
 ---
 # Go Specialist
 
