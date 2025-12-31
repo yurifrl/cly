@@ -1,3 +1,7 @@
+---
+description: Feature catalog for AI CLI - bidirectional sync system between `.ai` and IDE-specific configs (Claude, OpenCode, Crush). Current capabilities and future roadmap.
+---
+
 # AI CLI - Features
 
 ## Current Features
@@ -65,6 +69,19 @@
   - Per-IDE settings
   - Sync profiles
 
+### Shared Settings
+- Problem: Each IDE has its own settings format (`settings.json` for Claude, `opencode.json` for OpenCode, etc.)
+- Idea: Define shared settings in `.ai/settings.jsonc` that get translated to each IDE's format
+- Possible approaches:
+  - Common subset: Only sync settings that exist in all IDEs (limited)
+  - Mapping file: Define how each setting translates per IDE
+  - Merge strategy: Shared base + IDE-specific overrides from `ides/<ide>/`
+- Open question: What settings are actually shareable across IDEs?
+  - Model preferences?
+  - API keys / auth?
+  - Behavior flags?
+  - MCP servers?
+
 ### Enhanced IDE Support
 - Cursor, Codex, future IDEs
 - Per-IDE conversion layer (one file per IDE, easy to maintain/test)
@@ -79,3 +96,12 @@
 - Fix `ides/*` "hack" - current design copies everything as-is
 - Better separation of concerns
 - Plugin-based architecture for new IDEs
+
+### File Rename Tracking
+- Track renamed files in `.ai/` to prevent orphaned files in target directories
+- Problem: If `commands/foo.md` is renamed to `commands/bar.md`, the old `foo.md` remains in `.claude/commands/`
+- Solution: Maintain a manifest/cache of synced files to detect renames and clean up stale targets
+- Could use git rename detection or explicit rename registry
+- **Alternative**: Always wipe and recreate `commands/`, `skills/`, `agents/` directories on sync
+  - Simpler: no tracking needed, just delete target dirs before copying
+  - Trade-off: loses any IDE-side customizations (but those should live in `.ai/ides/` anyway)
