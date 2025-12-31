@@ -16,3 +16,9 @@
 [submodule ".references/aliexpress-scraper"]
 	path = .references/aliexpress-scraper
 	url = https://github.com/yurifrl/aliexpress-scraper.git
+[submodule ".references/claude-code-statusline"]
+	path = .references/claude-code-statusline
+	url = git@github.com:rz1989s/claude-code-statusline.git
+[submodule ".references/ccstatusline"]
+	path = .references/ccstatusline
+	url = git@github.com:sirmalloc/ccstatusline.git
