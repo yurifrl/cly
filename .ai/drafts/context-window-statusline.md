@@ -53,3 +53,12 @@ Single line to stdout: `🧠 45% (90K/200K)`
   }
 }
 ```
+
+## TODO
+
+Also need starship prompt integration. Current starship command:
+```bash
+input=$(cat); cwd=$(echo "$input" | jq -r '.workspace.current_dir'); cd "$cwd" 2>/dev/null || true; starship prompt 2>/dev/null | sed 's/[❯>$]\s*$//' | tr -d '\n'
+```
+
+Add config option to include starship output alongside context window %.
