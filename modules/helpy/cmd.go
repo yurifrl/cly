@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/pkg/config"
 )
 
 const defaultFilePath = "~/DotFiles/HELP.md"
@@ -76,9 +77,10 @@ func run(cmd *cobra.Command, args []string) error {
 
 func resolveFilePath(filePath string) string {
 	if filePath == defaultFilePath {
-		// Fast path - default file, skip config and dir scan
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, "DotFiles", "HELP.md")
+		// Fast path - default file, use config
+		cfg := config.Get()
+		dotfilesPath := expandPath(cfg.App.DotFilesDir)
+		return filepath.Join(dotfilesPath, "HELP.md")
 	}
 	// User-specified file - just expand ~
 	return expandPath(filePath)
@@ -109,11 +111,31 @@ func readFileContent(path string) (string, error) {
 }
 
 func runClaude(cmd *cobra.Command, args []string) error {
-	dotfilesPath := expandPath("~/DotFiles")
+	cfg := config.Get()
+	dotfilesPath := expandPath(cfg.App.DotFilesDir)
 
-	systemPrompt := "You are a question answerer for system configuration in ~/DotFiles. Your role is to explain configurations, find settings, and answer questions about the dotfiles, neovim config, shell configs, and system utilities. ONLY modify or change files if explicitly instructed. Default to reading and explaining, not editing."
+	claudeArgs := []string{}
 
-	claudeArgs := []string{"--system-prompt", systemPrompt, "--ide"}
+	// Get helpy config
+	if helpyConfig, ok := cfg.Modules["helpy"]; ok {
+		// Add preprompt if configured
+		if preprompt, ok := helpyConfig["preprompt"].(string); ok && preprompt != "" {
+			claudeArgs = append(claudeArgs, "--system-prompt", preprompt)
+		}
+
+		// Add additional directories from config
+		if additionalDirs, ok := helpyConfig["additional_dirs"].([]interface{}); ok {
+			for _, dir := range additionalDirs {
+				if dirStr, ok := dir.(string); ok {
+					expandedDir := expandPath(dirStr)
+					claudeArgs = append(claudeArgs, "--add-dir", expandedDir)
+				}
+			}
+		}
+	}
+
+	claudeArgs = append(claudeArgs, "--ide")
+
 	claudeCmd := exec.Command("claude", claudeArgs...)
 	claudeCmd.Dir = dotfilesPath
 	claudeCmd.Stdin = os.Stdin

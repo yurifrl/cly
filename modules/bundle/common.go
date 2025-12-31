@@ -137,8 +137,23 @@ func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 
 	var toInstall []string
 	if force {
-		// Force reinstall all desired packages
+		// Force reinstall all desired packages - uninstall first
 		toInstall = desired
+		for _, pkg := range desired {
+			// Check if already installed
+			isInstalled := false
+			for _, inst := range installed {
+				if inst == pkg {
+					isInstalled = true
+					break
+				}
+			}
+			if isInstalled {
+				printYellow(fmt.Sprintf("Force uninstalling: %s", pkg))
+				// Ignore uninstall errors during force mode
+				_ = b.uninstallFn(pkg, verbose)
+			}
+		}
 	} else {
 		// Only install missing packages
 		toInstall = diff(desired, installed)

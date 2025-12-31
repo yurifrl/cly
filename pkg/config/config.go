@@ -30,6 +30,9 @@ modules:
     rust_file: ~/.config/cly/bundles/Rustfile
   helpy:
     default_editor: ""
+    additional_dirs:
+      - ~/Workdir/Yuri/cly
+    preprompt: "You help answer questions based on HELP.md in ~/DotFiles. Your role is to explain commands, shortcuts, and workflows documented in the help file. ONLY modify or change files if explicitly instructed. Default to reading and explaining, not editing."
   notify:
     enabled: true
     sound: false
