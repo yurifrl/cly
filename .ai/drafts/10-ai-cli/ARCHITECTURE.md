@@ -14,7 +14,7 @@
 ├── commands/                 # Shared commands
 ├── agents/                   # Shared agents
 ├── skills/                   # Shared skills
-├── AGENT.md                  # Shared project instructions
+├── AGENTS.md                 # Shared project instructions
 ├── CLAUDE.md                 # Root-level CLAUDE.md (synced where?)
 ├── opencode.json             # OpenCode-specific config
 ├── claude.json               # Claude-specific config
@@ -115,11 +115,11 @@ Current "copy as-is" approach is messy:
 2. **Make `ides/` explicit override**: Still goes through converter
 3. **Rename to `overrides/`**: Clearer intent
 
-### AGENT.md Pluralization
+### AGENTS.md Pluralization
 Verify target naming:
 - Claude: `CLAUDE.md` (singular)
 - Crush: `AGENTS.md` (plural?) - needs confirmation
-- OpenCode: `AGENT.md` (singular)
+- OpenCode: `AGENTS.md` (singular)
 
 ## Implementation Order
 1. Refactor to converter pattern

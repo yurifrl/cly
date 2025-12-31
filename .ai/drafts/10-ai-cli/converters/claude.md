@@ -5,7 +5,7 @@
 | commands/ | commands/ |
 | agents/ | agents/ |
 | skills/ | skills/ |
-| AGENT.md | CLAUDE.md |
+| AGENTS.md | CLAUDE.md |
 | claude.json | settings.json |
 
 No content translations needed.

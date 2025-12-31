@@ -8,11 +8,11 @@ Where does `CLAUDE.md` in `.ai/` root sync to?
 - [ ] Option B: `/CLAUDE.md` in project root (non-standard)
 - [ ] Option C: Both?
 
-### AGENT.md Pluralization
+### AGENTS.md Pluralization
 Verify target naming:
 - [ ] Claude: `CLAUDE.md` (singular) ✓
 - [ ] Crush: `AGENTS.md` (plural?) - **NEEDS VERIFICATION**
-- [ ] OpenCode: `AGENT.md` (singular) ✓
+- [ ] OpenCode: `AGENTS.md` (singular) ✓
 - [ ] Cursor: ?
 - [ ] Codex: ?
 

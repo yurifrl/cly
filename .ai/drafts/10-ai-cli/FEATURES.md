@@ -15,7 +15,7 @@ description: Feature catalog for AI CLI - bidirectional sync system between `.ai
 - **commands/**: CLI command definitions
 - **agents/**: AI agent configurations
 - **skills/**: Skill definitions (nested directories)
-- **AGENT.md**: Project-level agent instructions
+- **AGENTS.md**: Project-level agent instructions
 - **ides/**: IDE-specific overrides (copied as-is)
 
 ### JSONC Support
@@ -36,7 +36,7 @@ description: Feature catalog for AI CLI - bidirectional sync system between `.ai
 ### Translation Layer
 | Source | Target (Claude) | Target (OpenCode) |
 |--------|-----------------|-------------------|
-| `AGENT.md` | `CLAUDE.md` | `AGENT.md` |
+| `AGENTS.md` | `CLAUDE.md` | `AGENTS.md` |
 | `commands/` | `commands/` | `command/` |
 | `agents/` | `agents/` | `agent/` |
 | `skills/` | `skills/` | `skills/` |
