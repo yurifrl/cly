@@ -4,6 +4,7 @@ Modular Go CLI for day-to-day utilities with beautiful TUI interfaces powered by
 
 ## Features
 
+- **Claude Code Statusline** - Context window, model, cost display for Claude Code sessions
 - **UUID Generator** - Interactive UUID generation (v4, v7, multiple)
 - **AliExpress Scraper** - Browser automation for product data extraction
 - **48 TUI Demos** - Complete Bubbletea component showcase
@@ -166,7 +167,3 @@ go build
 # Run tests (when implemented)
 go test ./...
 ```
-
-## License
-
-MIT
