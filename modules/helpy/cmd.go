@@ -113,27 +113,27 @@ func readFileContent(path string) (string, error) {
 func runClaude(cmd *cobra.Command, args []string) error {
 	cfg := config.Get()
 	dotfilesPath := expandPath(cfg.App.DotFilesDir)
+	helpFile := filepath.Join(dotfilesPath, "HELP.md")
 
-	claudeArgs := []string{}
+	var promptBuilder strings.Builder
 
-	// Get helpy config
+	// Get preprompt from config
 	if helpyConfig, ok := cfg.Modules["helpy"]; ok {
-		// Add preprompt if configured
 		if preprompt, ok := helpyConfig["preprompt"].(string); ok && preprompt != "" {
-			claudeArgs = append(claudeArgs, "--system-prompt", preprompt)
-		}
-
-		// Add additional directories from config
-		if additionalDirs, ok := helpyConfig["additional_dirs"].([]interface{}); ok {
-			for _, dir := range additionalDirs {
-				if dirStr, ok := dir.(string); ok {
-					expandedDir := expandPath(dirStr)
-					claudeArgs = append(claudeArgs, "--add-dir", expandedDir)
-				}
-			}
+			promptBuilder.WriteString(preprompt)
+			promptBuilder.WriteString("\n\n")
 		}
 	}
 
+	// Add DotFiles HELP.md content
+	if content, err := readFileContent(helpFile); err == nil {
+		promptBuilder.WriteString(content)
+	}
+
+	claudeArgs := []string{}
+	if promptBuilder.Len() > 0 {
+		claudeArgs = append(claudeArgs, "--system-prompt", promptBuilder.String())
+	}
 	claudeArgs = append(claudeArgs, "--ide")
 
 	claudeCmd := exec.Command("claude", claudeArgs...)

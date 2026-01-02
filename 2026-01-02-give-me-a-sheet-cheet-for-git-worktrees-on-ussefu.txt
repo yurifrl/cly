@@ -1,0 +1,164 @@
+
+ * ▐▛███▜▌ *   Claude Code v2.0.76
+* ▝▜█████▛▘ *  Opus 4.5 · API Usage Billing
+ *  ▘▘ ▝▝  *   ~/DotFiles
+
+> give me a sheet cheet for git worktrees, on ussefull commands 
+
+⏺ Git Worktrees Cheat Sheet
+
+  Basic Commands
+
+  # List all worktrees
+  git worktree list
+
+  # Add worktree (new branch)
+  git worktree add <path> -b <new-branch>
+
+  # Add worktree (existing branch)
+  git worktree add <path> <existing-branch>
+
+  # Add worktree (detached HEAD at commit)
+  git worktree add --detach <path> <commit>
+
+  # Remove worktree
+  git worktree remove <path>
+
+  # Force remove (with uncommitted changes)
+  git worktree remove --force <path>
+
+  # Prune stale worktree info
+  git worktree prune
+
+  Common Patterns
+
+  # Feature branch workflow
+  git worktree add ../feature-x -b yurifrl/feat/feature-x
+
+  # Hotfix from main
+  git worktree add ../hotfix main
+  cd ../hotfix && git checkout -b yurifrl/fix/urgent-fix
+
+  # Review a PR
+  git worktree add ../pr-123 origin/pr-branch
+
+  # Compare branches side-by-side
+  git worktree add ../main-compare main
+
+  Tips
+
+  - Worktrees share .git - commits are visible across all
+  - Each worktree must have a unique branch (can't checkout same branch twice)
+  - Use git worktree lock <path> to prevent pruning (for network drives)
+  - Worktree paths are usually siblings to main repo (e.g., ../feature-x)
+
+  Cleanup
+
+  # See what would be pruned
+  git worktree prune --dry-run
+
+  # Remove all and start fresh
+  git worktree list | tail -n +2 | awk '{print $1}' | xargs -I {} git worktree remove {}
+
+> google cli script snippets to make workign with worktrees better 
+
+⏺ Web Search("git worktree CLI scripts workflow snippets shell functions 2025")
+  ⎿  Did 1 search in 30s                                                   
+
+⏺ Fetch(https://gist.github.com/ChristopherA/4643b2f5e024578606b9cd5d2e6815cc)
+  ⎿  Received 140.9KB (200 OK)
+
+⏺ Fetch(https://matklad.github.io/2024/07/25/git-worktrees.html)
+  ⎿  Received 18.3KB (200 OK)
+
+⏺ Useful Git Worktree Scripts & Patterns
+
+  Shell Functions (Fish/Bash/Zsh)
+
+  # Switch to worktree by name (fuzzy match)
+  swtree() {
+    local dir=$(git worktree list | grep "$1" | awk '{print $1}')
+    [[ -d "$dir" ]] && cd "$dir" || echo "❌ Not found"
+  }
+
+  # Create worktree with branch
+  newtree() {
+    git worktree add "$1" -b "$2"
+  }
+
+  # Remove worktree
+  rmtree() {
+    git worktree remove "$1"
+  }
+
+  # Check status across all worktrees
+  worktree-status() {
+    for dir in $(git worktree list | awk '{print $1}' | tail -n +2); do
+      echo "📂 $dir"
+      (cd "$dir" && git status --short)
+    done
+  }
+
+  # Update all worktrees from remote
+  worktree-update() {
+    git fetch --all --prune
+    for dir in $(git worktree list | awk '{print $1}' | tail -n +2); do
+      echo "🔄 $dir"
+      (cd "$dir" && git rebase origin/$(git branch --show-current) 2>/dev/null)
+    done
+  }
+
+  Git Aliases (~/.gitconfig)
+
+  [alias]
+    wt = worktree
+    wtl = worktree list
+    wta = worktree add
+    wtr = worktree remove
+    wtp = worktree prune
+
+  fzf Integration (interactive picker)
+
+  # Interactive worktree switcher
+  wt() {
+    local selected=$(git worktree list | fzf --height 40% | awk '{print $1}')
+    [[ -n "$selected" ]] && cd "$selected"
+  }
+
+  Bare Repo Workflow (recommended for heavy use)
+
+  # Clone as bare repo
+  git clone --bare git@github.com:user/repo.git repo.git
+  cd repo.git
+
+  # Add worktrees as siblings
+  git worktree add ../main main
+  git worktree add ../feature-x -b feature-x
+
+  matklad's 5-Worktree Setup
+
+  Organize by activity, not branch:
+  - main/ – read-only reference
+  - work/ – active development
+  - review/ – PR reviews
+  - scratch/ – quick fixes
+  - fuzz/ – long-running tests
+
+  Quick Context Switch (no stash)
+
+  # Instead of stashing
+  git add . && git commit -m "wip"
+  git switch other-branch
+  # Later
+  git switch - && git reset HEAD~
+
+  ---
+  Sources:
+  - https://gist.github.com/ChristopherA/4643b2f5e024578606b9cd5d2e6815cc
+  - https://matklad.github.io/2024/07/25/git-worktrees.html
+  - https://github.com/coderabbitai/git-worktree-runner
+  - https://github.com/johnlindquist/worktree-cli
+  - https://github.com/lu0/git-worktree-wrapper
+
+
+

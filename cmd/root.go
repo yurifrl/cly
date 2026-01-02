@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/modules/ai"
@@ -22,7 +23,12 @@ import (
 	"github.com/yurifrl/cly/pkg/style"
 )
 
-var Version = "dev"
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+)
+
+var versionFlag bool
 
 var RootCmd = &cobra.Command{
 	Use:     "cly",
@@ -38,13 +44,18 @@ Each command demonstrates a different Charm component:
 
 Press 'q' or Ctrl+C to quit any demo.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if versionFlag {
+			printVersion()
+			os.Exit(0)
+		}
 		_, err := pkgconfig.Load()
 		return err
 	},
 }
 
 func init() {
-	RootCmd.SetVersionTemplate(fmt.Sprintf("cly %s\n", Version))
+	RootCmd.PersistentFlags().BoolVarP(&versionFlag, "version", "v", false, "version for cly")
+	RootCmd.SetVersionTemplate(versionString())
 	ai.Register(RootCmd)
 	backup.Register(RootCmd)
 	claude.Register(RootCmd)
@@ -63,4 +74,13 @@ func init() {
 
 func Execute() error {
 	return RootCmd.Execute()
+}
+
+func versionString() string {
+	buildName := GenerateBuildName(BuildTime)
+	return fmt.Sprintf("cly %s (%s)\nBuilt: %s\n", Version, buildName, BuildTime)
+}
+
+func printVersion() {
+	fmt.Print(versionString())
 }

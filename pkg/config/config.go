@@ -29,10 +29,7 @@ modules:
     brew_file: ~/.config/cly/bundles/Brewfile
     rust_file: ~/.config/cly/bundles/Rustfile
   helpy:
-    default_editor: ""
-    additional_dirs:
-      - ~/Workdir/Yuri/cly
-    preprompt: "You help answer questions based on HELP.md in ~/DotFiles. Your role is to explain commands, shortcuts, and workflows documented in the help file. ONLY modify or change files if explicitly instructed. Default to reading and explaining, not editing."
+    preprompt: "You help answer questions based on the HELP.md below. Explain commands, shortcuts, and workflows. ONLY modify files if explicitly instructed."
   notify:
     enabled: true
     sound: false

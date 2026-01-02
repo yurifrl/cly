@@ -6,6 +6,8 @@ includes:
 vars:
   VERSION:
     sh: cat VERSION
+  BUILD_TIME:
+    sh: date -u +%Y%m%d%H%M%S
   BINARY_NAME: cly
   BUILD_DIR: dist
 
@@ -18,7 +20,7 @@ tasks:
   build:
     desc: Build cly for current platform
     cmds:
-      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
+      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
     sources:
       - "**/*.go"
     generates:
@@ -42,7 +44,7 @@ tasks:
     desc: Install CLI to /usr/local/bin
     aliases: [i]
     cmds:
-      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
+      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
       - sudo mv {{.BUILD_DIR}}/{{.BINARY_NAME}} /usr/local/bin/{{.BINARY_NAME}}
       - go run . completion fish > ~/.cache/fish_completions/cly.fish
 
