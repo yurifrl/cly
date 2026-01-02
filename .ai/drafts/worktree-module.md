@@ -2,6 +2,117 @@
 
 TUI + CLI worktree manager for cly.
 
+## Architecture
+
+**Page-switching model** - no overlays, full page replacement.
+
+### Why not overlays?
+- ANSI cursor tricks are buggy, delete lines
+- True overlays need fullscreen (`tea.WithAltScreen()`)
+- Page switching is clean, reliable, inline
+
+### Model structure
+
+```go
+type page int
+
+const (
+    pageMenu page = iota
+    pageAdd
+    pageSwitch
+    pagePalette
+)
+
+type model struct {
+    page     page
+    prevPage page  // for returning from palette
+
+    // Per-page state
+    paletteInput    textinput.Model
+    paletteFiltered []command
+    paletteCursor   int
+    menuCursor      int
+}
+```
+
+### Update pattern
+
+Global keys checked first, then dispatch to page handler:
+
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        // Global: ctrl+p from any page
+        if msg.String() == "ctrl+p" && m.page != pagePalette {
+            m.prevPage = m.page
+            m.page = pagePalette
+            m.paletteInput = newPaletteInput() // reset
+            return m, textinput.Blink
+        }
+
+        // Dispatch to page
+        switch m.page {
+        case pagePalette:
+            return m.updatePalette(msg)
+        case pageMenu:
+            return m.updateMenu(msg)
+        }
+    }
+    return m, nil
+}
+```
+
+### View pattern
+
+```go
+func (m model) View() string {
+    switch m.page {
+    case pagePalette:
+        return m.viewPalette()
+    case pageMenu:
+        return m.viewMenu()
+    }
+    return ""
+}
+```
+
+### Palette behavior
+
+- All keystrokes go to `textinput` (filtering)
+- Only special keys intercepted: `↑/↓`, `enter`, `esc`
+- `esc` returns to `prevPage`
+- `enter` navigates to selected command's target page
+
+```go
+func (m model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+    switch msg.String() {
+    case "esc":
+        m.page = m.prevPage
+        return m, nil
+    case "enter":
+        selected := m.paletteFiltered[m.paletteCursor]
+        m.page = selected.page
+        return m, nil
+    case "down":
+        m.paletteCursor++
+        return m, nil
+    }
+    // Default: update text input
+    m.paletteInput, cmd = m.paletteInput.Update(msg)
+    m.filterPalette()
+    return m, cmd
+}
+```
+
+### Components used
+
+- `bubbles/textinput` - palette filter input
+- `lipgloss` - styling, borders
+- Manual cursor rendering (no `bubbles/list`)
+
+Reference: `examples/palette/main.go`
+
 ## Commands
 
 ```
@@ -35,7 +146,7 @@ cly worktree list
 │    Prune                       │
 │    Delete                      │
 │                                │
-│  j/k • l select • / • ctrl+p   │
+│  ↑/↓ • enter • / • ctrl+p      │
 └────────────────────────────────┘
 ```
 
@@ -52,7 +163,7 @@ cly worktree list
 │                                │
 │  [ ] Create new branch (c)     │
 │                                │
-│  tab • n/p • h back            │
+│  tab • ↑/↓ • esc back          │
 └────────────────────────────────┘
 ```
 
@@ -65,8 +176,8 @@ cly worktree list
 │    feat-auth                   │
 │    fix-login                   │
 │                                │
-│  l cd • z zellij • o print     │
-│  j/k • / • h back              │
+│  enter cd • z zellij • p print │
+│  ↑/↓ • / • esc back            │
 └────────────────────────────────┘
 ```
 
@@ -79,47 +190,45 @@ cly worktree list
 │    feat-auth   ● 3 modified    │
 │    fix-login   ✓ clean         │
 │                                │
-│  j/k • / • h back              │
+│  ↑/↓ • / • esc back            │
 └────────────────────────────────┘
 ```
 
-## Global Keys (every screen)
+## Keys
 
+**Global** (every page):
 | Key | Action |
 |-----|--------|
-| `ctrl+p` | Command palette |
+| `ctrl+p` | Open palette |
 | `?` | Help |
-| `g` | Go home |
+| `g` | Go home (menu) |
+| `ctrl+c` | Quit |
+
+**Navigation** (lists/menus):
+| Key | Action |
+|-----|--------|
+| `↑/↓` or `j/k` | Navigate |
+| `enter` | Select |
+| `esc` | Back |
 | `q` | Quit |
 
-## Vim Navigation
-
+**Search** (lists only):
 | Key | Action |
 |-----|--------|
-| `j` / `↓` | Down |
-| `k` / `↑` | Up |
-| `l` / `enter` | Select / enter |
-| `h` / `esc` | Back |
+| `/` | Enter search mode |
+| `n/N` | Next/prev match |
+| `esc` | Exit search |
 
-## List Keys
+Note: `/` activates search to avoid key conflicts.
 
-| Key | Action |
-|-----|--------|
-| `/` | Search mode |
-| `n` | Next match |
-| `p` | Prev match |
+**Palette**:
+- All typing filters commands
+- `↑/↓` or `ctrl+n/k` navigate
+- `enter` select, `esc` close
 
-## Input Keys (autocomplete)
+## Header
 
-| Key | Action |
-|-----|--------|
-| `tab` | Accept suggestion |
-| `n` | Next suggestion |
-| `p` | Prev suggestion |
-
-## Navigation
-
-Header on every screen:
+Every screen has:
 ```
 │  Worktree > Switch             │
 │  ──────────────────────────    │
@@ -129,12 +238,13 @@ Command palette (`ctrl+p`):
 ```
 ┌────────────────────────────────┐
 │  > █                           │
-│  add      Add worktree         │
-│  switch   Switch worktree      │
-│  remove   Remove worktree      │
-│  status   Worktree status      │
 │                                │
-│  l select • h cancel           │
+│  > add      Add worktree       │
+│    switch   Switch worktree    │
+│    remove   Remove worktree    │
+│    status   Worktree status    │
+│                                │
+│  ↑/↓ • enter • esc             │
 └────────────────────────────────┘
 ```
 
