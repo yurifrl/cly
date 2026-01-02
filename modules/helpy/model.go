@@ -46,6 +46,7 @@ type model struct {
 	matchIndex      int
 	width           int
 	height          int
+	lastWidth       int
 	ready           bool
 }
 
@@ -62,8 +63,25 @@ func initialModel(content string) (*model, error) {
 
 	headers := extractHeaders(content)
 
+	// Pre-render with default width to avoid "Loading..." delay
+	rendered := content
+	if r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(76)); err == nil {
+		if out, err := r.Render(content); err == nil {
+			rendered = out
+		}
+	}
+
+	// Create viewport with default size
+	vp := viewport.New(80, 24)
+	vp.Style = lipgloss.NewStyle().PaddingLeft(2).PaddingRight(2)
+	vp.SetContent(rendered)
+
 	return &model{
 		content:         content,
+		rendered:        rendered,
+		viewport:        vp,
+		lastWidth:       80,
+		ready:           true,
 		searchInput:     ti,
 		paletteInput:    pi,
 		headers:         headers,
@@ -99,18 +117,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-2)
-			m.viewport.Style = lipgloss.NewStyle().
-				PaddingLeft(2).
-				PaddingRight(2)
-			m.setContent(m.content, msg.Width)
-			m.ready = true
-		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - 2
-			m.setContent(m.content, msg.Width)
-		}
+		m.viewport.Width = msg.Width
+		m.viewport.Height = msg.Height - 2
+		m.setContent(m.content, msg.Width)
 
 	case tea.KeyMsg:
 		if m.paletteOpen {
@@ -300,6 +309,13 @@ func (m *model) filterHeaders() {
 }
 
 func (m *model) setContent(content string, width int) {
+	// Only re-render if width changed significantly or not yet rendered
+	if m.rendered != "" && m.lastWidth > 0 && abs(width-m.lastWidth) < 10 {
+		m.viewport.SetContent(m.rendered)
+		return
+	}
+	m.lastWidth = width
+
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(width-4),
@@ -319,6 +335,13 @@ func (m *model) setContent(content string, width int) {
 
 	m.rendered = rendered
 	m.viewport.SetContent(rendered)
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func (m *model) findMatches() {

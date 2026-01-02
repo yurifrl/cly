@@ -17,6 +17,7 @@ const defaultFilePath = "~/DotFiles/HELP.md"
 
 var fileFlag string
 var ideFlag bool
+var printFlag bool
 
 var errorStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
@@ -35,6 +36,7 @@ func Register(parent *cobra.Command) {
 
 	cmd.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
 	cmd.Flags().BoolVarP(&ideFlag, "ide", "i", false, "open Claude Code with IDE")
+	cmd.Flags().BoolVarP(&printFlag, "print", "p", false, "print HELP.md to stdout")
 
 	// Create alias command
 	alias := &cobra.Command{
@@ -44,12 +46,24 @@ func Register(parent *cobra.Command) {
 	}
 	alias.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
 	alias.Flags().BoolVarP(&ideFlag, "ide", "i", false, "open Claude Code with IDE")
+	alias.Flags().BoolVarP(&printFlag, "print", "p", false, "print HELP.md to stdout")
 
 	parent.AddCommand(cmd)
 	parent.AddCommand(alias)
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	// Fast path for print - skip config, just expand path directly
+	if printFlag {
+		path := expandPath(fileFlag)
+		content, err := readFileContent(path)
+		if err != nil {
+			return err
+		}
+		fmt.Print(content)
+		return nil
+	}
+
 	if ideFlag {
 		return runClaude(cmd, args)
 	}
