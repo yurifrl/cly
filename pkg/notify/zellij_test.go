@@ -36,7 +36,7 @@ func TestZellijNotifier_Available(t *testing.T) {
 				os.Unsetenv("ZELLIJ")
 			}
 
-			zn := NewZellijNotifier("test")
+			zn := NewZellijNotifier("test", false, false)
 			assert.Equal(t, tt.expected, zn.Available())
 		})
 	}
@@ -54,6 +54,6 @@ func TestZellijNotifier_UnavailableWhenNotInSession(t *testing.T) {
 
 	os.Unsetenv("ZELLIJ")
 
-	zn := NewZellijNotifier("test")
+	zn := NewZellijNotifier("test", false, false)
 	assert.False(t, zn.Available())
 }
