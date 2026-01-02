@@ -51,6 +51,11 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClient_SendMessage(t *testing.T) {
+	// Skip unless explicitly enabled - this makes real API calls
+	if os.Getenv("RUN_INTEGRATION_TESTS") == "" {
+		t.Skip("Skipping integration test (set RUN_INTEGRATION_TESTS=1 to run)")
+	}
+
 	// Skip if mods not available
 	if _, err := exec.LookPath("mods"); err != nil {
 		t.Skip("mods binary not found in PATH")
@@ -62,7 +67,8 @@ func TestClient_SendMessage(t *testing.T) {
 	}
 
 	flags := map[string]interface{}{
-		"model": "claude-3-5-sonnet-latest",
+		"model": "claude-sonnet-4-5",
+		"api":   "anthropic",
 	}
 	client, err := NewClient(flags)
 	require.NoError(t, err)

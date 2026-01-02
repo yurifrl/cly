@@ -28,7 +28,12 @@ func NewClient(flags map[string]interface{}) (*Client, error) {
 func (c *Client) SendMessage(ctx context.Context, conversationID, userMsg string, isFirstMessage bool) (string, error) {
 	var args []string
 
-	// Add flags first
+	// Add API flag first if specified
+	if api, ok := c.flags["api"].(string); ok {
+		args = append(args, "--api", api)
+	}
+
+	// Add model flag
 	if model, ok := c.flags["model"].(string); ok {
 		args = append(args, "-m", model)
 	}
