@@ -45,11 +45,38 @@ func (r *OpResolver) Resolve(ctx context.Context, ref string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// resolveSecretsInPlace recursively walks a map structure and resolves any op:// references
-func resolveSecretsInPlace(ctx context.Context, resolver SecretResolver, data interface{}) error {
+// hasOpReferences checks if data contains any op:// references
+func hasOpReferences(data interface{}) bool {
 	switch v := data.(type) {
 	case map[string]map[string]interface{}:
-		// Handle the specific Modules type
+		for _, moduleConfig := range v {
+			if hasOpReferences(moduleConfig) {
+				return true
+			}
+		}
+	case map[string]interface{}:
+		for _, value := range v {
+			if str, ok := value.(string); ok && strings.HasPrefix(str, "op://") {
+				return true
+			} else if nested, ok := value.(map[string]interface{}); ok {
+				if hasOpReferences(nested) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// resolveSecretsInPlace recursively walks a map structure and resolves any op:// references
+func resolveSecretsInPlace(ctx context.Context, resolver SecretResolver, data interface{}) error {
+	// Fast path: skip if no op:// references exist
+	if !hasOpReferences(data) {
+		return nil
+	}
+
+	switch v := data.(type) {
+	case map[string]map[string]interface{}:
 		for _, moduleConfig := range v {
 			if err := resolveSecretsInPlace(ctx, resolver, moduleConfig); err != nil {
 				return err

@@ -113,16 +113,16 @@ type NotifyConfig struct {
 
 type Config struct {
 	App struct {
-		Name        string `yaml:"name"`
-		Debug       bool   `yaml:"debug"`
-		ConfigDir   string `yaml:"config_dir"`
-		DataDir     string `yaml:"data_dir"`
-		DotFilesDir string `yaml:"dotfiles_dir"`
-	} `yaml:"app"`
+		Name        string `yaml:"name" mapstructure:"name"`
+		Debug       bool   `yaml:"debug" mapstructure:"debug"`
+		ConfigDir   string `yaml:"config_dir" mapstructure:"config_dir"`
+		DataDir     string `yaml:"data_dir" mapstructure:"data_dir"`
+		DotFilesDir string `yaml:"dotfiles_dir" mapstructure:"dotfiles_dir"`
+	} `yaml:"app" mapstructure:"app"`
 	Theme struct {
-		Style string `yaml:"style"`
-	} `yaml:"theme"`
-	Modules map[string]map[string]interface{} `yaml:"modules"`
+		Style string `yaml:"style" mapstructure:"style"`
+	} `yaml:"theme" mapstructure:"theme"`
+	Modules map[string]map[string]interface{} `yaml:"modules" mapstructure:"modules"`
 }
 
 var globalConfig *Config
@@ -139,25 +139,22 @@ func Load() (*Config, error) {
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, ".config/cly")
 
-	// Enable env var support with CLY_ prefix
-	v.SetEnvPrefix("CLY")
-	v.AutomaticEnv()
+	// Try user config first
+	userConfig := filepath.Join(configDir, "config.yaml")
+	userLocalConfig := filepath.Join(configDir, "config.local.yaml")
 
-	// Try config.local.yaml first (not committed), then config.yaml
 	configFound := false
-	for _, configName := range []string{"config.local", "config"} {
-		v.SetConfigName(configName)
-		v.AddConfigPath(configDir)
-		v.AddConfigPath("modules/config")
-		v.AddConfigPath(".")
-
-		if err := v.ReadInConfig(); err == nil {
-			configFound = true
-			break
+	for _, path := range []string{userLocalConfig, userConfig} {
+		if _, err := os.Stat(path); err == nil {
+			v.SetConfigFile(path)
+			if err := v.ReadInConfig(); err == nil {
+				configFound = true
+				break
+			}
 		}
 	}
 
-	// No config file found, load embedded defaults
+	// Fall back to embedded defaults
 	if !configFound {
 		if err := v.ReadConfig(bytes.NewBuffer(defaultConfig)); err != nil {
 			return nil, err
@@ -169,8 +166,8 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	// Resolve secrets in modules section
-	if len(cfg.Modules) > 0 {
+	// Resolve secrets in modules section (only if op:// references exist)
+	if len(cfg.Modules) > 0 && hasOpReferences(cfg.Modules) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
