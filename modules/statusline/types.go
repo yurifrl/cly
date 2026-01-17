@@ -3,6 +3,7 @@ package statusline
 // StatusJSON is the input from Claude Code via stdin.
 type StatusJSON struct {
 	TranscriptPath string         `json:"transcript_path,omitempty"`
+	SessionID      string         `json:"session_id,omitempty"`
 	Model          *ModelInfo     `json:"model,omitempty"`
 	Workspace      *WorkspaceInfo `json:"workspace,omitempty"`
 	ContextWindow  *ContextWindow `json:"context_window,omitempty"`
@@ -20,8 +21,9 @@ type WorkspaceInfo struct {
 }
 
 type ContextWindow struct {
-	ContextWindowSize int           `json:"context_window_size,omitempty"`
-	CurrentUsage      *CurrentUsage `json:"current_usage,omitempty"`
+	ContextWindowSize    int           `json:"context_window_size,omitempty"`
+	RemainingPercentage  *float64      `json:"remaining_percentage,omitempty"`
+	CurrentUsage         *CurrentUsage `json:"current_usage,omitempty"`
 }
 
 type CurrentUsage struct {

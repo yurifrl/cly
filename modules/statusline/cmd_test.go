@@ -60,7 +60,7 @@ func TestRenderStatusline(t *testing.T) {
 		Model:   ModelConfig{Enabled: true},
 	}
 	out := RenderStatusline(input, cfg)
-	assert.Contains(t, out, "🧠")
+	assert.Contains(t, out, "█") // progress bar
 	assert.Contains(t, out, "[Opus]")
 	assert.Contains(t, out, "│")
 }
@@ -75,7 +75,7 @@ func TestRenderStatusline_DisabledSkipped(t *testing.T) {
 		// context disabled
 	}
 	out := RenderStatusline(input, cfg)
-	assert.NotContains(t, out, "🧠")
+	assert.NotContains(t, out, "█") // no progress bar
 	assert.Contains(t, out, "[Opus]")
 	// Should not have leading separator
 	assert.NotEqual(t, "│", string(out[0]))

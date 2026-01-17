@@ -27,28 +27,58 @@ func FormatTokens(tokens int) string {
 	return fmt.Sprintf("%dK", tokens/1000)
 }
 
-// RenderContext outputs context window percentage.
+// RenderProgressBar creates a 10-segment progress bar.
+func RenderProgressBar(pct int) string {
+	filled := pct / 10
+	if filled > 10 {
+		filled = 10
+	}
+	empty := 10 - filled
+
+	bar := ""
+	for i := 0; i < filled; i++ {
+		bar += "█"
+	}
+	for i := 0; i < empty; i++ {
+		bar += "░"
+	}
+	return bar
+}
+
+// RenderContext outputs context window percentage with progress bar.
 func RenderContext(input *StatusJSON) string {
-	if input.ContextWindow == nil || input.ContextWindow.CurrentUsage == nil {
+	if input.ContextWindow == nil {
 		return ""
 	}
 
-	tokens := CalculateTokens(input.ContextWindow.CurrentUsage)
-	max := input.ContextWindow.ContextWindowSize
-	if max == 0 {
-		max = MaxContextTokens
-	}
-	pct := CalculatePercentage(tokens, max)
-	tokensStr := FormatTokens(tokens)
-	maxStr := FormatTokens(max)
+	var pct int
 
-	base := fmt.Sprintf("🧠 %d%% (%s/%s)", pct, tokensStr, maxStr)
+	// Prefer remaining_percentage from Claude Code (more accurate)
+	if input.ContextWindow.RemainingPercentage != nil {
+		remaining := int(*input.ContextWindow.RemainingPercentage)
+		pct = 100 - remaining // Show USED percentage
+	} else if input.ContextWindow.CurrentUsage != nil {
+		// Fallback to manual calculation
+		tokens := CalculateTokens(input.ContextWindow.CurrentUsage)
+		max := input.ContextWindow.ContextWindowSize
+		if max == 0 {
+			max = MaxContextTokens
+		}
+		pct = CalculatePercentage(tokens, max)
+	} else {
+		return ""
+	}
+
+	bar := RenderProgressBar(pct)
+	base := fmt.Sprintf("%s %d%%", bar, pct)
 
 	switch {
-	case pct >= 75:
-		return style.RedStyle.Render(base) + " 🔴"
+	case pct >= 80:
+		return style.RedStyle.Render(base) + " 💀"
+	case pct >= 65:
+		return "\x1b[38;5;208m" + base + "\x1b[0m" // orange
 	case pct >= 50:
-		return style.YellowStyle.Render(base) + " ⚠️"
+		return style.YellowStyle.Render(base)
 	default:
 		return style.GreenStyle.Render(base)
 	}

@@ -53,19 +53,47 @@ func TestFormatTokens(t *testing.T) {
 	}
 }
 
-func TestRenderContext(t *testing.T) {
+func TestRenderProgressBar(t *testing.T) {
+	tests := []struct {
+		pct  int
+		want string
+	}{
+		{0, "░░░░░░░░░░"},
+		{10, "█░░░░░░░░░"},
+		{50, "█████░░░░░"},
+		{100, "██████████"},
+		{105, "██████████"}, // clamp at 10
+	}
+	for _, tt := range tests {
+		got := RenderProgressBar(tt.pct)
+		assert.Equal(t, tt.want, got, "pct=%d", tt.pct)
+	}
+}
+
+func TestRenderContext_RemainingPercentage(t *testing.T) {
+	remaining := 55.0 // 55% remaining = 45% used
+	input := &StatusJSON{
+		ContextWindow: &ContextWindow{
+			RemainingPercentage: &remaining,
+		},
+	}
+	out := RenderContext(input)
+	assert.Contains(t, out, "45%")
+	assert.Contains(t, out, "█") // progress bar
+}
+
+func TestRenderContext_ManualCalculation(t *testing.T) {
 	input := &StatusJSON{
 		ContextWindow: &ContextWindow{
 			ContextWindowSize: 200000,
 			CurrentUsage: &CurrentUsage{
-				InputTokens: 90000,
+				InputTokens: 90000, // 45%
 			},
 		},
 	}
 	out := RenderContext(input)
-	assert.Contains(t, out, "🧠")
 	assert.Contains(t, out, "45%")
-	assert.Contains(t, out, "90K/200K")
+	assert.Contains(t, out, "█") // progress bar
 }
 
 func TestRenderContext_NoData(t *testing.T) {
@@ -75,27 +103,25 @@ func TestRenderContext_NoData(t *testing.T) {
 }
 
 func TestRenderContext_Warning(t *testing.T) {
+	remaining := 40.0 // 40% remaining = 60% used
 	input := &StatusJSON{
 		ContextWindow: &ContextWindow{
-			ContextWindowSize: 200000,
-			CurrentUsage: &CurrentUsage{
-				InputTokens: 120000, // 60%
-			},
+			RemainingPercentage: &remaining,
 		},
 	}
 	out := RenderContext(input)
-	assert.Contains(t, out, "⚠️")
+	assert.Contains(t, out, "60%")
+	assert.Contains(t, out, "█") // progress bar
 }
 
 func TestRenderContext_Danger(t *testing.T) {
+	remaining := 20.0 // 20% remaining = 80% used
 	input := &StatusJSON{
 		ContextWindow: &ContextWindow{
-			ContextWindowSize: 200000,
-			CurrentUsage: &CurrentUsage{
-				InputTokens: 160000, // 80%
-			},
+			RemainingPercentage: &remaining,
 		},
 	}
 	out := RenderContext(input)
-	assert.Contains(t, out, "🔴")
+	assert.Contains(t, out, "💀")
+	assert.Contains(t, out, "80%")
 }
