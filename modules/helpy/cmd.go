@@ -17,7 +17,7 @@ const defaultFilePath = "~/DotFiles/HELP.md"
 
 var fileFlag string
 var ideFlag bool
-var printFlag bool
+var promptFlag string
 
 var errorStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
@@ -36,7 +36,7 @@ func Register(parent *cobra.Command) {
 
 	cmd.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
 	cmd.Flags().BoolVarP(&ideFlag, "ide", "i", false, "open Claude Code with IDE")
-	cmd.Flags().BoolVarP(&printFlag, "print", "p", false, "print HELP.md to stdout")
+	cmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "send prompt to Claude")
 
 	// Create alias command
 	alias := &cobra.Command{
@@ -46,22 +46,16 @@ func Register(parent *cobra.Command) {
 	}
 	alias.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
 	alias.Flags().BoolVarP(&ideFlag, "ide", "i", false, "open Claude Code with IDE")
-	alias.Flags().BoolVarP(&printFlag, "print", "p", false, "print HELP.md to stdout")
+	alias.Flags().StringVarP(&promptFlag, "prompt", "p", "", "send prompt to Claude")
 
 	parent.AddCommand(cmd)
 	parent.AddCommand(alias)
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	// Fast path for print - skip config, just expand path directly
-	if printFlag {
-		path := expandPath(fileFlag)
-		content, err := readFileContent(path)
-		if err != nil {
-			return err
-		}
-		fmt.Print(content)
-		return nil
+	// Handle --prompt flag
+	if promptFlag != "" {
+		return runPrompt(promptFlag)
 	}
 
 	if ideFlag {
@@ -149,6 +143,21 @@ func runClaude(cmd *cobra.Command, args []string) error {
 		claudeArgs = append(claudeArgs, "--system-prompt", promptBuilder.String())
 	}
 	claudeArgs = append(claudeArgs, "--ide")
+
+	claudeCmd := exec.Command("claude", claudeArgs...)
+	claudeCmd.Dir = dotfilesPath
+	claudeCmd.Stdin = os.Stdin
+	claudeCmd.Stdout = os.Stdout
+	claudeCmd.Stderr = os.Stderr
+
+	return claudeCmd.Run()
+}
+
+func runPrompt(prompt string) error {
+	cfg := config.Get()
+	dotfilesPath := expandPath(cfg.App.DotFilesDir)
+
+	claudeArgs := []string{"-p", prompt}
 
 	claudeCmd := exec.Command("claude", claudeArgs...)
 	claudeCmd.Dir = dotfilesPath

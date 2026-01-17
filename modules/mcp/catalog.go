@@ -13,38 +13,31 @@ type Catalog struct {
 	mcps map[string]MCP
 }
 
-// LoadCatalog loads all MCP definitions from files
-// Looks for mcps.{json,jsonc,yaml,yml} in the config directory
+// LoadCatalog loads all MCP definitions from files in mcps/ subdirectory
 func LoadCatalog(configDir string) (*Catalog, error) {
 	cat := &Catalog{
 		mcps: make(map[string]MCP),
 	}
 
-	// Find all mcps.* files in config directory and mcps/ subdirectory
-	var files []string
-
-	// Check root config directory for mcps.* files
-	for _, filename := range []string{"mcps.json", "mcps.jsonc", "mcps.yaml", "mcps.yml"} {
-		path := filepath.Join(configDir, filename)
-		if _, err := os.Stat(path); err == nil {
-			files = append(files, path)
-		}
+	// Resolve symlinks in config dir path
+	resolvedDir, err := filepath.EvalSymlinks(configDir)
+	if err != nil {
+		resolvedDir = configDir
 	}
 
-	// Check mcps/ subdirectory for all .json, .jsonc, .yaml, .yml files
-	mcpsDir := filepath.Join(configDir, "mcps")
-	if info, err := os.Stat(mcpsDir); err == nil && info.IsDir() {
-		entries, err := os.ReadDir(mcpsDir)
-		if err == nil {
-			for _, entry := range entries {
-				if entry.IsDir() {
-					continue
-				}
-				name := entry.Name()
-				ext := filepath.Ext(name)
-				if ext == ".json" || ext == ".jsonc" || ext == ".yaml" || ext == ".yml" {
-					files = append(files, filepath.Join(mcpsDir, name))
-				}
+	// List files in mcps/ subdirectory
+	var files []string
+	mcpsDir := filepath.Join(resolvedDir, "mcps")
+	entries, err := os.ReadDir(mcpsDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			ext := filepath.Ext(name)
+			if ext == ".json" || ext == ".jsonc" || ext == ".yaml" || ext == ".yml" {
+				files = append(files, filepath.Join(mcpsDir, name))
 			}
 		}
 	}

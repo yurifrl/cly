@@ -1,0 +1,922 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["json5"]
+# ///
+"""
+AI config sync tool - Synchronize .ai configurations to IDE-specific directories.
+
+Syncs configurations in order:
+1. Shared configs from .ai root (with translations)
+2. IDE-specific configs from .ai/ides/<ide>/ (as-is, no translations)
+
+Supports both global (~/.config/ai or ~/.ai) and local (.ai) configurations.
+
+JSONC files are automatically converted to JSON unless they have @no-interpolation comment.
+"""
+
+import argparse
+import json
+import json5
+import shutil
+import sys
+import re
+from datetime import datetime
+from pathlib import Path
+
+
+SOURCE_DIR_LOCAL = ".ai"
+SOURCE_DIR_GLOBAL_CONFIG = Path.home() / ".config/ai"
+SOURCE_DIR_GLOBAL_HOME = Path.home() / ".ai"
+CONFIG_FILE = "ai.json"
+SUBDIRS = ["commands", "agents", "skills"]
+
+# IDE configuration with local and global directories
+IDES = {
+    "claude": {
+        "local_dir": ".claude",
+        "global_dir": Path.home() / ".claude",
+    },
+    "opencode": {
+        "local_dir": ".opencode",
+        "global_dir": Path.home() / ".config/opencode",
+    },
+    "crush": {
+        "local_dir": ".crush",
+        "global_dir": Path.home() / ".crush",
+    },
+}
+
+# Default IDEs to sync when no config specified
+DEFAULT_IDES = ["claude", "opencode"]
+
+# Global list to track all operations
+OPERATIONS_LOG = []
+SESSION_TIMESTAMP = None
+
+# ANSI color codes
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+RESET = "\033[0m"
+
+
+def fmt_add(path: str, dry_run: bool = False) -> str:
+    """Format added/changed file line."""
+    prefix = "[DRY-RUN] " if dry_run else ""
+    return f"{GREEN}{prefix}+ {path}{RESET}"
+
+
+def fmt_skip(path: str, dry_run: bool = False) -> str:
+    """Format unchanged/skipped file line."""
+    prefix = "[DRY-RUN] " if dry_run else ""
+    return f"{YELLOW}{prefix}= {path}{RESET}"
+
+
+def fmt_remove(path: str, dry_run: bool = False) -> str:
+    """Format removed file line."""
+    prefix = "[DRY-RUN] " if dry_run else ""
+    return f"{RED}{prefix}- {path}{RESET}"
+
+
+def save_to_tmp(content: bytes | str, original_path: Path, operation: str) -> Path:
+    """Save content to /tmp with timestamp and track the operation."""
+    global SESSION_TIMESTAMP
+    
+    # Use session timestamp
+    if SESSION_TIMESTAMP is None:
+        SESSION_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create tmp directory
+    tmp_base = Path(f"/tmp/ai_sync_{SESSION_TIMESTAMP}")
+    tmp_base.mkdir(exist_ok=True)
+    
+    # Create filename from original path
+    # Replace / with - and remove leading slash
+    safe_name = str(original_path).lstrip('/').replace('/', '-')
+    tmp_file = tmp_base / safe_name
+    
+    # Write content
+    if isinstance(content, str):
+        tmp_file.write_text(content)
+    else:
+        tmp_file.write_bytes(content)
+    
+    # Log the operation
+    log_entry = {
+        "operation": operation,
+        "source": str(original_path),
+        "saved_as": tmp_file.name,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    }
+    OPERATIONS_LOG.append(log_entry)
+    
+    # Append to log file immediately
+    log_file = tmp_base / "log.txt"
+    with log_file.open('a') as f:
+        if log_file.stat().st_size == 0:
+            # Write header if file is empty
+            f.write(f"AI Sync Session: {SESSION_TIMESTAMP}\n")
+            f.write("="*80 + "\n\n")
+        
+        f.write(f"[{log_entry['timestamp']}] {operation.upper()}\n")
+        f.write(f"  Source: {log_entry['source']}\n")
+        f.write(f"  Saved:  {log_entry['saved_as']}\n")
+        
+        # Add special notes for symlinks
+        if operation == "removed_symlinks" and isinstance(content, str) and content.startswith("Symlink to:"):
+            f.write(f"  Note:   {content.strip()}\n")
+        
+        f.write("\n")
+    
+    return tmp_file
+
+
+def files_are_equal(file1: Path, file2: Path) -> bool:
+    """Check if two files have the same content."""
+    try:
+        return file1.read_bytes() == file2.read_bytes()
+    except Exception:
+        return False
+
+
+def should_interpolate_jsonc(file_path: Path) -> bool:
+    """Check if a JSONC file should be interpolated (no @no-interpolation comment)."""
+    if not file_path.suffix.lower() == '.jsonc':
+        return False
+    
+    try:
+        with open(file_path, 'r') as f:
+            # Check first 10 lines for @no-interpolation comment
+            for i, line in enumerate(f):
+                if i >= 10:
+                    break
+                if '@no-interpolation' in line:
+                    return False
+        return True
+    except Exception:
+        return False
+
+
+def interpolate_jsonc_to_json(content: str) -> str:
+    """Convert JSONC content to proper JSON, evaluating ${...} environment variables."""
+    try:
+        import re
+        import os
+        
+        # First, temporarily replace ${...} placeholders with a unique marker
+        # to prevent json5 from trying to parse them
+        placeholder_pattern = re.compile(r'\$\{([^}]+)\}')
+        placeholders = []
+        
+        def replace_placeholder(match):
+            var_name = match.group(1)
+            # Get environment variable value, empty string if not set
+            env_value = os.environ.get(var_name, '')
+            placeholders.append(env_value)
+            # Use a simple string that won't break JSON parsing
+            return f"__PLACEHOLDER_{len(placeholders) - 1}__"
+        
+        # Replace placeholders with temporary markers
+        content_with_markers = placeholder_pattern.sub(replace_placeholder, content)
+        
+        # Parse JSONC using json5 (handles comments and trailing commas)
+        data = json5.loads(content_with_markers)
+        
+        # Convert to JSON string
+        json_str = json.dumps(data, indent=2, ensure_ascii=False)
+        
+        # Replace markers with actual environment variable values
+        for i, value in enumerate(placeholders):
+            # Escape the value for JSON (handle quotes, backslashes, etc)
+            escaped_value = json.dumps(value)[1:-1]  # Remove outer quotes from json.dumps
+            json_str = json_str.replace(f'"__PLACEHOLDER_{i}__"', f'"{escaped_value}"')
+            json_str = json_str.replace(f'__PLACEHOLDER_{i}__', f'"{escaped_value}"')
+        
+        return json_str + '\n'
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to interpolate JSONC: {e}")
+        # If interpolation fails, return original content
+        return content
+
+
+def copy_file_overwrite(source_file: Path, target_file: Path, verbose: bool = True, dry_run: bool = False) -> bool:
+    """Copy a file, removing any existing file or symlink at the target.
+    
+    For .jsonc files, interpolates to JSON unless @no-interpolation comment is present.
+    
+    Returns True if file was/would be copied, False if skipped (no changes).
+    """
+    # Determine target filename and content
+    if should_interpolate_jsonc(source_file):
+        # Change target extension from .jsonc to .json
+        if target_file.suffix.lower() == '.jsonc':
+            target_file = target_file.with_suffix('.json')
+        
+        # Read and interpolate content
+        source_content = source_file.read_text()
+        content_to_write = interpolate_jsonc_to_json(source_content)
+        content_bytes = content_to_write.encode('utf-8')
+        
+        # Check if target exists and has same content
+        if target_file.exists() and not target_file.is_symlink():
+            try:
+                if target_file.read_bytes() == content_bytes:
+                    return False  # Skip, no changes
+            except Exception:
+                pass
+    else:
+        # Regular file copy - check if files are equal
+        if target_file.exists() and not target_file.is_symlink():
+            if files_are_equal(source_file, target_file):
+                return False
+        content_bytes = source_file.read_bytes()
+    
+    # Dry run - just return True to indicate it would be copied
+    if dry_run:
+        return True
+    
+    # Ensure parent directory exists
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Save existing file to /tmp if it exists
+    if target_file.is_symlink() or target_file.exists():
+        try:
+            if target_file.is_symlink():
+                # Save symlink info
+                link_target = target_file.readlink()
+                save_to_tmp(f"Symlink to: {link_target}\n", target_file, "removed_symlinks")
+            else:
+                # Save actual file content
+                old_content = target_file.read_bytes()
+                save_to_tmp(old_content, target_file, "removed_files")
+        except Exception as e:
+            # Save error info
+            save_to_tmp(f"Error reading file: {e}\n", target_file, "removed_errors")
+        
+        # Remove the file/symlink
+        target_file.unlink()
+    
+    # Write the file (either interpolated or original)
+    if should_interpolate_jsonc(source_file):
+        target_file.write_bytes(content_bytes)
+        # Save the interpolated content to /tmp
+        save_to_tmp(content_bytes, target_file, "interpolated_jsonc")
+    else:
+        # Copy the file normally
+        shutil.copy2(source_file, target_file)
+        # Save the copied file to /tmp
+        save_to_tmp(content_bytes, target_file, "copied_files")
+    
+    return True
+
+
+def prune_target(source: Path, target: Path, ide_name: str, verbose: bool = True, dry_run: bool = False):
+    """Remove files in target that don't exist in source (shared or IDE-specific)."""
+    files_to_remove = []
+    
+    # IDE-specific source directory
+    ide_source = source / "ides" / ide_name
+    
+    # Check each subdirectory
+    for subdir in SUBDIRS:
+        source_path = source / subdir
+        ide_source_path = ide_source / subdir if ide_source.exists() else None
+        
+        # Determine target subdirectory name
+        if ide_name == "opencode":
+            if subdir == "commands":
+                target_subdir = "command"
+            elif subdir == "agents":
+                target_subdir = "agent"
+            elif subdir == "skills":
+                target_subdir = "skill"
+            else:
+                target_subdir = subdir
+        else:
+            target_subdir = subdir
+        
+        target_path = target / target_subdir
+        
+        # Skip if target doesn't exist or is a symlink
+        if not target_path.exists() or target_path.is_symlink():
+            continue
+        
+        # For skills, check nested structure
+        if subdir == "skills":
+            if target_path.is_dir():
+                for target_skill_dir in target_path.iterdir():
+                    if not target_skill_dir.is_dir():
+                        continue
+                    
+                    skill_name = target_skill_dir.name
+                    
+                    # Check if skill exists in shared or IDE-specific source
+                    shared_skill = source_path / skill_name if source_path.exists() else None
+                    ide_skill = ide_source_path / skill_name if ide_source_path and ide_source_path.exists() else None
+                    
+                    shared_exists = shared_skill and shared_skill.exists()
+                    ide_exists = ide_skill and ide_skill.exists()
+                    
+                    # If source skill doesn't exist in either, mark entire skill dir for removal
+                    if not shared_exists and not ide_exists:
+                        files_to_remove.append(target_skill_dir)
+                        continue
+                    
+                    # Check individual files in skill
+                    for target_file in target_skill_dir.iterdir():
+                        if not target_file.is_file():
+                            continue
+                        
+                        # Check both shared and IDE-specific
+                        shared_file = shared_skill / target_file.name if shared_exists else None
+                        ide_file = ide_skill / target_file.name if ide_exists else None
+                        
+                        if not (shared_file and shared_file.exists()) and not (ide_file and ide_file.exists()):
+                            files_to_remove.append(target_file)
+        else:
+            # For commands/agents, check files directly
+            if target_path.is_dir():
+                for target_file in target_path.iterdir():
+                    if not target_file.is_file():
+                        continue
+                    
+                    # Check both shared and IDE-specific
+                    shared_file = source_path / target_file.name if source_path.exists() else None
+                    ide_file = ide_source_path / target_file.name if ide_source_path and ide_source_path.exists() else None
+                    
+                    shared_exists = shared_file and shared_file.exists()
+                    ide_exists = ide_file and ide_file.exists()
+                    
+                    if not shared_exists and not ide_exists:
+                        files_to_remove.append(target_file)
+    
+    # Check for AGENTS.md/CLAUDE.md
+    if ide_name == "claude":
+        target_claude_md = target / "CLAUDE.md"
+        source_agent_md = source / "AGENTS.md"
+        ide_claude_md = ide_source / "CLAUDE.md" if ide_source.exists() else None
+        
+        shared_exists = source_agent_md.exists()
+        ide_exists = ide_claude_md and ide_claude_md.exists()
+        
+        if target_claude_md.exists() and not shared_exists and not ide_exists:
+            files_to_remove.append(target_claude_md)
+    else:
+        target_agent_md = target / "AGENTS.md"
+        source_agent_md = source / "AGENTS.md"
+        ide_agent_md = ide_source / "AGENTS.md" if ide_source.exists() else None
+        
+        shared_exists = source_agent_md.exists()
+        ide_exists = ide_agent_md and ide_agent_md.exists()
+        
+        if target_agent_md.exists() and not shared_exists and not ide_exists:
+            files_to_remove.append(target_agent_md)
+    
+    # Check for opencode.json
+    if ide_name == "opencode":
+        target_opencode_json = target / "opencode.json"
+        source_opencode_json = source / "opencode.json"
+        ide_opencode_json = ide_source / "opencode.json" if ide_source.exists() else None
+        
+        shared_exists = source_opencode_json.exists()
+        ide_exists = ide_opencode_json and ide_opencode_json.exists()
+        
+        if target_opencode_json.exists() and not shared_exists and not ide_exists:
+            files_to_remove.append(target_opencode_json)
+    
+    # Show what will be removed
+    if files_to_remove:
+        if verbose:
+            for file_path in files_to_remove:
+                suffix = " (dir)" if file_path.is_dir() else ""
+                print(fmt_remove(f"{file_path}{suffix}", dry_run))
+        
+        # In dry-run mode, just show what would be removed
+        if dry_run:
+            return
+        
+        # Ask for confirmation
+        try:
+            response = input("\nProceed with removal? [y/N]: ").strip().lower()
+            if response in ('y', 'yes'):
+                for file_path in files_to_remove:
+                    # Save to /tmp before removing
+                    try:
+                        if file_path.is_dir():
+                            # Save directory listing
+                            dir_contents = []
+                            for item in file_path.rglob("*"):
+                                dir_contents.append(str(item.relative_to(file_path)))
+                            save_to_tmp("\n".join(dir_contents), file_path, "pruned_directories")
+                        else:
+                            # Save file content
+                            content = file_path.read_bytes()
+                            save_to_tmp(content, file_path, "pruned_files")
+                    except Exception as e:
+                        save_to_tmp(f"Error: {e}\n", file_path, "pruned_errors")
+                    
+                    # Remove the file/directory
+                    if file_path.is_dir():
+                        shutil.rmtree(file_path)
+                        if verbose:
+                            print(f"🗑️  Removed directory: {file_path}")
+                    else:
+                        file_path.unlink()
+                        if verbose:
+                            print(f"🗑️  Removed file: {file_path}")
+            else:
+                if verbose:
+                    print("❌ Prune cancelled")
+        except (KeyboardInterrupt, EOFError):
+            print("\n❌ Prune cancelled")
+    else:
+        if verbose:
+            print(f"\n✨ No files to prune in {target}")
+
+
+def translate_skill_md(content: str) -> str:
+    """Remove allowed-tools section from SKILL.md frontmatter for OpenCode."""
+    lines = content.splitlines(keepends=True)
+    result = []
+    in_frontmatter = False
+    in_allowed_tools = False
+    
+    for line in lines:
+        if line.strip() == "---":
+            if not in_frontmatter:
+                in_frontmatter = True
+                result.append(line)
+            else:
+                in_frontmatter = False
+                result.append(line)
+            continue
+        
+        if in_frontmatter and line.startswith("allowed-tools:"):
+            in_allowed_tools = True
+            continue
+        
+        if in_frontmatter and in_allowed_tools and line and line[0] not in (' ', '\t'):
+            in_allowed_tools = False
+        
+        if in_allowed_tools:
+            continue
+        
+        result.append(line)
+    
+    return "".join(result)
+
+
+def sync_ide(source: Path, ide_name: str, is_global: bool, verbose: bool = True, prune: bool = False, dry_run: bool = False):
+    """Sync files from .ai to an IDE's configuration directory."""
+    ide_config = IDES[ide_name]
+    
+    # Determine target directory based on scope
+    if is_global:
+        target = Path(ide_config["global_dir"])
+    else:
+        target = Path(ide_config["local_dir"])
+    
+    if verbose:
+        scope = "global" if is_global else "local"
+        prefix = "[DRY-RUN] " if dry_run else ""
+        print(f"\n{prefix}📁 Processing {ide_name} ({scope}) → {target}")
+    
+    # Create target directory
+    if not dry_run:
+        target.mkdir(parents=True, exist_ok=True)
+    
+    # PHASE 1: Copy shared configs with translations
+    sync_shared_configs(source, target, ide_name, verbose, dry_run)
+    
+    # PHASE 2: Copy IDE-specific configs as-is (overrides shared)
+    ide_specific_dir = source / "ides" / ide_name
+    if ide_specific_dir.exists() and ide_specific_dir.is_dir():
+        if verbose:
+            prefix = "[DRY-RUN] " if dry_run else ""
+            print(f"\n{prefix}📂 Copying IDE-specific configs from {ide_specific_dir}")
+        sync_ide_specific(ide_specific_dir, target, verbose, dry_run)
+    
+    # Prune files if requested
+    if prune:
+        prune_target(source, target, ide_name, verbose, dry_run)
+
+
+def sync_shared_configs(source: Path, target: Path, ide_name: str, verbose: bool = True, dry_run: bool = False):
+    """Sync shared configurations with appropriate translations."""
+    # Process each subdirectory
+    for subdir in SUBDIRS:
+        source_path = source / subdir
+        
+        # Determine target subdirectory name
+        if ide_name == "opencode":
+            if subdir == "commands":
+                target_subdir = "command"
+            elif subdir == "agents":
+                target_subdir = "agent"
+            elif subdir == "skills":
+                target_subdir = "skill"
+            else:
+                target_subdir = subdir
+        else:
+            target_subdir = subdir
+        
+        target_path = target / target_subdir
+        
+        # Skip if source doesn't exist or is empty
+        if not source_path.exists():
+            continue
+        
+        # Check if source has any files to copy
+        has_files = False
+        if subdir == "skills":
+            # For skills, check if any skill directory has files
+            for skill_dir in source_path.iterdir():
+                if skill_dir.is_dir() and any(skill_dir.iterdir()):
+                    has_files = True
+                    break
+        else:
+            # For commands/agents, check if directory has files
+            has_files = any(f.is_file() for f in source_path.iterdir())
+        
+        if not has_files:
+            continue
+        
+        # Now create target directory (only if we have files to copy)
+        if target_path.is_symlink():
+            # If it's a symlink, remove it and create a directory
+            if verbose:
+                print(fmt_add(f"{target_path} (replacing symlink)", dry_run))
+            if not dry_run:
+                target_path.unlink()
+                target_path.mkdir(parents=True, exist_ok=True)
+        elif target_path.exists() and not target_path.is_dir():
+            # If it exists but is not a directory, skip
+            if verbose:
+                print(f"⚠️  {target_path} exists as a file, skipping")
+            continue
+        elif not target_path.exists():
+            # Create target subdirectory if it doesn't exist
+            if not dry_run:
+                target_path.mkdir(parents=True, exist_ok=True)
+        
+        # Handle skills specially
+        if subdir == "skills":
+            for skill_dir in source_path.iterdir():
+                if not skill_dir.is_dir():
+                    continue
+                
+                target_skill_dir = target_path / skill_dir.name
+                if not dry_run:
+                    target_skill_dir.mkdir(exist_ok=True)
+                
+                # Copy each file and subdirectory in skill directory
+                for item in skill_dir.iterdir():
+                    target_item = target_skill_dir / item.name
+                    
+                    if item.is_file():
+                        # Translate SKILL.md for OpenCode
+                        if ide_name == "opencode" and item.name == "SKILL.md":
+                            content = item.read_text()
+                            translated = translate_skill_md(content)
+                            
+                            # Check if target exists and has same content
+                            if target_item.exists() and not target_item.is_symlink():
+                                if target_item.read_text() == translated:
+                                    if verbose:
+                                        print(fmt_skip(str(target_item), dry_run))
+                                    continue  # Skip, no changes
+                            
+                            if dry_run:
+                                if verbose:
+                                    print(fmt_add(str(target_item), dry_run))
+                                continue
+                            
+                            # Save existing if any
+                            if target_item.is_symlink() or target_item.exists():
+                                try:
+                                    if target_item.is_symlink():
+                                        link_target = target_item.readlink()
+                                        save_to_tmp(f"Symlink to: {link_target}\n", target_item, "removed_symlinks")
+                                    else:
+                                        old_content = target_item.read_bytes()
+                                        save_to_tmp(old_content, target_item, "removed_files")
+                                except Exception as e:
+                                    save_to_tmp(f"Error: {e}\n", target_item, "removed_errors")
+                                
+                                target_item.unlink()
+                            
+                            target_item.write_text(translated)
+                            
+                            # Save translated content
+                            save_to_tmp(translated, target_item, "translated_skills")
+                            
+                            if verbose:
+                                print(fmt_add(str(target_item), dry_run))
+                        else:
+                            # Regular file copy for non-SKILL.md files
+                            # Handle .jsonc interpolation
+                            target_item_final = target_item
+                            if should_interpolate_jsonc(item):
+                                target_item_final = target_item.with_suffix('.json')
+                            
+                            if copy_file_overwrite(item, target_item_final, verbose=False, dry_run=dry_run):
+                                if verbose:
+                                    suffix = " (jsonc→json)" if should_interpolate_jsonc(item) else ""
+                                    print(fmt_add(f"{target_item_final}{suffix}", dry_run))
+                            elif verbose:
+                                print(fmt_skip(str(target_item_final), dry_run))
+                    elif item.is_dir():
+                        # Recursively copy subdirectory
+                        if not dry_run:
+                            target_item.mkdir(exist_ok=True)
+                        
+                        for sub_item in item.rglob("*"):
+                            if sub_item.is_file():
+                                rel_path = sub_item.relative_to(item)
+                                target_sub_item = target_item / rel_path
+                                
+                                # Handle .jsonc interpolation
+                                if should_interpolate_jsonc(sub_item):
+                                    target_sub_item = target_sub_item.with_suffix('.json')
+                                
+                                if not dry_run:
+                                    target_sub_item.parent.mkdir(parents=True, exist_ok=True)
+                                
+                                if copy_file_overwrite(sub_item, target_sub_item, verbose=False, dry_run=dry_run):
+                                    if verbose:
+                                        suffix = " (jsonc→json)" if should_interpolate_jsonc(sub_item) else ""
+                                        print(fmt_add(f"{target_sub_item}{suffix}", dry_run))
+                                elif verbose:
+                                    print(fmt_skip(str(target_sub_item), dry_run))
+        else:
+            # For commands/agents, copy each file individually
+            for source_file in source_path.iterdir():
+                if not source_file.is_file():
+                    continue
+                
+                target_file = target_path / source_file.name
+                
+                # If it's a .jsonc file that should be interpolated, change extension to .json
+                if should_interpolate_jsonc(source_file):
+                    target_file = target_path / source_file.with_suffix('.json').name
+                
+                if copy_file_overwrite(source_file, target_file, verbose=False, dry_run=dry_run):
+                    if verbose:
+                        print(fmt_add(str(target_file), dry_run))
+                elif verbose:
+                    print(fmt_skip(str(target_file), dry_run))
+    
+    # Copy AGENTS.md if it exists (for Claude, copy to CLAUDE.md)
+    agent_md = source / "AGENTS.md"
+    if agent_md.exists():
+        if ide_name == "claude":
+            target_file = target / "CLAUDE.md"
+        else:
+            target_file = target / "AGENTS.md"
+        
+        if copy_file_overwrite(agent_md, target_file, verbose=False, dry_run=dry_run):
+            if verbose:
+                print(fmt_add(str(target_file), dry_run))
+        elif verbose:
+            print(fmt_skip(str(target_file), dry_run))
+    
+    # Copy IDE-specific config files with translations
+    if ide_name == "opencode":
+        # Copy opencode.json if exists
+        opencode_json = source / "opencode.json"
+        if opencode_json.exists():
+            target_opencode_json = target / "opencode.json"
+            if copy_file_overwrite(opencode_json, target_opencode_json, verbose=False, dry_run=dry_run):
+                if verbose:
+                    print(fmt_add(str(target_opencode_json), dry_run))
+            elif verbose:
+                print(fmt_skip(str(target_opencode_json), dry_run))
+    elif ide_name == "claude":
+        # Copy claude.json as settings.json for Claude
+        claude_json = source / "claude.json"
+        if claude_json.exists():
+            target_settings_json = target / "settings.json"
+            if copy_file_overwrite(claude_json, target_settings_json, verbose=False, dry_run=dry_run):
+                if verbose:
+                    print(fmt_add(f"{target_settings_json} (from claude.json)", dry_run))
+            elif verbose:
+                print(fmt_skip(f"{target_settings_json} (from claude.json)", dry_run))
+
+
+def sync_ide_specific(ide_dir: Path, target: Path, verbose: bool = True, dry_run: bool = False):
+    """Copy IDE-specific files as-is without any translations."""
+    # Walk through the IDE-specific directory and copy everything
+    for item in ide_dir.rglob("*"):
+        if item.is_file():
+            # Get relative path from ide_dir
+            rel_path = item.relative_to(ide_dir)
+            target_file = target / rel_path
+            
+            # If it's a .jsonc file that should be interpolated, change extension to .json
+            if should_interpolate_jsonc(item):
+                # Change the target file extension
+                target_file = target_file.with_suffix('.json')
+            
+            # Ensure parent directory exists
+            if not dry_run:
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Copy file (with interpolation if needed)
+            if copy_file_overwrite(item, target_file, verbose=False, dry_run=dry_run):
+                if verbose:
+                    suffix = " (jsonc→json)" if should_interpolate_jsonc(item) else " (override)"
+                    print(fmt_add(f"{target_file}{suffix}", dry_run))
+            elif verbose:
+                print(fmt_skip(f"{target_file} (override)", dry_run))
+
+
+
+
+
+def print_operations_summary():
+    """Print a summary of all operations performed."""
+    if not OPERATIONS_LOG:
+        return
+    
+    print("\n" + "="*80)
+    print("📋 SYNC COMPLETE")
+    print("="*80)
+    
+    print(f"\n📁 Session saved to: /tmp/ai_sync_{SESSION_TIMESTAMP}/")
+    print(f"📄 Total operations: {len(OPERATIONS_LOG)}")
+    print(f"📝 Full log: /tmp/ai_sync_{SESSION_TIMESTAMP}/log.txt")
+    
+    # Show operation counts
+    op_counts = {}
+    for op in OPERATIONS_LOG:
+        op_type = op["operation"]
+        op_counts[op_type] = op_counts.get(op_type, 0) + 1
+    
+    if op_counts:
+        print("\nOperations:")
+        for op_type, count in sorted(op_counts.items()):
+            emoji = get_operation_emoji(op_type)
+            print(f"  {emoji} {op_type.replace('_', ' ').title()}: {count}")
+    
+    print("\n" + "="*80)
+
+
+def get_operation_emoji(op_type: str) -> str:
+    """Get emoji for operation type."""
+    return {
+        "copied_files": "📄",
+        "interpolated_jsonc": "🔄",
+        "translated_skills": "🔄",
+        "removed_files": "🗑️",
+        "removed_symlinks": "🔗",
+        "removed_errors": "⚠️",
+        "pruned_files": "🧹",
+        "pruned_directories": "📁",
+        "pruned_errors": "❌"
+    }.get(op_type, "📎")
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Sync .ai configurations to IDE-specific directories.",
+        epilog="""
+Examples:
+  ai                  # Sync global + local configurations
+  ai --global         # Sync only global ~/.config/ai or ~/.ai
+  ai -i claude        # Sync claude only
+  ai -i claude -i opencode  # Sync multiple IDEs
+  ai --prune          # Sync and remove files not in source (with confirmation)
+
+Config file (ai.json in .ai, ~/.config/ai, or ~/.ai):
+  {
+    "ides": ["claude", "opencode", "crush"]
+  }
+  
+Note: For global config, ~/.config/ai takes precedence over ~/.ai if both exist.
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    
+    parser.add_argument(
+        "-i", "--ide",
+        action="append",
+        choices=list(IDES.keys()),
+        help="IDE to sync (can be specified multiple times)"
+    )
+    parser.add_argument(
+        "-g", "--global",
+        dest="global_only",
+        action="store_true",
+        help="Sync only global configuration"
+    )
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress output"
+    )
+    parser.add_argument(
+        "-p", "--prune",
+        action="store_true",
+        help="Remove files in target that don't exist in source (with confirmation)"
+    )
+    parser.add_argument(
+        "-n", "--dry-run",
+        action="store_true",
+        help="Show what would be done without making changes"
+    )
+    
+    args = parser.parse_args()
+    
+    # Determine which sources to sync
+    if args.global_only:
+        # Only sync global - prefer ~/.config/ai over ~/.ai, but use ~/.ai if ~/.config/ai is empty
+        if SOURCE_DIR_GLOBAL_CONFIG.exists() and any(SOURCE_DIR_GLOBAL_CONFIG.iterdir()):
+            sources = [(SOURCE_DIR_GLOBAL_CONFIG, True)]
+        elif SOURCE_DIR_GLOBAL_HOME.exists():
+            sources = [(SOURCE_DIR_GLOBAL_HOME, True)]
+        else:
+            # Create ~/.config/ai if it doesn't exist
+            if not args.quiet:
+                print(f"📁 Creating global config directory: {SOURCE_DIR_GLOBAL_CONFIG}")
+            SOURCE_DIR_GLOBAL_CONFIG.mkdir(parents=True, exist_ok=True)
+            sources = [(SOURCE_DIR_GLOBAL_CONFIG, True)]
+    else:
+        # Sync both global and local (if they exist)
+        sources = []
+
+        # Check for global source (prefer ~/.config/ai, but use ~/.ai if ~/.config/ai is empty)
+        if SOURCE_DIR_GLOBAL_CONFIG.exists() and any(SOURCE_DIR_GLOBAL_CONFIG.iterdir()):
+            sources.append((SOURCE_DIR_GLOBAL_CONFIG, True))
+        elif SOURCE_DIR_GLOBAL_HOME.exists():
+            sources.append((SOURCE_DIR_GLOBAL_HOME, True))
+        else:
+            # Create ~/.config/ai if neither exists
+            if not args.quiet:
+                print(f"📁 Creating global config directory: {SOURCE_DIR_GLOBAL_CONFIG}")
+            SOURCE_DIR_GLOBAL_CONFIG.mkdir(parents=True, exist_ok=True)
+            sources.append((SOURCE_DIR_GLOBAL_CONFIG, True))
+        
+        # Check for local source
+        local_source = Path(SOURCE_DIR_LOCAL)
+        if local_source.exists():
+            sources.append((local_source, False))
+    
+    # Process each source
+    for source, is_global in sources:
+        # Load config from this source
+        config_path = source / CONFIG_FILE
+        config = {}
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    config = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                if not args.quiet:
+                    print(f"⚠️  Warning: Could not load {config_path}: {e}", file=sys.stderr)
+        
+        if not args.quiet:
+            scope = "global" if is_global else "local"
+            print(f"\n🔍 Checking {scope} {source}...")
+        
+        # Determine which IDEs to sync
+        ides_to_sync = []
+        
+        if args.ide:
+            # Use -i/--ide flags
+            ides_to_sync = args.ide
+        elif "ides" in config and config["ides"]:
+            # Use config file
+            config_ides = config["ides"]
+            if not isinstance(config_ides, list):
+                print(f"❌ Config 'ides' must be a list in {config_path}", file=sys.stderr)
+                sys.exit(1)
+            
+            # Validate IDE names
+            invalid = [ide for ide in config_ides if ide not in IDES]
+            if invalid:
+                print(f"❌ Unknown IDEs in {config_path}: {', '.join(invalid)}", file=sys.stderr)
+                print(f"Available: {', '.join(IDES.keys())}", file=sys.stderr)
+                sys.exit(1)
+            
+            ides_to_sync = config_ides
+            if not args.quiet:
+                print(f"📝 Using config: syncing {', '.join(config_ides)}")
+        else:
+            # Default: sync to claude and opencode
+            ides_to_sync = DEFAULT_IDES
+        
+        # Sync each IDE
+        for ide_name in ides_to_sync:
+            sync_ide(source, ide_name, is_global, verbose=not args.quiet, prune=args.prune, dry_run=args.dry_run)
+    
+    if not args.quiet:
+        print("\n🎉 Done")
+    
+    # Print operations summary
+    print_operations_summary()
+
+
+if __name__ == "__main__":
+    main()

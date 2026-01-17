@@ -95,3 +95,34 @@ func TestIsInZellij(t *testing.T) {
 	defer os.Unsetenv("ZELLIJ")
 	assert.True(t, IsInZellij())
 }
+
+func TestBuildAnonymousArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "empty args",
+			input:    []string{},
+			expected: []string{"--setting-sources", "user"},
+		},
+		{
+			name:     "with existing args",
+			input:    []string{"-p", "hello"},
+			expected: []string{"-p", "hello", "--setting-sources", "user"},
+		},
+		{
+			name:     "with resume flag",
+			input:    []string{"--resume"},
+			expected: []string{"--resume", "--setting-sources", "user"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := BuildAnonymousArgs(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

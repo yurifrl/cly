@@ -35,11 +35,31 @@ func ParseMCPFile(path string, data []byte) (map[string]MCP, error) {
 }
 
 func parseJSON(data []byte) (map[string]MCP, error) {
-	// Source format is flat key-value map only
-	// No "mcpServers" wrapper - that's AI tool config format
+	// Try flat format first
 	var mcps map[string]MCP
-	err := json.Unmarshal(data, &mcps)
-	return mcps, err
+	if err := json.Unmarshal(data, &mcps); err == nil {
+		// Check if it's actually mcpServers wrapper format
+		if len(mcps) == 1 {
+			if _, hasMcpServers := mcps["mcpServers"]; hasMcpServers {
+				var wrapped struct {
+					MCPServers map[string]MCP `json:"mcpServers"`
+				}
+				if err := json.Unmarshal(data, &wrapped); err == nil {
+					return wrapped.MCPServers, nil
+				}
+			}
+		}
+		return mcps, nil
+	}
+
+	// Try mcpServers wrapper format as fallback
+	var wrapped struct {
+		MCPServers map[string]MCP `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err != nil {
+		return nil, err
+	}
+	return wrapped.MCPServers, nil
 }
 
 func parseJSONC(data []byte) (map[string]MCP, error) {

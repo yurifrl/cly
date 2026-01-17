@@ -74,7 +74,7 @@ Types:
 	}
 
 	cmd.Flags().StringVarP(&fileFlag, "file", "f", "", "override bundle file path")
-	cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "show detailed output")
+	cmd.Flags().BoolVar(&verboseFlag, "verbose", false, "show detailed output")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "skip interactive editor mode, just sync")
 	cmd.Flags().BoolVar(&forceFlag, "force", false, "force reinstall packages even if already installed")
 	cmd.Flags().BoolVar(&noUpdateFlag, "no-update", false, "skip brew upgrade (brew only)")

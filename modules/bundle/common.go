@@ -112,11 +112,13 @@ func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 
 	// Use actual system state if available, otherwise fall back to store
 	var installed []string
+	useBaseNameComparison := false
 	if b.listInstalledFn != nil {
 		installed, err = b.listInstalledFn()
 		if err != nil {
 			return fmt.Errorf("failed to list installed packages: %w", err)
 		}
+		useBaseNameComparison = true
 	} else {
 		installed, err = b.store.List(b.name)
 		if err != nil {
@@ -124,7 +126,14 @@ func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 		}
 	}
 
-	toRemove := diff(installed, desired)
+	// When using listInstalledFn, installed returns base names only.
+	// We need to compare using base names and remove packages not in desired.
+	var toRemove []string
+	if useBaseNameComparison {
+		toRemove = diffByBaseName(installed, desired)
+	} else {
+		toRemove = diff(installed, desired)
+	}
 	for _, pkg := range toRemove {
 		printYellow(fmt.Sprintf("Removing: %s", pkg))
 		if err := b.uninstallFn(pkg, verbose); err != nil {
@@ -140,10 +149,16 @@ func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 		// Force reinstall all desired packages - uninstall first
 		toInstall = desired
 		for _, pkg := range desired {
-			// Check if already installed
+			// Check if already installed (compare base names if using system state)
 			isInstalled := false
+			basePkg := extractBasePkg(pkg)
 			for _, inst := range installed {
-				if inst == pkg {
+				if useBaseNameComparison {
+					if inst == basePkg {
+						isInstalled = true
+						break
+					}
+				} else if inst == pkg {
 					isInstalled = true
 					break
 				}
@@ -155,8 +170,12 @@ func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 			}
 		}
 	} else {
-		// Only install missing packages
-		toInstall = diff(desired, installed)
+		// Only install missing packages (compare base names if using system state)
+		if useBaseNameComparison {
+			toInstall = diffByBaseName(desired, installed)
+		} else {
+			toInstall = diff(desired, installed)
+		}
 	}
 
 	var failed []string
@@ -188,11 +207,13 @@ func (b *baseBundler) Check(bundleFile string) error {
 
 	// Use actual system state if available, otherwise fall back to store
 	var installed []string
+	useBaseNameComparison := false
 	if b.listInstalledFn != nil {
 		installed, err = b.listInstalledFn()
 		if err != nil {
 			return fmt.Errorf("failed to list installed packages: %w", err)
 		}
+		useBaseNameComparison = true
 	} else {
 		installed, err = b.store.List(b.name)
 		if err != nil {
@@ -200,8 +221,14 @@ func (b *baseBundler) Check(bundleFile string) error {
 		}
 	}
 
-	toInstall := diff(desired, installed)
-	toRemove := diff(installed, desired)
+	var toInstall, toRemove []string
+	if useBaseNameComparison {
+		toInstall = diffByBaseName(desired, installed)
+		toRemove = diffByBaseName(installed, desired)
+	} else {
+		toInstall = diff(desired, installed)
+		toRemove = diff(installed, desired)
+	}
 
 	if len(toInstall) == 0 && len(toRemove) == 0 {
 		printGreen("Everything is in sync")

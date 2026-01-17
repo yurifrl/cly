@@ -64,3 +64,25 @@ func (s *Session) ExecClaude(args []string) error {
 	execArgs := append([]string{"claude"}, args...)
 	return syscall.Exec(claudePath, execArgs, env)
 }
+
+func BuildAnonymousArgs(args []string) []string {
+	return append(args, "--setting-sources", "user")
+}
+
+func ExecClaudeAnonymous(args []string) error {
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		return errors.New("claude not found in PATH")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "claude-anon-")
+	if err != nil {
+		return err
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		return err
+	}
+
+	execArgs := append([]string{"claude"}, BuildAnonymousArgs(args)...)
+	return syscall.Exec(claudePath, execArgs, os.Environ())
+}

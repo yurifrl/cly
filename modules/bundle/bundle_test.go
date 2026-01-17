@@ -188,6 +188,81 @@ func TestOpenEditor(t *testing.T) {
 	})
 }
 
+func TestParseUvToolList(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		expected []string
+	}{
+		{
+			name: "parses multiple tools",
+			output: `deepeval v3.7.8
+- deepeval
+vectorcode v0.7.20
+- vectorcode
+- vectorcode-mcp-server
+- vectorcode-server`,
+			expected: []string{"deepeval", "vectorcode"},
+		},
+		{
+			name:     "handles empty output",
+			output:   "",
+			expected: nil,
+		},
+		{
+			name: "handles single tool",
+			output: `ruff v0.1.0
+- ruff`,
+			expected: []string{"ruff"},
+		},
+		{
+			name:     "handles no tools message",
+			output:   "No tools installed",
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseUvToolList(tt.output)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestDiffByBaseName(t *testing.T) {
+	t.Run("always reinstalls packages with extras", func(t *testing.T) {
+		desired := []string{"vectorcode[lsp,mcp]", "ruff", "black>=1.0"}
+		installed := []string{"vectorcode", "ruff"}
+		result := diffByBaseName(desired, installed)
+		// vectorcode[lsp,mcp] always included (has extras)
+		// ruff skipped (installed, no extras)
+		// black>=1.0 included (not installed)
+		assert.Equal(t, []string{"vectorcode[lsp,mcp]", "black>=1.0"}, result)
+	})
+
+	t.Run("finds missing when base not installed", func(t *testing.T) {
+		desired := []string{"vectorcode[lsp,mcp]"}
+		installed := []string{"ruff"}
+		result := diffByBaseName(desired, installed)
+		assert.Equal(t, []string{"vectorcode[lsp,mcp]"}, result)
+	})
+
+	t.Run("skips simple packages when installed", func(t *testing.T) {
+		desired := []string{"ruff", "black"}
+		installed := []string{"ruff", "black"}
+		result := diffByBaseName(desired, installed)
+		assert.Empty(t, result)
+	})
+
+	t.Run("version specs without extras skip if installed", func(t *testing.T) {
+		desired := []string{"ruff>=1.0", "black@2.0"}
+		installed := []string{"ruff", "black"}
+		result := diffByBaseName(desired, installed)
+		assert.Empty(t, result)
+	})
+}
+
 func TestBaseBundlerCheck(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "bundle-test-*")
 	require.NoError(t, err)
