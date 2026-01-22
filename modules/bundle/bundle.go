@@ -17,6 +17,7 @@ var (
 	noUpdateFlag  bool
 	tapsFlag      bool
 	noCleanupFlag bool
+	masFlag       bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -80,6 +81,7 @@ Types:
 	cmd.Flags().BoolVar(&noUpdateFlag, "no-update", false, "skip brew upgrade (brew only)")
 	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "install taps first (brew only)")
 	cmd.Flags().BoolVar(&noCleanupFlag, "no-cleanup", false, "skip cleanup after sync")
+	cmd.Flags().BoolVar(&masFlag, "mas", false, "install Mac App Store apps (brew only)")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))
@@ -148,7 +150,7 @@ func cleanupCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.C
 func runSync(bundlers map[string]Bundler, bundleType string) error {
 	if bundleType == "all" {
 		return runAll(bundlers, func(b Bundler) error {
-			return b.Sync(getBundleFile(b), verboseFlag, forceFlag, noUpdateFlag, tapsFlag)
+			return b.Sync(getBundleFile(b), verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag)
 		})
 	}
 
@@ -161,7 +163,7 @@ func runSync(bundlers map[string]Bundler, bundleType string) error {
 		return err
 	}
 
-	return bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, noUpdateFlag, tapsFlag)
+	return bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag)
 }
 
 func runCheck(bundlers map[string]Bundler, bundleType string) error {
@@ -273,5 +275,5 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 	}
 
 	fmt.Println("\n=== Syncing ===")
-	return bundler.Sync(bundleFile, verboseFlag, forceFlag, noUpdateFlag, tapsFlag)
+	return bundler.Sync(bundleFile, verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag)
 }

@@ -44,7 +44,15 @@ func (b *PythonBundler) CheckDeps() error {
 }
 
 func (b *PythonBundler) install(pkg string, verbose bool, force bool) error {
-	cmd := exec.Command("uv", "tool", "install", "--force", "--upgrade", pkg)
+	pkgSpec, pythonVersion := parsePythonSpec(pkg)
+
+	args := []string{"tool", "install", "--force", "--upgrade"}
+	if pythonVersion != "" {
+		args = append(args, "--python", pythonVersion)
+	}
+	args = append(args, pkgSpec)
+
+	cmd := exec.Command("uv", args...)
 
 	if verbose {
 		cmd.Stdout = os.Stdout
@@ -85,6 +93,20 @@ func extractBasePkg(pkg string) string {
 		}
 	}
 	return pkg
+}
+
+// parsePythonSpec extracts package spec and optional python version from line.
+// "vectorcode[lsp,mcp] python=3.13" → ("vectorcode[lsp,mcp]", "3.13")
+// "ruff" → ("ruff", "")
+func parsePythonSpec(line string) (pkg string, pythonVersion string) {
+	const prefix = "python="
+	idx := strings.Index(line, " "+prefix)
+	if idx == -1 {
+		return line, ""
+	}
+	pkg = strings.TrimSpace(line[:idx])
+	pythonVersion = strings.TrimSpace(line[idx+1+len(prefix):])
+	return pkg, pythonVersion
 }
 
 // listUvTools runs `uv tool list` and returns installed base package names.

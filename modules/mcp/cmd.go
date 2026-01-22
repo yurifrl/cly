@@ -210,7 +210,7 @@ func launchTUI(ai, scope string) error {
 		return fmt.Errorf("getting home directory: %w", err)
 	}
 	libPath := filepath.Join(homeDir, ".config", "mcpcli")
-	catalog, err := LoadCatalog(libPath)
+	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
 	if err != nil {
 		return fmt.Errorf("loading MCP sources: %w", err)
 	}
@@ -243,16 +243,16 @@ func getAdapter(ai string) (Adapter, error) {
 }
 
 func runList(long, all bool) error {
-	homeDir, _ := os.UserHomeDir()
-	libPath := filepath.Join(homeDir, ".config", "mcpcli")
-	catalog, err := LoadCatalog(libPath)
-	if err != nil {
-		return fmt.Errorf("loading catalog: %w", err)
-	}
-
 	globalCfg, err := LoadGlobalConfig()
 	if err != nil {
 		return fmt.Errorf("loading global config: %w", err)
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	libPath := filepath.Join(homeDir, ".config", "mcpcli")
+	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
+	if err != nil {
+		return fmt.Errorf("loading catalog: %w", err)
 	}
 
 	projectCfg, _ := LoadProjectConfig()
@@ -369,16 +369,16 @@ func runSwitch(args []string, forceOn, forceOff, switchAll bool, preset, tag str
 		}
 	}
 
-	homeDir, _ := os.UserHomeDir()
-	libPath := filepath.Join(homeDir, ".config", "mcpcli")
-	catalog, err := LoadCatalog(libPath)
-	if err != nil {
-		return fmt.Errorf("loading catalog: %w", err)
-	}
-
 	globalCfg, err := LoadGlobalConfig()
 	if err != nil {
 		return fmt.Errorf("loading global config: %w", err)
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	libPath := filepath.Join(homeDir, ".config", "mcpcli")
+	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
+	if err != nil {
+		return fmt.Errorf("loading catalog: %w", err)
 	}
 
 	var mcpNames []string
@@ -547,9 +547,10 @@ func runAdd(args []string, transport, tags, desc, targetFile string, envVars, he
 		opts.URL = commandOrURL
 	}
 
+	globalCfg, _ := LoadGlobalConfig()
 	homeDir, _ := os.UserHomeDir()
 	libPath := filepath.Join(homeDir, ".config", "mcpcli")
-	catalog, err := LoadCatalog(libPath)
+	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
 	if err != nil {
 		return fmt.Errorf("loading source catalog: %w", err)
 	}
@@ -563,9 +564,10 @@ func runAdd(args []string, transport, tags, desc, targetFile string, envVars, he
 }
 
 func runRemove(name string) error {
+	globalCfg, _ := LoadGlobalConfig()
 	homeDir, _ := os.UserHomeDir()
 	libPath := filepath.Join(homeDir, ".config", "mcpcli")
-	catalog, err := LoadCatalog(libPath)
+	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
 	if err != nil {
 		return fmt.Errorf("loading source catalog: %w", err)
 	}
@@ -639,10 +641,11 @@ func checkConfigFiles() (bool, string) {
 }
 
 func checkSourceCatalog() (bool, string) {
+	globalCfg, _ := LoadGlobalConfig()
 	homeDir, _ := os.UserHomeDir()
 	mcpsPath := filepath.Join(homeDir, ".config", "mcpcli")
 
-	catalog, err := LoadCatalog(mcpsPath)
+	catalog, err := LoadCatalogWithSources(mcpsPath, globalCfg.SourcePaths)
 	if err != nil {
 		return false, fmt.Sprintf("Can't load: %v", err)
 	}

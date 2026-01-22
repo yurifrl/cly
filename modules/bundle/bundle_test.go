@@ -87,6 +87,28 @@ func TestExtractBasePkg(t *testing.T) {
 	}
 }
 
+func TestParsePythonSpec(t *testing.T) {
+	tests := []struct {
+		line          string
+		expectedPkg   string
+		expectedPyVer string
+	}{
+		{"ruff", "ruff", ""},
+		{"vectorcode[lsp,mcp]", "vectorcode[lsp,mcp]", ""},
+		{"vectorcode[lsp,mcp] python=3.13", "vectorcode[lsp,mcp]", "3.13"},
+		{"deepeval python=3.12", "deepeval", "3.12"},
+		{"package>=1.0 python=3.11", "package>=1.0", "3.11"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			pkg, pyVer := parsePythonSpec(tt.line)
+			assert.Equal(t, tt.expectedPkg, pkg)
+			assert.Equal(t, tt.expectedPyVer, pyVer)
+		})
+	}
+}
+
 func TestExtractTaps(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "bundle-test-*")
 	require.NoError(t, err)
@@ -164,6 +186,60 @@ func TestWriteTapsToTempFile(t *testing.T) {
 
 		expected := "tap \"homebrew/cask\"\ntap \"homebrew/core\"\n"
 		assert.Equal(t, expected, string(content))
+	})
+}
+
+func TestFilterMasLines(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "bundle-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	brewfile := filepath.Join(tmpDir, "Brewfile")
+
+	t.Run("filters out mas lines", func(t *testing.T) {
+		content := `tap "homebrew/cask"
+brew "git"
+cask "firefox"
+mas "Xcode", id: 497799835
+mas "1Password", id: 1333542190
+brew "vim"`
+		err := os.WriteFile(brewfile, []byte(content), 0644)
+		require.NoError(t, err)
+
+		result, err := filterMasLines(brewfile)
+		require.NoError(t, err)
+
+		expected := `tap "homebrew/cask"
+brew "git"
+cask "firefox"
+brew "vim"`
+		assert.Equal(t, expected, result)
+	})
+
+	t.Run("returns unchanged when no mas lines", func(t *testing.T) {
+		content := `tap "homebrew/cask"
+brew "git"
+cask "firefox"`
+		err := os.WriteFile(brewfile, []byte(content), 0644)
+		require.NoError(t, err)
+
+		result, err := filterMasLines(brewfile)
+		require.NoError(t, err)
+		assert.Equal(t, content, result)
+	})
+
+	t.Run("handles empty file", func(t *testing.T) {
+		err := os.WriteFile(brewfile, []byte(""), 0644)
+		require.NoError(t, err)
+
+		result, err := filterMasLines(brewfile)
+		require.NoError(t, err)
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("returns error for missing file", func(t *testing.T) {
+		_, err := filterMasLines("/nonexistent/file")
+		assert.Error(t, err)
 	})
 }
 

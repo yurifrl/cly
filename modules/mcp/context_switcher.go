@@ -14,12 +14,23 @@ type contextOption struct {
 }
 
 var contextOptions = []contextOption{
+	{"claude", "project", "Claude Code (project)", "edits .mcp.json, shared/added to repo"},
 	{"claude", "user", "Claude Code (user)", "global, available in all your projects"},
 	{"claude", "local", "Claude Code (local)", "edits ~/.claude.json under projects[cwd] key"},
-	{"claude", "project", "Claude Code (project)", "edits .mcp.json, shared/added to repo"},
 	{"cursor", "user", "Cursor IDE (user)", "global cursor settings"},
 	{"cursor", "project", "Cursor IDE (project)", "project .cursor/mcp.json"},
 	{"desktop", "user", "Claude Desktop", "desktop app config"},
+}
+
+// formatMCPCount returns a display string for the MCP count
+func formatMCPCount(count int) string {
+	if count == 0 {
+		return "(empty)"
+	}
+	if count == 1 {
+		return "[1 MCP]"
+	}
+	return fmt.Sprintf("[%d MCPs]", count)
 }
 
 func (m Model) renderContextSwitcher() string {
@@ -44,11 +55,15 @@ func (m Model) renderContextSwitcher() string {
 			installed = " (not installed)"
 		}
 
-		// Get config path
+		// Get config path and MCP count
 		configPath := ""
+		mcpCount := 0
 		if adapter != nil {
 			if path, err := adapter.GetConfigPath(opt.scope); err == nil {
 				configPath = path
+			}
+			if cfg, err := adapter.ReadConfig(opt.scope); err == nil && cfg != nil {
+				mcpCount = len(cfg.MCPServers)
 			}
 		}
 
@@ -58,9 +73,9 @@ func (m Model) renderContextSwitcher() string {
 			current = " ← current"
 		}
 
-		// Format: Label (path) current
+		// Format: Label (path) [N MCPs] current
 		//         description
-		label := fmt.Sprintf("%s (%s)%s%s", opt.label, configPath, installed, current)
+		label := fmt.Sprintf("%s (%s) %s%s%s", opt.label, configPath, formatMCPCount(mcpCount), installed, current)
 		desc := dimStyle.Render("  " + opt.description)
 
 		if i == m.contextMenuCursor {

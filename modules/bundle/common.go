@@ -104,7 +104,7 @@ func (b *baseBundler) DefaultFile() string {
 	return b.defaultFile
 }
 
-func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool) error {
+func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool, mas bool) error {
 	desired, err := parseFile(bundleFile)
 	if err != nil {
 		return err

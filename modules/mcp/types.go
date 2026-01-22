@@ -19,9 +19,10 @@ type GlobalConfig struct {
 		Presets []string `json:"presets,omitempty"`
 		Tags    []string `json:"tags,omitempty"`
 	} `json:"defaults"`
-	Presets  map[string][]string      `json:"presets,omitempty"`
-	Projects map[string]ProjectConfig `json:"projects,omitempty"`
-	UI       UIConfig                 `json:"ui,omitempty" yaml:"ui,omitempty"`
+	SourcePaths []string                  `json:"sourcePaths,omitempty" yaml:"sourcePaths,omitempty"`
+	Presets     map[string][]string       `json:"presets,omitempty"`
+	Projects    map[string]ProjectConfig  `json:"projects,omitempty"`
+	UI          UIConfig                  `json:"ui,omitempty" yaml:"ui,omitempty"`
 }
 
 // ProjectConfig represents project-specific configuration

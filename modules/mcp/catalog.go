@@ -13,10 +13,49 @@ type Catalog struct {
 	mcps map[string]MCP
 }
 
-// LoadCatalog loads all MCP definitions from files in mcps/ subdirectory
+// DefaultSourcePaths returns the default MCP source paths
+func DefaultSourcePaths() []string {
+	homeDir, _ := os.UserHomeDir()
+	if homeDir == "" {
+		return nil
+	}
+	return []string{
+		filepath.Join(homeDir, ".mcps.jsonc"),
+		filepath.Join(homeDir, ".mcps.json"),
+	}
+}
+
+// LoadCatalog loads all MCP definitions from configDir/mcps/ subdirectory
 func LoadCatalog(configDir string) (*Catalog, error) {
+	return LoadCatalogWithSources(configDir, nil)
+}
+
+// LoadCatalogWithSources loads MCP definitions from source paths + configDir/mcps/
+// Source paths are loaded first, then configDir/mcps/ overrides
+func LoadCatalogWithSources(configDir string, sourcePaths []string) (*Catalog, error) {
 	cat := &Catalog{
 		mcps: make(map[string]MCP),
+	}
+
+	// Merge default paths with configured paths
+	allPaths := append(DefaultSourcePaths(), sourcePaths...)
+
+	// Load from source paths first
+	for _, path := range allPaths {
+		if path == "" {
+			continue
+		}
+		// Expand ~ to home dir
+		if len(path) > 0 && path[0] == '~' {
+			if homeDir, err := os.UserHomeDir(); err == nil {
+				path = filepath.Join(homeDir, path[1:])
+			}
+		}
+		if _, err := os.Stat(path); err == nil {
+			if err := cat.loadFile(path); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", path, err)
+			}
+		}
 	}
 
 	// Resolve symlinks in config dir path
@@ -42,8 +81,8 @@ func LoadCatalog(configDir string) (*Catalog, error) {
 		}
 	}
 
-	// If no source files exist, create mcps.json with examples
-	if len(files) == 0 {
+	// If no config dir files and no sources loaded, create defaults
+	if len(files) == 0 && len(cat.mcps) == 0 {
 		if err := os.MkdirAll(configDir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create config directory: %w", err)
 		}
@@ -57,10 +96,9 @@ func LoadCatalog(configDir string) (*Catalog, error) {
 	// Sort files alphabetically for deterministic merging
 	sort.Strings(files)
 
-	// Load and merge all source files
+	// Load and merge all source files (these override source paths)
 	for _, file := range files {
 		if err := cat.loadFile(file); err != nil {
-			// Log warning but continue with other files
 			fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", filepath.Base(file), err)
 			continue
 		}

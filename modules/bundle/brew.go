@@ -37,7 +37,7 @@ func (b *BrewBundler) CheckDeps() error {
 	return nil
 }
 
-func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool) error {
+func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool, mas bool) error {
 	bundleFile = expandPath(bundleFile)
 
 	// Only extract and sync taps if --taps flag is passed
@@ -73,9 +73,33 @@ func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 		}
 	}
 
-	fmt.Printf("Syncing Homebrew packages from %s\n\n", bundleFile)
+	// Determine which file to use for bundle
+	effectiveFile := bundleFile
+	if !mas {
+		// Filter out mas lines and create temp file
+		content, err := filterMasLines(bundleFile)
+		if err != nil {
+			return fmt.Errorf("failed to filter mas lines: %w", err)
+		}
 
-	args := []string{"bundle", "--file=" + bundleFile}
+		tmpFile, err := os.CreateTemp("", "brewfile-no-mas-*.rb")
+		if err != nil {
+			return fmt.Errorf("failed to create temp file: %w", err)
+		}
+		defer os.Remove(tmpFile.Name())
+
+		if _, err := tmpFile.WriteString(content); err != nil {
+			return fmt.Errorf("failed to write temp file: %w", err)
+		}
+		tmpFile.Close()
+
+		effectiveFile = tmpFile.Name()
+		fmt.Printf("Syncing Homebrew packages from %s (skipping mas)\n\n", bundleFile)
+	} else {
+		fmt.Printf("Syncing Homebrew packages from %s\n\n", bundleFile)
+	}
+
+	args := []string{"bundle", "--file=" + effectiveFile}
 	if verbose {
 		args = append(args, "--verbose")
 	}
@@ -183,4 +207,29 @@ func writeTapsToTempFile(taps []string) (string, error) {
 	}
 
 	return tmpFile.Name(), nil
+}
+
+// filterMasLines reads a Brewfile and returns content without mas lines.
+func filterMasLines(brewfile string) (string, error) {
+	file, err := os.Open(brewfile)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "mas ") {
+			lines = append(lines, line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	return strings.Join(lines, "\n"), nil
 }

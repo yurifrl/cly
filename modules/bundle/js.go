@@ -117,7 +117,7 @@ func (b *JsBundler) listInstalled() (map[string]string, error) {
 }
 
 // Sync installs/updates/removes packages to match Jsfile.
-func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool) error {
+func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool, mas bool) error {
 	bundleFile = expandPath(bundleFile)
 
 	desired, err := parseFile(bundleFile)

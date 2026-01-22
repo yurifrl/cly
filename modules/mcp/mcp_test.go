@@ -238,6 +238,133 @@ filesystem:
 	}
 }
 
+func TestCatalog_LoadFromSourcePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+
+	// Create source file
+	sourceMCPs := `{"source-server": {"command": "source-cmd", "tags": ["source"]}}`
+	sourcePath := filepath.Join(tmpDir, "my-mcps.json")
+	os.WriteFile(sourcePath, []byte(sourceMCPs), 0644)
+
+	catalog, err := LoadCatalogWithSources(configDir, []string{sourcePath})
+	if err != nil {
+		t.Fatalf("LoadCatalogWithSources failed: %v", err)
+	}
+
+	server, ok := catalog.Get("source-server")
+	if !ok {
+		t.Error("source-server MCP not found")
+	}
+	if server.Command != "source-cmd" {
+		t.Errorf("source-server command = %q, want 'source-cmd'", server.Command)
+	}
+}
+
+func TestCatalog_SourcePathsWithJSONC(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+
+	// Create JSONC source with comments
+	sourceMCPs := `{
+  // JSONC source file
+  "jsonc-server": {"command": "jsonc-cmd"}
+}`
+	sourcePath := filepath.Join(tmpDir, "servers.jsonc")
+	os.WriteFile(sourcePath, []byte(sourceMCPs), 0644)
+
+	catalog, err := LoadCatalogWithSources(configDir, []string{sourcePath})
+	if err != nil {
+		t.Fatalf("LoadCatalogWithSources failed: %v", err)
+	}
+
+	if _, ok := catalog.Get("jsonc-server"); !ok {
+		t.Error("jsonc-server not found")
+	}
+}
+
+func TestCatalog_SourcePathsMergeWithConfigDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+	mcpsDir := filepath.Join(configDir, "mcps")
+	os.MkdirAll(mcpsDir, 0755)
+
+	// Create config dir MCP
+	configMCP := `{"config-server": {"command": "config-cmd"}}`
+	os.WriteFile(filepath.Join(mcpsDir, "servers.json"), []byte(configMCP), 0644)
+
+	// Create source path MCP
+	sourceMCPs := `{"source-server": {"command": "source-cmd"}}`
+	sourcePath := filepath.Join(tmpDir, "extra.json")
+	os.WriteFile(sourcePath, []byte(sourceMCPs), 0644)
+
+	catalog, err := LoadCatalogWithSources(configDir, []string{sourcePath})
+	if err != nil {
+		t.Fatalf("LoadCatalogWithSources failed: %v", err)
+	}
+
+	if _, ok := catalog.Get("config-server"); !ok {
+		t.Error("config-server not found")
+	}
+	if _, ok := catalog.Get("source-server"); !ok {
+		t.Error("source-server not found")
+	}
+}
+
+func TestCatalog_ConfigDirOverridesSourcePaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+	mcpsDir := filepath.Join(configDir, "mcps")
+	os.MkdirAll(mcpsDir, 0755)
+
+	// Create config dir MCP with same name
+	configMCP := `{"shared-server": {"command": "config-cmd"}}`
+	os.WriteFile(filepath.Join(mcpsDir, "servers.json"), []byte(configMCP), 0644)
+
+	// Create source path MCP with same name
+	sourceMCPs := `{"shared-server": {"command": "source-cmd"}}`
+	sourcePath := filepath.Join(tmpDir, "extra.json")
+	os.WriteFile(sourcePath, []byte(sourceMCPs), 0644)
+
+	catalog, err := LoadCatalogWithSources(configDir, []string{sourcePath})
+	if err != nil {
+		t.Fatalf("LoadCatalogWithSources failed: %v", err)
+	}
+
+	server, ok := catalog.Get("shared-server")
+	if !ok {
+		t.Error("shared-server not found")
+	}
+	// Config dir should win
+	if server.Command != "config-cmd" {
+		t.Errorf("config dir should override source paths, got command = %q", server.Command)
+	}
+}
+
+func TestCatalog_MultipleSourcePaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+
+	// Create two source files
+	os.WriteFile(filepath.Join(tmpDir, "a.json"), []byte(`{"server-a": {"command": "cmd-a"}}`), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "b.json"), []byte(`{"server-b": {"command": "cmd-b"}}`), 0644)
+
+	catalog, err := LoadCatalogWithSources(configDir, []string{
+		filepath.Join(tmpDir, "a.json"),
+		filepath.Join(tmpDir, "b.json"),
+	})
+	if err != nil {
+		t.Fatalf("LoadCatalogWithSources failed: %v", err)
+	}
+
+	if _, ok := catalog.Get("server-a"); !ok {
+		t.Error("server-a not found")
+	}
+	if _, ok := catalog.Get("server-b"); !ok {
+		t.Error("server-b not found")
+	}
+}
+
 func TestCatalog_LoadFromJSONC(t *testing.T) {
 	tmpDir := t.TempDir()
 	mcpsDir := filepath.Join(tmpDir, "mcps")
