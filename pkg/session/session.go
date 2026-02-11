@@ -52,7 +52,26 @@ func (s *Session) RenameZellijTab() error {
 	return cmd.Run()
 }
 
-func (s *Session) ExecClaude(args []string) error {
+// ExecOption configures how claude is exec'd.
+type ExecOption func(*execConfig)
+
+type execConfig struct {
+	taskListID string
+}
+
+// WithTaskListID sets CLAUDE_CODE_TASK_LIST_ID env var.
+func WithTaskListID(id string) ExecOption {
+	return func(c *execConfig) {
+		c.taskListID = id
+	}
+}
+
+func (s *Session) ExecClaude(args []string, opts ...ExecOption) error {
+	var cfg execConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+
 	claudePath, err := exec.LookPath("claude")
 	if err != nil {
 		return errors.New("claude not found in PATH")
@@ -60,9 +79,22 @@ func (s *Session) ExecClaude(args []string) error {
 
 	env := os.Environ()
 	env = append(env, "CLAUDE_SESSION_NAME="+s.Name)
+	if cfg.taskListID != "" {
+		env = append(env, "CLAUDE_CODE_TASK_LIST_ID="+cfg.taskListID)
+	}
 
 	execArgs := append([]string{"claude"}, args...)
 	return syscall.Exec(claudePath, execArgs, env)
+}
+
+// ExecClaude execs claude with the given args (no session env).
+func ExecClaude(args []string) error {
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		return errors.New("claude not found in PATH")
+	}
+	execArgs := append([]string{"claude"}, args...)
+	return syscall.Exec(claudePath, execArgs, os.Environ())
 }
 
 func BuildAnonymousArgs(args []string) []string {

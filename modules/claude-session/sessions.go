@@ -1,0 +1,71 @@
+package claudesession
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+)
+
+type Entry struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Description string `json:"description,omitempty"`
+}
+
+type Sessions map[string]Entry
+
+func MakeKey(path, id string) string {
+	return path + ":" + id
+}
+
+func FilePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "cly", "sessions.json")
+}
+
+func Load(filePath string) (Sessions, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Sessions{}, nil
+		}
+		return nil, err
+	}
+
+	var s Sessions
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func Save(filePath string, s Sessions) error {
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filePath, data, 0o644)
+}
+
+func FindByName(s Sessions, name string) *Entry {
+	for _, e := range s {
+		if e.Name == name {
+			return &e
+		}
+	}
+	return nil
+}
+
+func Remove(s Sessions, name string) Sessions {
+	for k, e := range s {
+		if e.Name == name {
+			delete(s, k)
+		}
+	}
+	return s
+}

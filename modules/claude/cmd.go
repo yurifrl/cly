@@ -2,14 +2,17 @@ package claude
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
+	claudesession "github.com/yurifrl/cly/modules/claude-session"
 	"github.com/yurifrl/cly/pkg/session"
 )
 
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:                "claude",
+		Aliases:            []string{"c"},
 		Short:              "Run Claude Code with session management",
 		Long:               "Wraps Claude Code with session naming and Zellij tab integration",
 		DisableFlagParsing: true,
@@ -20,30 +23,18 @@ func Register(parent *cobra.Command) {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	var name string
-	var anonymous bool
-	var passArgs []string
+	p := ParseArgs(args)
 
-	// Parse flags manually since we disabled flag parsing
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--name" || args[i] == "-n" {
-			if i+1 < len(args) && len(args[i+1]) > 0 && args[i+1][0] != '-' {
-				name = args[i+1]
-				i++
-			}
-		} else if args[i] == "--anonymous" || args[i] == "-a" {
-			anonymous = true
-		} else {
-			passArgs = append(passArgs, args[i])
-		}
-	}
-
-	if anonymous {
+	if p.Anonymous {
 		fmt.Println("🥷 Anonymous mode")
-		return session.ExecClaudeAnonymous(passArgs)
+		return session.ExecClaudeAnonymous(p.PassArgs)
 	}
 
-	sess, err := session.Initialize(name)
+	if p.ContinueSession != "" {
+		return restoreSession(p.ContinueSession)
+	}
+
+	sess, err := session.Initialize(p.Name)
 	if err != nil {
 		return err
 	}
@@ -52,5 +43,25 @@ func run(cmd *cobra.Command, args []string) error {
 
 	_ = sess.RenameZellijTab()
 
-	return sess.ExecClaude(passArgs)
+	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID))
+}
+
+func restoreSession(name string) error {
+	sessions, err := claudesession.Load(claudesession.FilePath())
+	if err != nil {
+		return err
+	}
+
+	entry := claudesession.FindByName(sessions, name)
+	if entry == nil {
+		return fmt.Errorf("session %q not found", name)
+	}
+
+	fmt.Printf("Resuming session: %s\n", name)
+
+	if err := os.Chdir(entry.Path); err != nil {
+		return fmt.Errorf("chdir %s: %w", entry.Path, err)
+	}
+
+	return session.ExecClaude([]string{"-r", entry.ID})
 }

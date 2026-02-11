@@ -6,9 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/modules/ai"
+	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
 	"github.com/yurifrl/cly/modules/bundle"
 	"github.com/yurifrl/cly/modules/claude"
+	claudesession "github.com/yurifrl/cly/modules/claude-session"
+	claudetasks "github.com/yurifrl/cly/modules/claude-tasks"
 	"github.com/yurifrl/cly/modules/config"
 	"github.com/yurifrl/cly/modules/demo"
 	"github.com/yurifrl/cly/modules/dotfiles"
@@ -58,8 +61,11 @@ func init() {
 	RootCmd.PersistentFlags().BoolVarP(&versionFlag, "version", "v", false, "version for cly")
 	RootCmd.SetVersionTemplate(versionString())
 	ai.Register(RootCmd)
+	aliases.Register(RootCmd)
 	backup.Register(RootCmd)
 	claude.Register(RootCmd)
+	claudesession.Register(RootCmd)
+	claudetasks.Register(RootCmd)
 	uuid.Register(RootCmd)
 	demo.Register(RootCmd)
 	config.Register(RootCmd)

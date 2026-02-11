@@ -230,7 +230,7 @@ func executeCommand(cmdStr, baseDir string) error {
 		return downloadZellijPlugin(url)
 	}
 
-	cmd := exec.Command("bash", "-c", cmdStr)
+	cmd := exec.Command("fish", "-c", cmdStr)
 	cmd.Dir = baseDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
