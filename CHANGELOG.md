@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-02-13
+
+### Added
+- `cly agents` module — syncs `.agents/` configs to IDE directories (.claude, .opencode, .crush)
+- Daemon mode with fsnotify file watching and debounced sync
+- JSONC→JSON transform with env var interpolation and comment stripping
+- SKILL.md allowed-tools stripping for OpenCode
+- Unix socket daemon with status/stop commands
+- `--dry-run`, `--global`, `-i` flags for sync control
+
 ## [1.0.4] - 2025-12-22
 
 - fix: backup commands now create ~/Workdir if it doesn't exist

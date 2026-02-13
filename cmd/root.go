@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/modules/agents"
 	"github.com/yurifrl/cly/modules/ai"
 	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
@@ -63,6 +64,7 @@ func init() {
 	RootCmd.PersistentFlags().BoolVarP(&versionFlag, "version", "v", false, "version for cly")
 	RootCmd.SetVersionTemplate(versionString())
 	completion.Register(RootCmd)
+	agents.Register(RootCmd)
 	ai.Register(RootCmd)
 	aliases.Register(RootCmd)
 	backup.Register(RootCmd)

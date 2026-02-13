@@ -67,6 +67,24 @@ func TestParseArgs(t *testing.T) {
 			expected: ParsedArgs{ContinueSession: "myproj"},
 		},
 		{
+			name: "yolo flag injects skip-permissions and system prompt",
+			args: []string{"--yolo", "-p", "do stuff"},
+			expected: ParsedArgs{
+				Yolo:     true,
+				PassArgs: []string{"--dangerously-skip-permissions", "--append-system-prompt", yoloPrompt(), "-p", "do stuff"},
+			},
+		},
+		{
+			name: "yolo with name",
+			args: []string{"-n", "proj", "--yolo"},
+			expected: ParsedArgs{
+				Name:       "proj",
+				TaskListID: "proj",
+				Yolo:       true,
+				PassArgs:   []string{"--dangerously-skip-permissions", "--append-system-prompt", yoloPrompt()},
+			},
+		},
+		{
 			name:     "empty args",
 			args:     []string{},
 			expected: ParsedArgs{},
