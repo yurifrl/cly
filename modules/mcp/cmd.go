@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/modules/completion"
 )
 
 var (
@@ -18,6 +19,7 @@ var (
 )
 
 func Register(parent *cobra.Command) {
+	completion.RegisterAlias("mcp", fishCompletionString())
 	cmd := NewRootCmd()
 	parent.AddCommand(cmd)
 }
@@ -825,8 +827,8 @@ _mcp() {
 _mcp`)
 }
 
-func printFishCompletion() {
-	fmt.Println(`complete -c mcp -f
+func fishCompletionString() string {
+	return `complete -c mcp -f
 complete -c mcp -n '__fish_use_subcommand' -a 'add' -d 'Add MCP to sources'
 complete -c mcp -n '__fish_use_subcommand' -a 'remove' -d 'Remove MCP from sources'
 complete -c mcp -n '__fish_use_subcommand' -a 'switch' -d 'Toggle MCPs on/off'
@@ -839,7 +841,12 @@ complete -c mcp -n '__fish_seen_subcommand_from switch' -l on -d 'Force enable'
 complete -c mcp -n '__fish_seen_subcommand_from switch' -l off -d 'Force disable'
 complete -c mcp -n '__fish_seen_subcommand_from list' -s l -l long -d 'Detailed list'
 complete -c mcp -n '__fish_seen_subcommand_from list' -s a -l all -d 'Show all MCPs'
-complete -c mcp -n '__fish_seen_subcommand_from completion' -xa 'bash zsh fish'`)
+complete -c mcp -n '__fish_seen_subcommand_from completion' -xa 'bash zsh fish'
+`
+}
+
+func printFishCompletion() {
+	fmt.Print(fishCompletionString())
 }
 
 // Ensure commands are available (for doctor check)

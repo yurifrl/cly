@@ -77,6 +77,30 @@ func TestFormatFish(t *testing.T) {
 	assert.Contains(t, out, `alias c "cly claude"`)
 }
 
+func TestFormatFishCompletions(t *testing.T) {
+	entries := []AliasEntry{
+		{Alias: "uuid", Command: "cly uuid"},
+		{Alias: "c", Command: "cly claude"},
+		{Alias: "zl", Command: "cly zl"},
+	}
+
+	out := FormatFishCompletions(entries)
+	assert.Contains(t, out, "complete -c uuid -w 'cly uuid'")
+	assert.Contains(t, out, "complete -c c -w 'cly claude'")
+	assert.Contains(t, out, "complete -c zl -w 'cly zl'")
+}
+
+func TestFormatFishCompletionsSkipsOverrides(t *testing.T) {
+	entries := []AliasEntry{
+		{Alias: "uuid", Command: "cly uuid"},
+		{Alias: "zl", Command: "cly zl"},
+	}
+
+	out := FormatFishCompletions(entries, "zl", "mcp")
+	assert.Contains(t, out, "complete -c uuid -w 'cly uuid'")
+	assert.NotContains(t, out, "complete -c zl")
+}
+
 func TestSkipAliasesCommand(t *testing.T) {
 	root := buildTestRoot()
 	root.AddCommand(&cobra.Command{Use: "aliases", Short: "Generate aliases"})

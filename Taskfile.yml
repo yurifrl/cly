@@ -46,7 +46,7 @@ tasks:
     cmds:
       - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
       - sudo mv {{.BUILD_DIR}}/{{.BINARY_NAME}} /usr/local/bin/{{.BINARY_NAME}}
-      - go run . completion fish > ~/.cache/fish_completions/cly.fish
+      - cly completion fish install
 
   install:mcp:
     desc: Install mcp to /usr/local/bin

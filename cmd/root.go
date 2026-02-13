@@ -12,6 +12,7 @@ import (
 	"github.com/yurifrl/cly/modules/claude"
 	claudesession "github.com/yurifrl/cly/modules/claude-session"
 	claudetasks "github.com/yurifrl/cly/modules/claude-tasks"
+	"github.com/yurifrl/cly/modules/completion"
 	"github.com/yurifrl/cly/modules/config"
 	"github.com/yurifrl/cly/modules/demo"
 	"github.com/yurifrl/cly/modules/dotfiles"
@@ -23,6 +24,7 @@ import (
 	"github.com/yurifrl/cly/modules/statusline"
 	"github.com/yurifrl/cly/modules/update"
 	"github.com/yurifrl/cly/modules/uuid"
+	"github.com/yurifrl/cly/modules/zl"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
 )
@@ -60,6 +62,7 @@ Press 'q' or Ctrl+C to quit any demo.`,
 func init() {
 	RootCmd.PersistentFlags().BoolVarP(&versionFlag, "version", "v", false, "version for cly")
 	RootCmd.SetVersionTemplate(versionString())
+	completion.Register(RootCmd)
 	ai.Register(RootCmd)
 	aliases.Register(RootCmd)
 	backup.Register(RootCmd)
@@ -77,6 +80,7 @@ func init() {
 	obsidian.Register(RootCmd)
 	statusline.Register(RootCmd)
 	update.Register(RootCmd)
+	zl.Register(RootCmd)
 	cmd.Register(RootCmd)
 }
 

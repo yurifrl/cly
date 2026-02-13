@@ -51,17 +51,15 @@ func (z *ZellijNotifier) Available() bool {
 	return os.Getenv("ZELLIJ") != ""
 }
 
-// sendToStatusBar sends notification to zjstatus plugin
-func (z *ZellijNotifier) sendToStatusBar(ctx context.Context, n Notification) error {
-	// Use title for status bar message
+// sendToStatusBar sends notification to zjstatus plugin (fire-and-forget)
+func (z *ZellijNotifier) sendToStatusBar(_ context.Context, n Notification) error {
 	message := fmt.Sprintf("zjstatus::notify::%s", n.Title)
-
-	cmd := exec.CommandContext(ctx, "zellij", "pipe", message)
-	return cmd.Run()
+	cmd := exec.Command("zellij", "pipe", message)
+	return cmd.Start()
 }
 
-// sendTabUpdate sends tab emoji update to notify plugin
-func (z *ZellijNotifier) sendTabUpdate(ctx context.Context) error {
+// sendTabUpdate sends tab emoji update to notify plugin (fire-and-forget)
+func (z *ZellijNotifier) sendTabUpdate(_ context.Context) error {
 	paneID := os.Getenv("ZELLIJ_PANE_ID")
 	sessionName := os.Getenv("ZELLIJ_SESSION_NAME")
 
@@ -77,6 +75,6 @@ func (z *ZellijNotifier) sendTabUpdate(ctx context.Context) error {
 
 	args = append(args, z.eventType)
 
-	cmd := exec.CommandContext(ctx, "zellij", args...)
-	return cmd.Run()
+	cmd := exec.Command("zellij", args...)
+	return cmd.Start()
 }

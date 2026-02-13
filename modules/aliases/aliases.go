@@ -57,3 +57,21 @@ func FormatFish(entries []AliasEntry) string {
 	}
 	return b.String()
 }
+
+// FormatFishCompletions generates `complete -c <alias> -w '<command>'` wrappers.
+// skip contains alias names that have custom completions registered elsewhere.
+func FormatFishCompletions(entries []AliasEntry, skip ...string) string {
+	skipSet := make(map[string]bool, len(skip))
+	for _, s := range skip {
+		skipSet[s] = true
+	}
+
+	var b strings.Builder
+	for _, e := range entries {
+		if skipSet[e.Alias] {
+			continue
+		}
+		fmt.Fprintf(&b, "complete -c %s -w '%s'\n", e.Alias, e.Command)
+	}
+	return b.String()
+}

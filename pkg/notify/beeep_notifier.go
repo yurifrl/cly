@@ -13,7 +13,7 @@ type BeeepNotifier struct {
 
 // Send sends a notification using beeep.Alert
 func (b *BeeepNotifier) Send(ctx context.Context, n Notification) error {
-	return beeep.Alert(n.Title, n.Message, b.Icon)
+	return beeep.Notify(n.Title, n.Message, b.Icon)
 }
 
 // Available returns true (beeep handles platform detection internally)

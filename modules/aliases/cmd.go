@@ -5,9 +5,18 @@ import (
 	"os/exec"
 
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/modules/completion"
 )
 
 func Register(parent *cobra.Command) {
+	// Register lazy completion generator — runs when `cly completion fish` executes,
+	// after all modules are registered on parent.
+	completion.RegisterLazy(func() string {
+		entries := GenerateAliases(parent, exec.LookPath)
+		skip := completion.RegisteredAliases()
+		return FormatFishCompletions(entries, skip...)
+	})
+
 	cmd := &cobra.Command{
 		Use:   "aliases",
 		Short: "Print shell aliases for cly commands",
