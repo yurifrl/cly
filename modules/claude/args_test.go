@@ -89,6 +89,16 @@ func TestParseArgs(t *testing.T) {
 			args:     []string{},
 			expected: ParsedArgs{},
 		},
+		{
+			name:     "session name long",
+			args:     []string{"--session-name", "myproj", "-p", "hello"},
+			expected: ParsedArgs{SessionName: "myproj", PassArgs: []string{"-p", "hello"}},
+		},
+		{
+			name:     "session name short",
+			args:     []string{"-s", "myproj"},
+			expected: ParsedArgs{SessionName: "myproj"},
+		},
 	}
 
 	for _, tt := range tests {

@@ -124,6 +124,48 @@ func TestReconcile_SkillMD(t *testing.T) {
 	assert.Contains(t, string(data), "name: test")
 }
 
+func TestReverseReconcile(t *testing.T) {
+	t.Run("copies target back to source", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "source.md")
+		dst := filepath.Join(dir, "target.md")
+
+		require.NoError(t, os.WriteFile(src, []byte("original"), 0644))
+		require.NoError(t, os.WriteFile(dst, []byte("edited in target"), 0644))
+
+		reverseMap := map[string]string{dst: src}
+		written, err := ReverseReconcile(dst, reverseMap)
+		require.NoError(t, err)
+		assert.True(t, written)
+
+		data, err := os.ReadFile(src)
+		require.NoError(t, err)
+		assert.Equal(t, "edited in target", string(data))
+	})
+
+	t.Run("skips unchanged", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "source.md")
+		dst := filepath.Join(dir, "target.md")
+
+		content := []byte("same")
+		require.NoError(t, os.WriteFile(src, content, 0644))
+		require.NoError(t, os.WriteFile(dst, content, 0644))
+
+		reverseMap := map[string]string{dst: src}
+		written, err := ReverseReconcile(dst, reverseMap)
+		require.NoError(t, err)
+		assert.False(t, written)
+	})
+
+	t.Run("ignores non-bidirectional paths", func(t *testing.T) {
+		reverseMap := map[string]string{}
+		written, err := ReverseReconcile("/some/path.json", reverseMap)
+		require.NoError(t, err)
+		assert.False(t, written)
+	})
+}
+
 func TestReconcile_CreatesDirs(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "source.md")

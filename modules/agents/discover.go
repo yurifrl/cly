@@ -8,32 +8,44 @@ import (
 
 // SyncItem represents a single file to sync from source to target.
 type SyncItem struct {
-	Source    string
-	Target    string
-	Transform TransformKind
+	Source        string
+	Target        string
+	Transform     TransformKind
+	Bidirectional bool // true if target edits should sync back to source
 }
 
 // SyncPlan is the list of items to sync for one IDE.
 type SyncPlan struct {
-	Items []SyncItem
+	Items      []SyncItem
+	ReverseMap map[string]string // target path → source path (bidirectional items only)
 }
 
 // Discover walks the source .agents directory and produces a SyncPlan for the given IDE.
 func Discover(sourceDir string, ide *IDEDef, targetBase string) (*SyncPlan, error) {
-	var plan SyncPlan
+	plan := &SyncPlan{
+		ReverseMap: make(map[string]string),
+	}
 
 	// Phase 1: Shared configs (root of .agents)
-	if err := discoverShared(sourceDir, ide, targetBase, &plan); err != nil {
+	if err := discoverShared(sourceDir, ide, targetBase, plan); err != nil {
 		return nil, err
 	}
 
 	// Phase 2: IDE-specific overrides from .agents/ides/<ide>/
 	ideDir := filepath.Join(sourceDir, "ides", ide.Name)
-	if err := discoverIDESpecific(ideDir, ide, targetBase, &plan); err != nil {
+	if err := discoverIDESpecific(ideDir, ide, targetBase, plan); err != nil {
 		return nil, err
 	}
 
-	return &plan, nil
+	return plan, nil
+}
+
+func addItem(plan *SyncPlan, item SyncItem) {
+	item.Bidirectional = item.Transform == TransformNone
+	plan.Items = append(plan.Items, item)
+	if item.Bidirectional {
+		plan.ReverseMap[item.Target] = item.Source
+	}
 }
 
 // discoverShared handles commands/, agents/, skills/, AGENTS.md, and special files.
@@ -64,7 +76,7 @@ func discoverShared(sourceDir string, ide *IDEDef, targetBase string, plan *Sync
 				targetPath = strings.TrimSuffix(targetPath, ".jsonc") + ".json"
 			}
 
-			plan.Items = append(plan.Items, SyncItem{
+			addItem(plan, SyncItem{
 				Source:    path,
 				Target:    targetPath,
 				Transform: transform,
@@ -79,7 +91,7 @@ func discoverShared(sourceDir string, ide *IDEDef, targetBase string, plan *Sync
 	// AGENTS.md → renamed target
 	agentsMD := filepath.Join(sourceDir, "AGENTS.md")
 	if _, err := os.Stat(agentsMD); err == nil {
-		plan.Items = append(plan.Items, SyncItem{
+		addItem(plan, SyncItem{
 			Source:    agentsMD,
 			Target:    filepath.Join(targetBase, ide.AgentsMDTarget),
 			Transform: TransformNone,
@@ -94,7 +106,7 @@ func discoverShared(sourceDir string, ide *IDEDef, targetBase string, plan *Sync
 			if strings.HasSuffix(srcName, ".jsonc") {
 				transform = TransformJSONCSK
 			}
-			plan.Items = append(plan.Items, SyncItem{
+			addItem(plan, SyncItem{
 				Source:    srcPath,
 				Target:    filepath.Join(targetBase, dstName),
 				Transform: transform,
@@ -124,7 +136,7 @@ func discoverIDESpecific(ideDir string, ide *IDEDef, targetBase string, plan *Sy
 			targetPath = strings.TrimSuffix(targetPath, ".jsonc") + ".json"
 		}
 
-		plan.Items = append(plan.Items, SyncItem{
+		addItem(plan, SyncItem{
 			Source:    path,
 			Target:    targetPath,
 			Transform: transform,

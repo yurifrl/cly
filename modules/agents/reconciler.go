@@ -69,6 +69,36 @@ func reconcileItem(item SyncItem, dryRun bool) (bool, error) {
 	return true, nil
 }
 
+// ReverseReconcile copies a changed target file back to its source.
+// Returns (true, nil) if written, (false, nil) if skipped or not bidirectional.
+func ReverseReconcile(targetPath string, reverseMap map[string]string) (bool, error) {
+	sourcePath, ok := reverseMap[targetPath]
+	if !ok {
+		return false, nil
+	}
+
+	targetData, err := os.ReadFile(targetPath)
+	if err != nil {
+		return false, err
+	}
+
+	// Compare with existing source
+	existing, err := os.ReadFile(sourcePath)
+	if err == nil && bytes.Equal(existing, targetData) {
+		return false, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0755); err != nil {
+		return false, err
+	}
+
+	if err := os.WriteFile(sourcePath, targetData, 0644); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 func applyTransform(data []byte, kind TransformKind) ([]byte, error) {
 	switch kind {
 	case TransformJSONCSK:

@@ -11,6 +11,7 @@ type ParsedArgs struct {
 	Yolo            bool
 	TaskListID      string
 	ContinueSession string
+	SessionName     string
 	PassArgs        []string
 }
 
@@ -33,6 +34,11 @@ func ParseArgs(args []string) ParsedArgs {
 		case "--continue-session", "-cs":
 			if i+1 < len(args) && len(args[i+1]) > 0 && args[i+1][0] != '-' {
 				p.ContinueSession = args[i+1]
+				i++
+			}
+		case "--session-name", "-s":
+			if i+1 < len(args) && len(args[i+1]) > 0 && args[i+1][0] != '-' {
+				p.SessionName = args[i+1]
 				i++
 			}
 		case "--task-list-id", "-t":

@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type Entry struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Description string `json:"description,omitempty"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Path        string    `json:"path"`
+	Description string    `json:"description,omitempty"`
+	SavedAt     time.Time `json:"saved_at,omitempty"`
 }
 
 type Sessions map[string]Entry
@@ -55,6 +57,15 @@ func Save(filePath string, s Sessions) error {
 func FindByName(s Sessions, name string) *Entry {
 	for _, e := range s {
 		if e.Name == name {
+			return &e
+		}
+	}
+	return nil
+}
+
+func FindByNameAndPath(s Sessions, name string, path string) *Entry {
+	for _, e := range s {
+		if e.Name == name && e.Path == path {
 			return &e
 		}
 	}

@@ -56,6 +56,8 @@ func TestParseSwitchFlags(t *testing.T) {
 		assert.Empty(t, opts.Cwd)
 		assert.Empty(t, opts.Layout)
 		assert.False(t, opts.Window)
+		assert.False(t, opts.Interactive)
+		assert.False(t, opts.SaveMapping)
 	})
 
 	t.Run("session with cwd", func(t *testing.T) {
@@ -79,13 +81,36 @@ func TestParseSwitchFlags(t *testing.T) {
 		assert.True(t, opts.Window)
 	})
 
+	t.Run("session with interactive flag -i", func(t *testing.T) {
+		opts, err := ParseSwitchFlags([]string{"work", "-i"})
+		require.NoError(t, err)
+		assert.Equal(t, "work", opts.Session)
+		assert.True(t, opts.Interactive)
+	})
+
+	t.Run("session with interactive flag -z", func(t *testing.T) {
+		opts, err := ParseSwitchFlags([]string{"work", "-z"})
+		require.NoError(t, err)
+		assert.Equal(t, "work", opts.Session)
+		assert.True(t, opts.Interactive)
+	})
+
+	t.Run("session with save-mapping flag", func(t *testing.T) {
+		opts, err := ParseSwitchFlags([]string{"work", "--save-mapping"})
+		require.NoError(t, err)
+		assert.Equal(t, "work", opts.Session)
+		assert.True(t, opts.SaveMapping)
+	})
+
 	t.Run("all flags", func(t *testing.T) {
-		opts, err := ParseSwitchFlags([]string{"dev", "-c", "/tmp", "-l", "default", "-w"})
+		opts, err := ParseSwitchFlags([]string{"dev", "-c", "/tmp", "-l", "default", "-w", "-i", "--save-mapping"})
 		require.NoError(t, err)
 		assert.Equal(t, "dev", opts.Session)
 		assert.Equal(t, "/tmp", opts.Cwd)
 		assert.Equal(t, "default", opts.Layout)
 		assert.True(t, opts.Window)
+		assert.True(t, opts.Interactive)
+		assert.True(t, opts.SaveMapping)
 	})
 
 	t.Run("flags before positional", func(t *testing.T) {
@@ -99,6 +124,13 @@ func TestParseSwitchFlags(t *testing.T) {
 		opts, err := ParseSwitchFlags([]string{})
 		require.NoError(t, err)
 		assert.Empty(t, opts.Session)
+	})
+
+	t.Run("interactive only without session", func(t *testing.T) {
+		opts, err := ParseSwitchFlags([]string{"-i"})
+		require.NoError(t, err)
+		assert.Empty(t, opts.Session)
+		assert.True(t, opts.Interactive)
 	})
 }
 

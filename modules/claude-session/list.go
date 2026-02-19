@@ -2,14 +2,17 @@ package claudesession
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
 
 func listCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List saved sessions",
+	var sortFlag string
+
+	cmd := &cobra.Command{
+		Use:   "ls",
+		Short: "List and restore a session interactively",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sessions, err := Load(FilePath())
 			if err != nil {
@@ -21,14 +24,23 @@ func listCmd() *cobra.Command {
 				return nil
 			}
 
-			for _, e := range sessions {
-				line := fmt.Sprintf("%s  id=%s  path=%s", e.Name, e.ID, e.Path)
-				if e.Description != "" {
-					line += fmt.Sprintf("  (%s)", e.Description)
-				}
-				fmt.Println(line)
+			entry, err := runPicker(sessions, "Sessions", SortOrder(sortFlag))
+			if err != nil {
+				return err
 			}
-			return nil
+			if entry == nil {
+				return nil
+			}
+
+			fmt.Printf("Resuming: %s\n", entry.Name)
+			if err := os.Chdir(entry.Path); err != nil {
+				return fmt.Errorf("chdir %s: %w", entry.Path, err)
+			}
+
+			return execClaude(entry)
 		},
 	}
+
+	cmd.Flags().StringVarP(&sortFlag, "sort", "s", string(SortDate), "Sort order: date, name")
+	return cmd
 }

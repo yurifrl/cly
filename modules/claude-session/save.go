@@ -3,6 +3,7 @@ package claudesession
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -44,6 +45,7 @@ func saveCmd() *cobra.Command {
 				Name:        name,
 				Path:        path,
 				Description: description,
+				SavedAt:     time.Now(),
 			}
 
 			if err := Save(filePath, sessions); err != nil {

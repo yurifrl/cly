@@ -4,11 +4,18 @@
 
 ### Added
 - `cly agents` module — syncs `.agents/` configs to IDE directories (.claude, .opencode, .crush)
-- Daemon mode with fsnotify file watching and debounced sync
+- `cly agents configure` command — bootstraps `agents.yaml` config (`--local` for project-level)
+- Bidirectional sync — edits in target dirs (`.claude/`, `.opencode/`) sync back to `.agents/` for non-transformed files
+- Daemon mode with fsnotify file watching, debounced sync, and reverse sync for target dirs
 - JSONC→JSON transform with env var interpolation and comment stripping
 - SKILL.md allowed-tools stripping for OpenCode
 - Unix socket daemon with status/stop commands
 - `--dry-run`, `--global`, `-i` flags for sync control
+
+### Changed
+- Config format switched from `ai.json` (JSONC) to `agents.yaml` (YAML)
+- No config = no sync — sync is opt-in per scope (requires `agents.yaml` to exist)
+- Simplified global source dirs — removed `~/.config/ai`, only `~/.agents/`
 
 ## [1.0.4] - 2025-12-22
 

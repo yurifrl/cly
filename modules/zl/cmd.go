@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -42,8 +43,26 @@ func runSwitch(args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Handle interactive mode
+	if opts.Interactive {
+		dir, err := QueryZoxideInteractive()
+		if err != nil {
+			return fmt.Errorf("interactive directory selection failed: %w", err)
+		}
+		if dir == "" {
+			return fmt.Errorf("no directory selected")
+		}
+		opts.Cwd = dir
+
+		// Infer session name from directory basename if not provided
+		if opts.Session == "" {
+			opts.Session = getBasename(dir)
+		}
+	}
+
 	if opts.Session == "" {
-		return fmt.Errorf("session name required: cly zl switch <session-name> [-c cwd] [-l layout] [-w]")
+		return fmt.Errorf("session name required: cly zl switch <session-name> [-c cwd] [-l layout] [-w] [-i|-z] [--save-mapping]")
 	}
 
 	if IsInsideZellij() {
@@ -53,11 +72,42 @@ func runSwitch(args []string) error {
 }
 
 func switchInside(opts SwitchOpts) error {
+	// Check if session exists
+	out, err := exec.Command("zellij", "list-sessions", "--short", "--no-formatting").Output()
+	if err != nil {
+		return fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	sessions := ListSessions(string(out))
+
+	// If session doesn't exist, create it in the background
+	if !SessionExists(opts.Session, sessions) {
+		createArgs := []string{"attach", "--create-background", opts.Session}
+		if opts.Cwd != "" {
+			// Create session with specified directory
+			cmd := exec.Command("zellij", createArgs...)
+			cmd.Dir = opts.Cwd
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to create session %s: %w", opts.Session, err)
+			}
+		} else {
+			if err := exec.Command("zellij", createArgs...).Run(); err != nil {
+				return fmt.Errorf("failed to create session %s: %w", opts.Session, err)
+			}
+		}
+	}
+
+	// Now switch to the session using the plugin
 	pluginArgs := BuildPluginArgs(opts)
-	return execZellij([]string{"pipe", "--plugin", pluginPath, "--", pluginArgs})
+	return RunZellijPipe(pluginArgs)
 }
 
 func switchOutside(opts SwitchOpts) error {
+	// Resolve directory if not explicitly provided
+	if opts.Cwd == "" {
+		opts.Cwd = ResolveDirectory(opts.Session)
+	}
+
 	if opts.Window {
 		return openGhosttyWindow(opts)
 	}
@@ -67,7 +117,21 @@ func switchOutside(opts SwitchOpts) error {
 		if err := os.Chdir(opts.Cwd); err != nil {
 			return fmt.Errorf("failed to change to directory %s: %w", opts.Cwd, err)
 		}
+
+		// Update zoxide database if enabled
+		cfg := LoadZlConfig()
+		if cfg.UpdateZoxide {
+			_ = UpdateZoxide(opts.Cwd)
+		}
+
+		// Save mapping if requested
+		if opts.SaveMapping {
+			if err := SaveSessionMapping(opts.Session, opts.Cwd); err != nil {
+				return fmt.Errorf("failed to save mapping: %w", err)
+			}
+		}
 	}
+
 	return execZellij(attachArgs)
 }
 
@@ -112,4 +176,8 @@ func execZellij(args []string) error {
 		return fmt.Errorf("zellij not found in PATH")
 	}
 	return syscall.Exec(zellijPath, append([]string{"zellij"}, args...), os.Environ())
+}
+
+func getBasename(path string) string {
+	return filepath.Base(path)
 }

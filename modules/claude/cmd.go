@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	claudesession "github.com/yurifrl/cly/modules/claude-session"
 	"github.com/yurifrl/cly/pkg/session"
@@ -32,6 +33,10 @@ func run(cmd *cobra.Command, args []string) error {
 
 	if p.ContinueSession != "" {
 		return restoreSession(p.ContinueSession)
+	}
+
+	if p.SessionName != "" {
+		return resumeOrCreateSession(p.SessionName)
 	}
 
 	sess, err := session.Initialize(p.Name)
@@ -64,4 +69,41 @@ func restoreSession(name string) error {
 	}
 
 	return session.ExecClaude([]string{"-r", entry.ID})
+}
+
+func resumeOrCreateSession(name string) error {
+	path, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	sessions, err := claudesession.Load(claudesession.FilePath())
+	if err != nil {
+		return err
+	}
+
+	// Try to find existing session in current directory
+	entry := claudesession.FindByNameAndPath(sessions, name, path)
+	if entry != nil {
+		fmt.Printf("📂 Resuming session: %s (id=%s)\n", name, entry.ID)
+		return session.ExecClaude([]string{"-r", entry.ID})
+	}
+
+	// Create new session
+	fmt.Printf("✨ Creating new session: %s\n", name)
+
+	sessionID := uuid.New().String()
+
+	// Save to sessions.json
+	key := claudesession.MakeKey(path, sessionID)
+	sessions[key] = claudesession.Entry{
+		ID:   sessionID,
+		Name: name,
+		Path: path,
+	}
+	if err := claudesession.Save(claudesession.FilePath(), sessions); err != nil {
+		return err
+	}
+
+	return session.ExecClaude([]string{"--session-id", sessionID})
 }

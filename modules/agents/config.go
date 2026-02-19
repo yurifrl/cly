@@ -1,17 +1,21 @@
 package agents
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
-// DefaultIDEs is the fallback when no ai.json exists.
+// DefaultIDEs is the fallback when agents.yaml has empty ides list.
 var DefaultIDEs = []string{"claude", "opencode"}
 
-// Config holds the parsed ai.json.
+// ConfigFileName is the expected config file name.
+const ConfigFileName = "agents.yaml"
+
+// Config holds the parsed agents.yaml.
 type Config struct {
-	IDEs []string `json:"ides"`
+	IDEs []string `yaml:"ides"`
 }
 
 // IDEDef describes how to sync into a specific IDE's config directory.
@@ -69,24 +73,18 @@ var ideDefs = map[string]*IDEDef{
 	},
 }
 
-// ParseConfig reads and parses ai.json. Returns defaults if file doesn't exist.
+// ParseConfig reads and parses agents.yaml. Returns nil if file doesn't exist (no config = no sync).
 func ParseConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Config{IDEs: DefaultIDEs}, nil
+			return nil, nil
 		}
 		return nil, err
 	}
 
-	// ai.json is JSONC (bare words, comments) — strip to valid JSON
-	clean := stripJSONCComments(string(data))
-
-	// Handle bare-word arrays like [claude, opencode] by quoting them
-	clean = quoteBareWords(clean)
-
 	var cfg Config
-	if err := json.Unmarshal([]byte(clean), &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
 
@@ -116,15 +114,14 @@ func ResolveSourceDirs(globalOnly bool) []string {
 func globalSourceDirs() []string {
 	home := homeDir()
 	return []string{
-		filepath.Join(home, ".config", "ai"),
 		filepath.Join(home, ".agents"),
 	}
 }
 
-// FindConfigFile looks for ai.json in source dirs.
+// FindConfigFile looks for agents.yaml in source dirs.
 func FindConfigFile(sourceDirs []string) string {
 	for _, dir := range sourceDirs {
-		p := filepath.Join(dir, "ai.json")
+		p := filepath.Join(dir, ConfigFileName)
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
@@ -135,59 +132,4 @@ func FindConfigFile(sourceDirs []string) string {
 func homeDir() string {
 	h, _ := os.UserHomeDir()
 	return h
-}
-
-// quoteBareWords handles JSONC quirks where keys and array values are unquoted.
-// Converts {ides: [claude, opencode]} to {"ides": ["claude", "opencode"]}.
-func quoteBareWords(s string) string {
-	var out []byte
-	i := 0
-	for i < len(s) {
-		ch := s[i]
-		if ch == '"' {
-			// Pass string through
-			out = append(out, ch)
-			i++
-			for i < len(s) {
-				out = append(out, s[i])
-				if s[i] == '\\' {
-					i++
-					if i < len(s) {
-						out = append(out, s[i])
-					}
-				} else if s[i] == '"' {
-					i++
-					break
-				}
-				i++
-			}
-			continue
-		}
-		if isIdentStart(ch) {
-			start := i
-			for i < len(s) && isIdentChar(s[i]) {
-				i++
-			}
-			word := s[start:i]
-			if word == "true" || word == "false" || word == "null" {
-				out = append(out, []byte(word)...)
-			} else {
-				out = append(out, '"')
-				out = append(out, []byte(word)...)
-				out = append(out, '"')
-			}
-			continue
-		}
-		out = append(out, ch)
-		i++
-	}
-	return string(out)
-}
-
-func isIdentStart(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '-'
-}
-
-func isIdentChar(c byte) bool {
-	return isIdentStart(c) || (c >= '0' && c <= '9')
 }

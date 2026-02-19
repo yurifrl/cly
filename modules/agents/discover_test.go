@@ -102,6 +102,31 @@ func TestDiscover_OpenCode(t *testing.T) {
 	}
 }
 
+func TestDiscover_Bidirectional(t *testing.T) {
+	dir := setupAgentsDir(t)
+	src := filepath.Join(dir, ".agents")
+	targetBase := filepath.Join(dir, ".claude")
+
+	plan, err := Discover(src, GetIDEDef("claude"), targetBase)
+	require.NoError(t, err)
+
+	for _, item := range plan.Items {
+		switch item.Transform {
+		case TransformNone:
+			assert.True(t, item.Bidirectional, "TransformNone items should be bidirectional: %s", item.Source)
+		case TransformJSONCSK, TransformSkillMD:
+			assert.False(t, item.Bidirectional, "transformed items should not be bidirectional: %s", item.Source)
+		}
+	}
+
+	// Check reverse map has entries
+	assert.NotEmpty(t, plan.ReverseMap, "ReverseMap should have bidirectional entries")
+	for target, source := range plan.ReverseMap {
+		assert.NotEmpty(t, target)
+		assert.NotEmpty(t, source)
+	}
+}
+
 func TestDiscover_EmptySource(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, ".agents")

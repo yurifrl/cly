@@ -93,3 +93,27 @@ func TestMakeKey(t *testing.T) {
 	key := MakeKey("/some/path", "myid")
 	assert.Equal(t, "/some/path:myid", key)
 }
+
+func TestFindByNameAndPath(t *testing.T) {
+	sessions := Sessions{
+		MakeKey("/a", "1"): Entry{ID: "1", Name: "alpha", Path: "/a"},
+		MakeKey("/b", "2"): Entry{ID: "2", Name: "beta", Path: "/b"},
+		MakeKey("/a", "3"): Entry{ID: "3", Name: "beta", Path: "/a"},
+	}
+
+	found := FindByNameAndPath(sessions, "alpha", "/a")
+	require.NotNil(t, found)
+	assert.Equal(t, "1", found.ID)
+	assert.Equal(t, "/a", found.Path)
+
+	foundDifferentPath := FindByNameAndPath(sessions, "beta", "/a")
+	require.NotNil(t, foundDifferentPath)
+	assert.Equal(t, "3", foundDifferentPath.ID)
+	assert.Equal(t, "/a", foundDifferentPath.Path)
+
+	notFound := FindByNameAndPath(sessions, "alpha", "/b")
+	assert.Nil(t, notFound)
+
+	notFoundName := FindByNameAndPath(sessions, "gamma", "/a")
+	assert.Nil(t, notFoundName)
+}

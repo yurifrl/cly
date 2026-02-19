@@ -10,40 +10,65 @@ import (
 )
 
 func TestParseConfig(t *testing.T) {
-	t.Run("valid jsonc config", func(t *testing.T) {
+	t.Run("valid yaml config", func(t *testing.T) {
 		dir := t.TempDir()
-		content := `{
-  // IDE list
-  ides: [claude, opencode, crush]
-}`
-		err := os.WriteFile(filepath.Join(dir, "ai.json"), []byte(content), 0644)
+		content := "ides:\n  - claude\n  - opencode\n  - crush\n"
+		err := os.WriteFile(filepath.Join(dir, "agents.yaml"), []byte(content), 0644)
 		require.NoError(t, err)
 
-		cfg, err := ParseConfig(filepath.Join(dir, "ai.json"))
+		cfg, err := ParseConfig(filepath.Join(dir, "agents.yaml"))
 		require.NoError(t, err)
+		require.NotNil(t, cfg)
 		assert.Equal(t, []string{"claude", "opencode", "crush"}, cfg.IDEs)
 	})
 
-	t.Run("missing file uses defaults", func(t *testing.T) {
-		cfg, err := ParseConfig("/nonexistent/ai.json")
+	t.Run("missing file returns nil", func(t *testing.T) {
+		cfg, err := ParseConfig("/nonexistent/agents.yaml")
 		require.NoError(t, err)
+		assert.Nil(t, cfg)
+	})
+
+	t.Run("empty ides uses defaults", func(t *testing.T) {
+		dir := t.TempDir()
+		content := "ides: []\n"
+		err := os.WriteFile(filepath.Join(dir, "agents.yaml"), []byte(content), 0644)
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(filepath.Join(dir, "agents.yaml"))
+		require.NoError(t, err)
+		require.NotNil(t, cfg)
 		assert.Equal(t, DefaultIDEs, cfg.IDEs)
+	})
+}
+
+func TestFindConfigFile(t *testing.T) {
+	t.Run("finds agents.yaml", func(t *testing.T) {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "agents.yaml")
+		require.NoError(t, os.WriteFile(p, []byte("ides:\n  - claude\n"), 0644))
+
+		found := FindConfigFile([]string{dir})
+		assert.Equal(t, p, found)
+	})
+
+	t.Run("returns empty when not found", func(t *testing.T) {
+		dir := t.TempDir()
+		found := FindConfigFile([]string{dir})
+		assert.Empty(t, found)
 	})
 }
 
 func TestResolveSourceDirs(t *testing.T) {
 	t.Run("global sources", func(t *testing.T) {
 		dirs := ResolveSourceDirs(true)
-		assert.NotEmpty(t, dirs)
-		// Should include home-based paths
-		for _, d := range dirs {
-			assert.True(t, filepath.IsAbs(d), "should be absolute: %s", d)
-		}
+		assert.Len(t, dirs, 1)
+		assert.Contains(t, dirs[0], ".agents")
 	})
 
 	t.Run("local sources", func(t *testing.T) {
 		dirs := ResolveSourceDirs(false)
-		assert.NotEmpty(t, dirs)
+		assert.Len(t, dirs, 2)
+		assert.Equal(t, ".agents", dirs[0])
 	})
 }
 
