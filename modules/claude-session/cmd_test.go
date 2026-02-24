@@ -25,10 +25,8 @@ func TestSubcommandsRegistered(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"save", []string{"cs", "save"}},
-		{"restore", []string{"cs", "restore"}},
 		{"ls", []string{"cs", "ls"}},
-		{"delete", []string{"cs", "delete"}},
+		{"rm", []string{"cs", "rm"}},
 	}
 
 	for _, tt := range tests {
@@ -38,4 +36,13 @@ func TestSubcommandsRegistered(t *testing.T) {
 			assert.Equal(t, tt.name, cmd.Name())
 		})
 	}
+}
+
+func TestRootRunENoArgs(t *testing.T) {
+	root := &cobra.Command{Use: "root"}
+	Register(root)
+
+	cmd, _, err := root.Find([]string{"cs"})
+	require.NoError(t, err)
+	assert.NotNil(t, cmd.RunE)
 }

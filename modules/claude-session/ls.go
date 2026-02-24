@@ -7,12 +7,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func listCmd() *cobra.Command {
-	var sortFlag string
-
-	cmd := &cobra.Command{
+func lsCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "ls",
-		Short: "List and restore a session interactively",
+		Short: "List and open a session interactively",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sessions, err := Load(FilePath())
 			if err != nil {
@@ -24,7 +22,7 @@ func listCmd() *cobra.Command {
 				return nil
 			}
 
-			entry, err := runPicker(sessions, "Sessions", SortOrder(sortFlag))
+			entry, err := runPicker(sessions, "Sessions")
 			if err != nil {
 				return err
 			}
@@ -40,7 +38,4 @@ func listCmd() *cobra.Command {
 			return execClaude(entry)
 		},
 	}
-
-	cmd.Flags().StringVarP(&sortFlag, "sort", "s", string(SortDate), "Sort order: date, name")
-	return cmd
 }

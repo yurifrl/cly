@@ -17,10 +17,6 @@ type Entry struct {
 
 type Sessions map[string]Entry
 
-func MakeKey(path, id string) string {
-	return path + ":" + id
-}
-
 func FilePath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "cly", "sessions.json")
@@ -55,28 +51,14 @@ func Save(filePath string, s Sessions) error {
 }
 
 func FindByName(s Sessions, name string) *Entry {
-	for _, e := range s {
-		if e.Name == name {
-			return &e
-		}
+	e, ok := s[name]
+	if !ok {
+		return nil
 	}
-	return nil
-}
-
-func FindByNameAndPath(s Sessions, name string, path string) *Entry {
-	for _, e := range s {
-		if e.Name == name && e.Path == path {
-			return &e
-		}
-	}
-	return nil
+	return &e
 }
 
 func Remove(s Sessions, name string) Sessions {
-	for k, e := range s {
-		if e.Name == name {
-			delete(s, k)
-		}
-	}
+	delete(s, name)
 	return s
 }

@@ -6,9 +6,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func deleteCmd() *cobra.Command {
+func rmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete <name>",
+		Use:   "rm <name>",
 		Short: "Delete a saved session",
 		Args:  cobra.ExactArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -19,7 +19,7 @@ func deleteCmd() *cobra.Command {
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
-			var names []string
+			names := make([]string, 0, len(sessions))
 			for _, e := range sessions {
 				names = append(names, e.Name)
 			}

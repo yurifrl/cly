@@ -72,34 +72,7 @@ func runSwitch(args []string) error {
 }
 
 func switchInside(opts SwitchOpts) error {
-	// Check if session exists
-	out, err := exec.Command("zellij", "list-sessions", "--short", "--no-formatting").Output()
-	if err != nil {
-		return fmt.Errorf("failed to list sessions: %w", err)
-	}
-
-	sessions := ListSessions(string(out))
-
-	// If session doesn't exist, create it in the background
-	if !SessionExists(opts.Session, sessions) {
-		createArgs := []string{"attach", "--create-background", opts.Session}
-		if opts.Cwd != "" {
-			// Create session with specified directory
-			cmd := exec.Command("zellij", createArgs...)
-			cmd.Dir = opts.Cwd
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to create session %s: %w", opts.Session, err)
-			}
-		} else {
-			if err := exec.Command("zellij", createArgs...).Run(); err != nil {
-				return fmt.Errorf("failed to create session %s: %w", opts.Session, err)
-			}
-		}
-	}
-
-	// Now switch to the session using the plugin
-	pluginArgs := BuildPluginArgs(opts)
-	return RunZellijPipe(pluginArgs)
+	return openGhosttyWindow(opts)
 }
 
 func switchOutside(opts SwitchOpts) error {

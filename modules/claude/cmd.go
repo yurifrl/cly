@@ -82,8 +82,7 @@ func resumeOrCreateSession(name string) error {
 		return err
 	}
 
-	// Try to find existing session in current directory
-	entry := claudesession.FindByNameAndPath(sessions, name, path)
+	entry := claudesession.FindByName(sessions, name)
 	if entry != nil {
 		fmt.Printf("📂 Resuming session: %s (id=%s)\n", name, entry.ID)
 		return session.ExecClaude([]string{"-r", entry.ID})
@@ -94,9 +93,7 @@ func resumeOrCreateSession(name string) error {
 
 	sessionID := uuid.New().String()
 
-	// Save to sessions.json
-	key := claudesession.MakeKey(path, sessionID)
-	sessions[key] = claudesession.Entry{
+	sessions[name] = claudesession.Entry{
 		ID:   sessionID,
 		Name: name,
 		Path: path,
