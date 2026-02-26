@@ -2,6 +2,7 @@ package claudesession
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -11,37 +12,49 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var appStyle = lipgloss.NewStyle().Padding(1, 2)
-
-var titleStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#FFFDF5")).
-	Background(lipgloss.Color("#25A065")).
-	Padding(0, 1)
+var (
+	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
+	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
+	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	dateStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("72"))
+	idStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	footerBoxStyle    = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("240")).
+				PaddingLeft(1).PaddingRight(1).
+				MarginLeft(2)
+)
 
 type pickerItem struct{ entry Entry }
 
-func (i pickerItem) Title() string {
-	id := i.entry.ID
-	if len(id) > 8 {
-		id = id[:8]
-	}
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	meta := []string{shortenPath(i.entry.Path)}
-	if !i.entry.SavedAt.IsZero() {
-		meta = append(meta, i.entry.SavedAt.Format("2006-01-02 15:04"))
-	}
-	meta = append(meta, id)
-	return fmt.Sprintf("%s  %s", i.entry.Name, dim.Render(strings.Join(meta, " · ")))
-}
-
-func (i pickerItem) Description() string {
-	if i.entry.Description != "" {
-		return i.entry.Description
-	}
-	return ""
-}
-
 func (i pickerItem) FilterValue() string { return i.entry.Name }
+
+func (i pickerItem) headline() string {
+	sep := dimStyle.Render(" · ")
+	parts := []string{}
+	if !i.entry.SavedAt.IsZero() {
+		parts = append(parts, dateStyle.Render(i.entry.SavedAt.Format("2006-01-02 15:04")))
+	}
+	parts = append(parts, idStyle.Render(i.entry.ID))
+	return fmt.Sprintf("%s  %s", i.entry.Name, strings.Join(parts, sep))
+}
+
+type simpleDelegate struct{}
+
+func (d simpleDelegate) Height() int                             { return 1 }
+func (d simpleDelegate) Spacing() int                            { return 0 }
+func (d simpleDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
+func (d simpleDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(pickerItem)
+	if !ok {
+		return
+	}
+	if index == m.Index() {
+		fmt.Fprint(w, selectedItemStyle.Render("> "+i.headline()))
+	} else {
+		fmt.Fprint(w, itemStyle.Render(i.headline()))
+	}
+}
 
 type pickerModel struct {
 	list     list.Model
@@ -53,21 +66,10 @@ type pickerModel struct {
 
 func (m pickerModel) Init() tea.Cmd { return nil }
 
-func (m pickerModel) rebuildList() pickerModel {
-	entries := sortedEntries(m.sessions, m.order)
-	items := make([]list.Item, 0, len(entries))
-	for _, e := range entries {
-		items = append(items, pickerItem{entry: e})
-	}
-	m.list.SetItems(items)
-	return m
-}
-
 func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := appStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+		m.list.SetWidth(msg.Width)
 		return m, nil
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {
@@ -78,12 +80,14 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quit = true
 			return m, tea.Quit
 		case "s":
-			if m.order == SortDate {
-				m.order = SortName
-			} else {
-				m.order = SortDate
+			m.order = m.order.Next()
+			entries := sortedEntries(m.sessions, m.order)
+			items := make([]list.Item, 0, len(entries))
+			for _, e := range entries {
+				items = append(items, pickerItem{entry: e})
 			}
-			return m.rebuildList(), nil
+			m.list.SetItems(items)
+			return m, nil
 		case "enter":
 			i, ok := m.list.SelectedItem().(pickerItem)
 			if ok {
@@ -102,7 +106,22 @@ func (m pickerModel) View() string {
 	if m.chosen != nil || m.quit {
 		return ""
 	}
-	return appStyle.Render(m.list.View())
+
+	m.list.SetShowHelp(false)
+	m.list.SetShowPagination(false)
+
+	footer := ""
+	if i, ok := m.list.SelectedItem().(pickerItem); ok {
+		e := i.entry
+		content := dimStyle.Render("📁 "+shortenPath(e.Path)) + "\n" +
+			dimStyle.Render("📝 "+e.Description)
+		footer = footerBoxStyle.Render(content) + "\n"
+	}
+
+	pagination := m.list.Styles.PaginationStyle.Render(m.list.Paginator.View()) + "\n"
+	help := m.list.Styles.HelpStyle.Render(m.list.Help.View(m.list) + dimStyle.Render("  • s: "+m.order.Label()))
+
+	return strings.TrimLeft(m.list.View(), "\n") + "\n" + footer + pagination + help
 }
 
 func shortenPath(p string) string {
@@ -116,12 +135,29 @@ func shortenPath(p string) string {
 	return p
 }
 
-type SortOrder string
+type SortOrder int
 
 const (
-	SortDate SortOrder = "date"
-	SortName SortOrder = "name"
+	SortDateDesc SortOrder = iota // default
+	SortDateAsc
+	SortNameAsc
+	SortNameDesc
 )
+
+func (o SortOrder) Next() SortOrder { return (o + 1) % 4 }
+
+func (o SortOrder) Label() string {
+	switch o {
+	case SortDateAsc:
+		return "date ↑"
+	case SortNameAsc:
+		return "name ↑"
+	case SortNameDesc:
+		return "name ↓"
+	default:
+		return "date ↓"
+	}
+}
 
 func sortedEntries(sessions Sessions, order SortOrder) []Entry {
 	entries := make([]Entry, 0, len(sessions))
@@ -129,11 +165,19 @@ func sortedEntries(sessions Sessions, order SortOrder) []Entry {
 		entries = append(entries, e)
 	}
 	switch order {
-	case SortName:
+	case SortDateAsc:
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].SavedAt.Before(entries[j].SavedAt)
+		})
+	case SortNameAsc:
 		sort.Slice(entries, func(i, j int) bool {
 			return entries[i].Name < entries[j].Name
 		})
-	default: // SortDate
+	case SortNameDesc:
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].Name > entries[j].Name
+		})
+	default: // SortDateDesc
 		sort.Slice(entries, func(i, j int) bool {
 			return entries[i].SavedAt.After(entries[j].SavedAt)
 		})
@@ -142,8 +186,7 @@ func sortedEntries(sessions Sessions, order SortOrder) []Entry {
 }
 
 func runPicker(sessions Sessions, title string) (*Entry, error) {
-	order := SortDate
-	entries := sortedEntries(sessions, order)
+	entries := sortedEntries(sessions, SortDateDesc)
 	items := make([]list.Item, 0, len(entries))
 	for _, e := range entries {
 		if e.Name == "" {
@@ -152,13 +195,16 @@ func runPicker(sessions Sessions, title string) (*Entry, error) {
 		items = append(items, pickerItem{entry: e})
 	}
 
-	delegate := list.NewDefaultDelegate()
-	delegate.SetHeight(2)
-	l := list.New(items, delegate, 0, 0)
-	l.Title = title
-	l.Styles.Title = titleStyle
+	const listHeight = 14
+	l := list.New(items, simpleDelegate{}, 0, listHeight)
+	l.SetShowTitle(false)
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.Styles.Title = lipgloss.NewStyle().MarginLeft(2)
+	l.Styles.PaginationStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
+	l.Styles.HelpStyle = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
 
-	p := tea.NewProgram(pickerModel{list: l, sessions: sessions, order: order}, tea.WithAltScreen())
+	p := tea.NewProgram(pickerModel{list: l, sessions: sessions, order: SortDateDesc})
 	m, err := p.Run()
 	if err != nil {
 		return nil, err

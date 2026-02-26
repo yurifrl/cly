@@ -15,7 +15,7 @@ func rmCmd() *cobra.Command {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
-			sessions, err := Load(FilePath())
+			sessions, err := Load(filePathFn())
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
@@ -27,7 +27,7 @@ func rmCmd() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			filePath := FilePath()
+			filePath := filePathFn()
 
 			sessions, err := Load(filePath)
 			if err != nil {
@@ -44,7 +44,7 @@ func rmCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Deleted session %q\n", name)
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted session %q\n", name)
 			return nil
 		},
 	}

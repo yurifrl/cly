@@ -22,6 +22,26 @@ func FilePath() string {
 	return filepath.Join(home, ".config", "cly", "sessions.json")
 }
 
+// filePathFn is the active file path resolver. Overridable in tests.
+var filePathFn = FilePath
+
+func filterByPath(s Sessions, path string) Sessions {
+	out := Sessions{}
+	for k, e := range s {
+		if e.Path == path {
+			out[k] = e
+		}
+	}
+	return out
+}
+
+func findEntry(s Sessions, query string) *Entry {
+	if e := FindByName(s, query); e != nil {
+		return e
+	}
+	return FindByID(s, query)
+}
+
 func Load(filePath string) (Sessions, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -56,6 +76,15 @@ func FindByName(s Sessions, name string) *Entry {
 		return nil
 	}
 	return &e
+}
+
+func FindByID(s Sessions, id string) *Entry {
+	for _, e := range s {
+		if e.ID == id {
+			return &e
+		}
+	}
+	return nil
 }
 
 func Remove(s Sessions, name string) Sessions {

@@ -88,3 +88,17 @@ func TestRemoveNonExistent(t *testing.T) {
 	result := Remove(sessions, "nope")
 	assert.Len(t, result, 1)
 }
+
+func TestFindByID(t *testing.T) {
+	sessions := Sessions{
+		"alpha": Entry{ID: "uuid-1", Name: "alpha", Path: "/a"},
+		"beta":  Entry{ID: "uuid-2", Name: "beta", Path: "/b"},
+	}
+
+	found := FindByID(sessions, "uuid-1")
+	require.NotNil(t, found)
+	assert.Equal(t, "alpha", found.Name)
+
+	notFound := FindByID(sessions, "uuid-999")
+	assert.Nil(t, notFound)
+}

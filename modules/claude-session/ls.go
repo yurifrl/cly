@@ -8,34 +8,44 @@ import (
 )
 
 func lsCmd() *cobra.Command {
-	return &cobra.Command{
+	var flagAll bool
+	cmd := &cobra.Command{
 		Use:   "ls",
-		Short: "List and open a session interactively",
+		Short: "List sessions (current dir by default)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sessions, err := Load(FilePath())
-			if err != nil {
-				return err
-			}
-
-			if len(sessions) == 0 {
-				fmt.Println("No saved sessions")
-				return nil
-			}
-
-			entry, err := runPicker(sessions, "Sessions")
-			if err != nil {
-				return err
-			}
-			if entry == nil {
-				return nil
-			}
-
-			fmt.Printf("Resuming: %s\n", entry.Name)
-			if err := os.Chdir(entry.Path); err != nil {
-				return fmt.Errorf("chdir %s: %w", entry.Path, err)
-			}
-
-			return execClaude(entry)
+			return runLS(cmd, flagAll)
 		},
 	}
+	cmd.Flags().BoolVarP(&flagAll, "all", "a", false, "Show all sessions")
+	return cmd
+}
+
+func runLS(cmd *cobra.Command, all bool) error {
+	sessions, err := Load(filePathFn())
+	if err != nil {
+		return err
+	}
+
+	if !all {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		sessions = filterByPath(sessions, cwd)
+	}
+
+	if len(sessions) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No saved sessions")
+		return nil
+	}
+
+	entry, err := runPicker(sessions, "Sessions")
+	if err != nil {
+		return err
+	}
+	if entry == nil {
+		return nil
+	}
+
+	return resumeEntry(entry)
 }

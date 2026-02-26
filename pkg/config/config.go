@@ -34,7 +34,8 @@ modules:
     enabled: true
     sound: false
     use_zellij_status: true
-    use_zellij_notify: true
+    use_zellij_notify: false
+    use_zellij_attention: true
     icon: ""
     hooks:
       notification:
@@ -106,7 +107,8 @@ type NotifyConfig struct {
 	Enabled         bool                  `yaml:"enabled" mapstructure:"enabled"`
 	Sound           bool                  `yaml:"sound" mapstructure:"sound"`
 	UseZellijStatus bool                  `yaml:"use_zellij_status" mapstructure:"use_zellij_status"` // zjstatus plugin
-	UseZellijNotify bool                  `yaml:"use_zellij_notify" mapstructure:"use_zellij_notify"` // notify plugin
+	UseZellijNotify    bool                `yaml:"use_zellij_notify" mapstructure:"use_zellij_notify"`       // old notify plugin
+	UseZellijAttention bool                `yaml:"use_zellij_attention" mapstructure:"use_zellij_attention"` // zellij-attention plugin
 	Icon            string                `yaml:"icon" mapstructure:"icon"`
 	Hooks           map[string]HookConfig `yaml:"hooks" mapstructure:"hooks"`
 }
@@ -204,6 +206,9 @@ func (c *Config) GetNotify() NotifyConfig {
 		}
 		if useZellijNotify, ok := notifyData["use_zellij_notify"].(bool); ok {
 			notify.UseZellijNotify = useZellijNotify
+		}
+		if useZellijAttention, ok := notifyData["use_zellij_attention"].(bool); ok {
+			notify.UseZellijAttention = useZellijAttention
 		}
 		if icon, ok := notifyData["icon"].(string); ok {
 			notify.Icon = icon

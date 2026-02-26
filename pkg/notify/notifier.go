@@ -44,14 +44,14 @@ func NewMultiNotifier(notifiers []Notifier) Notifier {
 }
 
 // New creates a new MultiNotifier with all enabled notifiers based on config
-func New(eventType string, useZellijStatus, useZellijNotify bool, icon string) Notifier {
+func New(eventType string, useZellijStatus, useZellijNotify, useZellijAttention bool, icon string) Notifier {
 	var notifiers []Notifier
 
 	// Always use beeep for macOS notifications
 	notifiers = append(notifiers, &BeeepNotifier{Icon: icon})
 
-	if useZellijStatus || useZellijNotify {
-		notifiers = append(notifiers, NewZellijNotifier(eventType, useZellijStatus, useZellijNotify))
+	if useZellijStatus || useZellijNotify || useZellijAttention {
+		notifiers = append(notifiers, NewZellijNotifier(eventType, useZellijStatus, useZellijNotify, useZellijAttention))
 	}
 
 	return NewMultiNotifier(notifiers)

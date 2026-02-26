@@ -92,6 +92,7 @@ func createHookCmd() *cobra.Command {
 				hookName,
 				notifyConfig.UseZellijStatus,
 				notifyConfig.UseZellijNotify,
+				notifyConfig.UseZellijAttention,
 				iconPath,
 			)
 			return notifier.Send(context.Background(), n)
@@ -166,6 +167,7 @@ func createConfigCmd() *cobra.Command {
 			fmt.Printf("  Sound: %v\n", soundEnabled)
 			fmt.Printf("  Use Zellij Status: %v\n", notifyConfig.UseZellijStatus)
 			fmt.Printf("  Use Zellij Notify: %v\n", notifyConfig.UseZellijNotify)
+			fmt.Printf("  Use Zellij Attention: %v\n", notifyConfig.UseZellijAttention)
 			fmt.Printf("  Icon: %s\n", notifyConfig.Icon)
 			fmt.Println()
 			fmt.Println(style.BlueStyle.Render("Hooks:"))

@@ -46,6 +46,7 @@ func createDebugCmd() *cobra.Command {
 			fmt.Printf("  Sound File: %s (exists: %v)\n", soundFile, fileExists(soundFile))
 			fmt.Printf("  Use Zellij Status: %v\n", notifyConfig.UseZellijStatus)
 			fmt.Printf("  Use Zellij Notify: %v\n", notifyConfig.UseZellijNotify)
+			fmt.Printf("  Use Zellij Attention: %v\n", notifyConfig.UseZellijAttention)
 
 			// Icon path
 			iconPath := notifyConfig.Icon
@@ -67,7 +68,7 @@ func createDebugCmd() *cobra.Command {
 			fmt.Printf("  Beeep: %s\n", availStatus(beeepAvail))
 
 			// Zellij
-			zellijNotifier := notify.NewZellijNotifier("debug", true, true)
+			zellijNotifier := notify.NewZellijNotifier("debug", true, true, true)
 			zellijAvail := zellijNotifier.Available()
 			fmt.Printf("  Zellij: %s", availStatus(zellijAvail))
 			if !zellijAvail {
@@ -104,17 +105,8 @@ func createDebugCmd() *cobra.Command {
 			if zellijAvail {
 				fmt.Println(style.YellowStyle.Render("Testing Zellij:"))
 				paneID := os.Getenv("ZELLIJ_PANE_ID")
-				sessionName := os.Getenv("ZELLIJ_SESSION_NAME")
 				fmt.Printf("  Status Bar: zellij pipe \"zjstatus::notify::%s\"\n", testNotification.Title)
-				cmd := fmt.Sprintf("  Tab: zellij pipe -n notify")
-				if paneID != "" {
-					cmd += fmt.Sprintf(" -a pane_id=%s", paneID)
-				}
-				if sessionName != "" {
-					cmd += fmt.Sprintf(" -a session_name=%s", sessionName)
-				}
-				cmd += " debug"
-				fmt.Println(cmd)
+				fmt.Printf("  Attention: zellij pipe --name \"zellij-attention::waiting::%s\"\n", paneID)
 				fmt.Printf("  Sending... ")
 				if err := zellijNotifier.Send(ctx, testNotification); err != nil {
 					fmt.Println(style.RedStyle.Render("✗ Failed: " + err.Error()))
