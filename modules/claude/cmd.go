@@ -21,6 +21,24 @@ func Register(parent *cobra.Command) {
 	}
 
 	parent.AddCommand(cmd)
+
+	parent.AddCommand(&cobra.Command{
+		Use:   "claude-rename <name>",
+		Short: "Rename the current Claude session and Zellij tab",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runRename,
+	})
+}
+
+func runRename(cmd *cobra.Command, args []string) error {
+	name := args[0]
+	if err := session.ValidateName(name); err != nil {
+		return err
+	}
+	sess := &session.Session{Name: name}
+	_ = sess.RenameZellijTab()
+	fmt.Printf("renamed: %s\n", name)
+	return nil
 }
 
 func run(cmd *cobra.Command, args []string) error {

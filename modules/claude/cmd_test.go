@@ -10,6 +10,16 @@ import (
 	claudesession "github.com/yurifrl/cly/modules/claude-session"
 )
 
+func TestRunRename_ValidName(t *testing.T) {
+	err := runRename(nil, []string{"my-project"})
+	assert.NoError(t, err)
+}
+
+func TestRunRename_InvalidName(t *testing.T) {
+	err := runRename(nil, []string{"invalid name!"})
+	assert.Error(t, err)
+}
+
 func TestResumeOrCreateSession_CreateNew(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionsFile := filepath.Join(tmpDir, "sessions.json")
