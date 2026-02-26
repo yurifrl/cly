@@ -1,4 +1,4 @@
-# .ai/ Folder Specification
+# .agents/ Folder Specification
 
 **Purpose:** AI-agnostic context layer. Single source synced to all AI tools.
 
@@ -7,7 +7,7 @@
 ## Structure
 
 ```
-.ai/
+.agents/
 ├── commands/     Slash commands for AI tools
 ├── skills/       Domain expertise (testing, TUI, Go patterns)
 ├── agents/       Advisory specialists (go-specialist)
