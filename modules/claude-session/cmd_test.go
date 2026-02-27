@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yurifrl/cly/pkg/session"
 )
 
 func TestRegister(t *testing.T) {
@@ -68,4 +69,17 @@ func TestSaveCmdArgs(t *testing.T) {
 func TestResumeCmdArgs(t *testing.T) {
 	cmd := resumeCmd()
 	assert.Equal(t, "resume <name|id>", cmd.Use)
+}
+
+func TestExecClaudeArgs_NoYolo(t *testing.T) {
+	entry := &Entry{ID: "abc-123"}
+	args := execClaudeArgs(entry, false)
+	assert.Equal(t, []string{"-r", "abc-123"}, args)
+}
+
+func TestExecClaudeArgs_Yolo(t *testing.T) {
+	entry := &Entry{ID: "abc-123"}
+	args := execClaudeArgs(entry, true)
+	yolo := session.YoloArgs()
+	assert.Equal(t, append(yolo, "-r", "abc-123"), args)
 }

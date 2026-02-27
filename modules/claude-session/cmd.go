@@ -5,8 +5,19 @@ import (
 	"github.com/yurifrl/cly/pkg/session"
 )
 
-func execClaude(entry *Entry) error {
-	return session.ExecClaude([]string{"-r", entry.ID})
+// execClaudeArgs builds the args for resuming a session, with optional yolo mode.
+func execClaudeArgs(entry *Entry, yolo bool) []string {
+	args := []string{"-r", entry.ID}
+	if yolo {
+		return append(session.YoloArgs(), args...)
+	}
+	return args
+}
+
+func execClaude(entry *Entry, yolo bool) error {
+	sess := &session.Session{Name: entry.Name}
+	_ = sess.RenameZellijTab()
+	return sess.ExecClaude(execClaudeArgs(entry, yolo))
 }
 
 func Register(parent *cobra.Command) {

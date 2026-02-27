@@ -18,6 +18,7 @@ var (
 	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	dateStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("72"))
 	idStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	yoloOnStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	footerBoxStyle    = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("240")).
@@ -61,6 +62,7 @@ type pickerModel struct {
 	sessions Sessions
 	order    SortOrder
 	chosen   *Entry
+	yolo     bool
 	quit     bool
 }
 
@@ -87,6 +89,9 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				items = append(items, pickerItem{entry: e})
 			}
 			m.list.SetItems(items)
+			return m, nil
+		case "y":
+			m.yolo = !m.yolo
 			return m, nil
 		case "enter":
 			i, ok := m.list.SelectedItem().(pickerItem)
@@ -118,8 +123,17 @@ func (m pickerModel) View() string {
 		footer = footerBoxStyle.Render(content) + "\n"
 	}
 
+	yoloStatus := dimStyle.Render("off")
+	if m.yolo {
+		yoloStatus = yoloOnStyle.Render("ON")
+	}
+
 	pagination := m.list.Styles.PaginationStyle.Render(m.list.Paginator.View()) + "\n"
-	help := m.list.Styles.HelpStyle.Render(m.list.Help.View(m.list) + dimStyle.Render("  • s: "+m.order.Label()))
+	help := m.list.Styles.HelpStyle.Render(
+		m.list.Help.View(m.list) +
+			dimStyle.Render("  • s: "+m.order.Label()) +
+			dimStyle.Render("  • y: yolo ") + yoloStatus,
+	)
 
 	return strings.TrimLeft(m.list.View(), "\n") + "\n" + footer + pagination + help
 }
@@ -185,7 +199,7 @@ func sortedEntries(sessions Sessions, order SortOrder) []Entry {
 	return entries
 }
 
-func runPicker(sessions Sessions, title string) (*Entry, error) {
+func runPicker(sessions Sessions, title string) (*Entry, bool, error) {
 	entries := sortedEntries(sessions, SortDateDesc)
 	items := make([]list.Item, 0, len(entries))
 	for _, e := range entries {
@@ -207,12 +221,12 @@ func runPicker(sessions Sessions, title string) (*Entry, error) {
 	p := tea.NewProgram(pickerModel{list: l, sessions: sessions, order: SortDateDesc})
 	m, err := p.Run()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	pm := m.(pickerModel)
 	if pm.quit || pm.chosen == nil {
-		return nil, nil
+		return nil, false, nil
 	}
-	return pm.chosen, nil
+	return pm.chosen, pm.yolo, nil
 }

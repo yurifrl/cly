@@ -39,12 +39,12 @@ func resumeCmd() *cobra.Command {
 				return fmt.Errorf("session %q not found", query)
 			}
 
-			return resumeEntry(entry)
+			return resumeEntry(entry, false)
 		},
 	}
 }
 
-func resumeEntry(entry *Entry) error {
+func resumeEntry(entry *Entry, yolo bool) error {
 	entry.SavedAt = time.Now()
 	sessions, err := Load(filePathFn())
 	if err != nil {
@@ -64,5 +64,5 @@ func resumeEntry(entry *Entry) error {
 			return fmt.Errorf("chdir %s: %w", entry.Path, err)
 		}
 	}
-	return execClaude(entry)
+	return execClaude(entry, yolo)
 }

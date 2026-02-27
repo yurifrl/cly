@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/yurifrl/cly/pkg/session"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -71,7 +72,7 @@ func TestParseArgs(t *testing.T) {
 			args: []string{"--yolo", "-p", "do stuff"},
 			expected: ParsedArgs{
 				Yolo:     true,
-				PassArgs: []string{"--dangerously-skip-permissions", "--append-system-prompt", yoloPrompt(), "-p", "do stuff"},
+				PassArgs: []string{"--dangerously-skip-permissions", "--append-system-prompt", session.YoloArgs()[2], "-p", "do stuff"},
 			},
 		},
 		{
@@ -81,7 +82,7 @@ func TestParseArgs(t *testing.T) {
 				Name:       "proj",
 				TaskListID: "proj",
 				Yolo:       true,
-				PassArgs:   []string{"--dangerously-skip-permissions", "--append-system-prompt", yoloPrompt()},
+				PassArgs:   []string{"--dangerously-skip-permissions", "--append-system-prompt", session.YoloArgs()[2]},
 			},
 		},
 		{

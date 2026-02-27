@@ -1,7 +1,7 @@
 package claude
 
 import (
-	_ "embed"
+	"github.com/yurifrl/cly/pkg/session"
 )
 
 // ParsedArgs holds the result of parsing claude wrapper flags from raw args.
@@ -58,17 +58,8 @@ func ParseArgs(args []string) ParsedArgs {
 
 	// Inject yolo args at the front of PassArgs
 	if p.Yolo {
-		yoloArgs := []string{"--dangerously-skip-permissions", "--append-system-prompt", yoloPrompt()}
-		p.PassArgs = append(yoloArgs, p.PassArgs...)
+		p.PassArgs = append(session.YoloArgs(), p.PassArgs...)
 	}
 
 	return p
-}
-
-//go:embed prompts/safe-autonomous-mode.md
-var safeAutonomousPrompt string
-
-// yoloPrompt returns the embedded safe-autonomous-mode prompt.
-func yoloPrompt() string {
-	return safeAutonomousPrompt
 }

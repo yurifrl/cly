@@ -39,7 +39,7 @@ func runLS(cmd *cobra.Command, all bool) error {
 		return nil
 	}
 
-	entry, err := runPicker(sessions, "Sessions")
+	entry, yolo, err := runPicker(sessions, "Sessions")
 	if err != nil {
 		return err
 	}
@@ -47,5 +47,5 @@ func runLS(cmd *cobra.Command, all bool) error {
 		return nil
 	}
 
-	return resumeEntry(entry)
+	return resumeEntry(entry, yolo)
 }
