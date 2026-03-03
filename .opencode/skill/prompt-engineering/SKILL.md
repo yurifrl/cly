@@ -1,3 +1,8 @@
+---
+name: prompt-engineering
+description: Prompt engineering reference and workflow for creating, refining, and reviewing high-quality prompts for AI tools, agents, and skills.
+---
+
 # Prompt Engineering Skill
 
 ## When to Use This Skill
