@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -23,20 +22,13 @@ var (
 			Bold(true)
 )
 
-func registerCapture(parent *cobra.Command) {
-	cmd := &cobra.Command{
-		Use:   "capture [text...]",
-		Short: "Capture notes via Claude",
-		Long:  "Runs claude -p '/capture <text>' headlessly in ~/Obsidian",
-		RunE:  runCapture,
-	}
-
-	parent.AddCommand(cmd)
+func buildClaudeArgs(args []string) []string {
+	prompt := "/capture " + strings.Join(args, " ")
+	return []string{"-p", prompt, "--allowedTools", "WebFetch,WebSearch"}
 }
 
-func runCapture(cmd *cobra.Command, args []string) error {
-	prompt := "/capture " + strings.Join(args, " ")
-	claudeArgs := []string{"-p", prompt}
+func runCapture(args []string) error {
+	claudeArgs := buildClaudeArgs(args)
 
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, "Obsidian")
