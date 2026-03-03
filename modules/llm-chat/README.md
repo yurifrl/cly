@@ -1,4 +1,4 @@
-# AI Chat Module
+# LLM Chat Module
 
 Interactive AI chat powered by mods CLI tool - simple terminal interface.
 
@@ -13,13 +13,13 @@ Interactive AI chat powered by mods CLI tool - simple terminal interface.
 
 ```bash
 # Start new conversation
-cly ai
+cly llm-chat
 
 # Use different model
-cly ai --model claude-opus-4-5
+cly llm-chat --model claude-opus-4-5
 
 # Continue existing conversation
-cly ai --continue modsi-1234567890
+cly llm-chat --continue modsi-1234567890
 ```
 
 ## Requirements
@@ -43,7 +43,7 @@ The module wraps the `mods` CLI tool as a subprocess, allowing seamless integrat
 ### Testing
 
 ```bash
-cd modules/ai
+cd modules/llm-chat
 go test -v
 ```
 

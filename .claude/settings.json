@@ -290,7 +290,6 @@
       "Task(**)"
     ],
     "ask": [
-      "Bash(go build:*)",
       "Bash(rm:*)",
       "Bash(chmod:*)",
       "Bash(chown:*)",

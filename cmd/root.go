@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/modules/agents"
-	"github.com/yurifrl/cly/modules/ai"
+	"github.com/yurifrl/cly/modules/llm-chat"
 	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
 	"github.com/yurifrl/cly/modules/bundle"
@@ -65,7 +65,7 @@ func init() {
 	RootCmd.SetVersionTemplate(versionString())
 	completion.Register(RootCmd)
 	agents.Register(RootCmd)
-	ai.Register(RootCmd)
+	llmchat.Register(RootCmd)
 	aliases.Register(RootCmd)
 	backup.Register(RootCmd)
 	claude.Register(RootCmd)

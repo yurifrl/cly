@@ -1,4 +1,4 @@
-package ai
+package llmchat
 
 import (
 	"bufio"
@@ -12,10 +12,10 @@ import (
 	"github.com/yurifrl/cly/pkg/style"
 )
 
-// Register registers the ai command with the parent command
+// Register registers the llm-chat command with the parent command
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use:   "ai",
+		Use:   "llm-chat",
 		Short: "Interactive AI chat powered by mods",
 		Long: `Start an interactive chat session with Claude using mods.
 
@@ -23,8 +23,8 @@ The conversation is threaded and stored in mods' cache (~/.cache/mods/).
 You can continue conversations with mods CLI using the same conversation ID.
 
 Examples:
-  cly ai                                    # Start new conversation
-  cly ai --model claude-opus-4            # Use different model
+  cly llm-chat                             # Start new conversation
+  cly llm-chat --model claude-opus-4       # Use different model
 `,
 		RunE: run,
 	}

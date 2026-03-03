@@ -1,4 +1,4 @@
-package ai
+package llmchat
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ func TestContinueFlagShorthand(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
 	Register(rootCmd)
 
-	aiCmd, _, err := rootCmd.Find([]string{"ai"})
+	aiCmd, _, err := rootCmd.Find([]string{"llm-chat"})
 	assert.NoError(t, err)
 
 	conversationID := "brave-turtle"
@@ -29,7 +29,7 @@ func TestContinueFlagLongForm(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
 	Register(rootCmd)
 
-	aiCmd, _, err := rootCmd.Find([]string{"ai"})
+	aiCmd, _, err := rootCmd.Find([]string{"llm-chat"})
 	assert.NoError(t, err)
 
 	conversationID := "brave-turtle"
