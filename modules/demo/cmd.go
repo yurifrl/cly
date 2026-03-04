@@ -7,6 +7,24 @@ import (
 	"github.com/yurifrl/cly/modules/demo/cellbuffer"
 	"github.com/yurifrl/cly/modules/demo/chat"
 	composableviews "github.com/yurifrl/cly/modules/demo/composable-views"
+	lgcolordialog "github.com/yurifrl/cly/modules/demo/lg-color-dialog"
+	lglayout "github.com/yurifrl/cly/modules/demo/lg-layout"
+	lglistduckduckgoose "github.com/yurifrl/cly/modules/demo/lg-list-duckduckgoose"
+	lglistglow "github.com/yurifrl/cly/modules/demo/lg-list-glow"
+	lglistgrocery "github.com/yurifrl/cly/modules/demo/lg-list-grocery"
+	lglistroman "github.com/yurifrl/cly/modules/demo/lg-list-roman"
+	lgtableansi "github.com/yurifrl/cly/modules/demo/lg-table-ansi"
+	lgtablechess "github.com/yurifrl/cly/modules/demo/lg-table-chess"
+	lgtablelanguages "github.com/yurifrl/cly/modules/demo/lg-table-languages"
+	lgtablemindy "github.com/yurifrl/cly/modules/demo/lg-table-mindy"
+	lgtablepokemon "github.com/yurifrl/cly/modules/demo/lg-table-pokemon"
+	lgtreebackground "github.com/yurifrl/cly/modules/demo/lg-tree-background"
+	lgtreefiles "github.com/yurifrl/cly/modules/demo/lg-tree-files"
+	lgtreemakeup "github.com/yurifrl/cly/modules/demo/lg-tree-makeup"
+	lgtreerounded "github.com/yurifrl/cly/modules/demo/lg-tree-rounded"
+	lgtreesimple "github.com/yurifrl/cly/modules/demo/lg-tree-simple"
+	lgtreestyles "github.com/yurifrl/cly/modules/demo/lg-tree-styles"
+	lgtreetoggle "github.com/yurifrl/cly/modules/demo/lg-tree-toggle"
 	creditcardform "github.com/yurifrl/cly/modules/demo/credit-card-form"
 	"github.com/yurifrl/cly/modules/demo/debounce"
 	"github.com/yurifrl/cly/modules/demo/exec"
@@ -20,6 +38,7 @@ import (
 	listdefault "github.com/yurifrl/cly/modules/demo/list-default"
 	listfancy "github.com/yurifrl/cly/modules/demo/list-fancy"
 	listsimple "github.com/yurifrl/cly/modules/demo/list-simple"
+	lglistsimple "github.com/yurifrl/cly/modules/demo/lg-list-simple"
 	"github.com/yurifrl/cly/modules/demo/mouse"
 	"github.com/yurifrl/cly/modules/demo/pager"
 	"github.com/yurifrl/cly/modules/demo/paginator"
@@ -107,6 +126,25 @@ func init() {
 	views.Register(DemoCmd)
 	composableviews.Register(DemoCmd)
 	spliteditors.Register(DemoCmd)
+	lgcolordialog.Register(DemoCmd)
+	lglayout.Register(DemoCmd)
+	lglistsimple.Register(DemoCmd)
+	lglistgrocery.Register(DemoCmd)
+	lglistroman.Register(DemoCmd)
+	lglistduckduckgoose.Register(DemoCmd)
+	lglistglow.Register(DemoCmd)
+	lgtreesimple.Register(DemoCmd)
+	lgtreefiles.Register(DemoCmd)
+	lgtreemakeup.Register(DemoCmd)
+	lgtreerounded.Register(DemoCmd)
+	lgtreestyles.Register(DemoCmd)
+	lgtreetoggle.Register(DemoCmd)
+	lgtreebackground.Register(DemoCmd)
+	lgtableansi.Register(DemoCmd)
+	lgtablechess.Register(DemoCmd)
+	lgtablelanguages.Register(DemoCmd)
+	lgtablepokemon.Register(DemoCmd)
+	lgtablemindy.Register(DemoCmd)
 }
 
 func Register(parent *cobra.Command) {
