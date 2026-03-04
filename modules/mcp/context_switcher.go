@@ -17,6 +17,8 @@ var contextOptions = []contextOption{
 	{"claude", "project", "Claude Code (project)", "edits .mcp.json, shared/added to repo"},
 	{"claude", "user", "Claude Code (user)", "global, available in all your projects"},
 	{"claude", "local", "Claude Code (local)", "edits ~/.claude.json under projects[cwd] key"},
+	{"pi", "project", "Pi (project)", "project .pi/mcp.json"},
+	{"pi", "user", "Pi (user)", "global ~/.pi/agent/mcp.json"},
 	{"cursor", "user", "Cursor IDE (user)", "global cursor settings"},
 	{"cursor", "project", "Cursor IDE (project)", "project .cursor/mcp.json"},
 	{"desktop", "user", "Claude Desktop", "desktop app config"},
@@ -44,6 +46,8 @@ func (m Model) renderContextSwitcher() string {
 		switch opt.ai {
 		case "claude":
 			adapter = &ClaudeAdapter{}
+		case "pi":
+			adapter = &PiAdapter{}
 		case "cursor":
 			adapter = &CursorAdapter{}
 		case "desktop":

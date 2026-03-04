@@ -32,7 +32,7 @@ func NewRootCmd() *cobra.Command {
 		RunE:  runTUI,
 	}
 
-	cmd.PersistentFlags().StringVar(&contextFlag, "context", "", "Context: <ai>:<scope> (e.g., claude:user)")
+	cmd.PersistentFlags().StringVar(&contextFlag, "context", "", "Context: <ai>:<scope> (e.g., pi:user)")
 
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newSwitchCmd())
@@ -239,8 +239,10 @@ func getAdapter(ai string) (Adapter, error) {
 		return &CursorAdapter{}, nil
 	case "desktop":
 		return &DesktopAdapter{}, nil
+	case "pi":
+		return &PiAdapter{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported AI tool: %s (available: claude, cursor, desktop)", ai)
+		return nil, fmt.Errorf("unsupported AI tool: %s (available: claude, cursor, desktop, pi)", ai)
 	}
 }
 
@@ -736,14 +738,22 @@ func setContext(contextStr string) error {
 
 	ai, scope := parts[0], parts[1]
 
-	validAI := map[string]bool{"claude": true, "cursor": true, "desktop": true}
+	validAI := map[string]bool{"claude": true, "cursor": true, "desktop": true, "pi": true}
 	validScope := map[string]bool{"user": true, "project": true, "local": true}
 
 	if !validAI[ai] {
-		return fmt.Errorf("invalid AI: %s (available: claude, cursor, desktop)", ai)
+		return fmt.Errorf("invalid AI: %s (available: claude, cursor, desktop, pi)", ai)
 	}
 	if !validScope[scope] {
 		return fmt.Errorf("invalid scope: %s (available: user, project, local)", scope)
+	}
+
+	adapter, err := getAdapter(ai)
+	if err != nil {
+		return err
+	}
+	if _, err := adapter.GetConfigPath(scope); err != nil {
+		return err
 	}
 
 	cfg, err := LoadGlobalConfig()
@@ -760,11 +770,8 @@ func setContext(contextStr string) error {
 
 	fmt.Printf("+ Default context set to: %s (%s)\n", ai, scope)
 
-	adapter, _ := getAdapter(ai)
-	if adapter != nil {
-		path, _ := adapter.GetConfigPath(scope)
-		fmt.Printf("Config file: %s\n", path)
-	}
+	path, _ := adapter.GetConfigPath(scope)
+	fmt.Printf("Config file: %s\n", path)
 
 	return nil
 }

@@ -25,8 +25,10 @@ func GetAdapter(ai string) (Adapter, error) {
 		return &CursorAdapter{}, nil
 	case "desktop":
 		return &DesktopAdapter{}, nil
+	case "pi":
+		return &PiAdapter{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported AI tool: %s (valid: claude, cursor, desktop)", ai)
+		return nil, fmt.Errorf("unsupported AI tool: %s (valid: claude, cursor, desktop, pi)", ai)
 	}
 }
 
@@ -243,6 +245,188 @@ func (a *ClaudeAdapter) IsInstalled() bool {
 		return false
 	}
 	_, err = os.Stat(filepath.Join(homeDir, ".claude"))
+	return err == nil
+}
+
+// PiAdapter implements the Adapter interface for Pi
+type PiAdapter struct{}
+
+type piMCP struct {
+	MCP
+}
+
+func (p piMCP) MarshalJSON() ([]byte, error) {
+	m := make(map[string]interface{})
+	if p.Type != "" {
+		m["type"] = p.Type
+	}
+	if p.Command != "" {
+		m["command"] = p.Command
+	}
+	if len(p.Args) > 0 {
+		m["args"] = p.Args
+	}
+	if p.URL != "" {
+		m["url"] = p.URL
+	}
+	if len(p.Env) > 0 {
+		m["env"] = p.Env
+	}
+	if len(p.Headers) > 0 {
+		m["headers"] = p.Headers
+	}
+	return json.Marshal(m)
+}
+
+func (p *piMCP) UnmarshalJSON(data []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	if typeVal, ok := raw["type"].(string); ok {
+		p.Type = typeVal
+	} else if transportVal, ok := raw["transport"].(string); ok {
+		p.Type = transportVal
+	}
+
+	if p.Type == "" {
+		if _, hasCommand := raw["command"]; hasCommand {
+			p.Type = "stdio"
+		} else if _, hasURL := raw["url"]; hasURL {
+			p.Type = "http"
+		}
+	}
+
+	if cmd, ok := raw["command"].(string); ok {
+		p.Command = cmd
+	}
+	if args, ok := raw["args"].([]interface{}); ok {
+		p.Args = make([]string, len(args))
+		for i, arg := range args {
+			if s, ok := arg.(string); ok {
+				p.Args[i] = s
+			}
+		}
+	}
+	if url, ok := raw["url"].(string); ok {
+		p.URL = url
+	}
+	if env, ok := raw["env"].(map[string]interface{}); ok {
+		p.Env = env
+	}
+	if headers, ok := raw["headers"].(map[string]interface{}); ok {
+		p.Headers = make(map[string]string)
+		for k, v := range headers {
+			if s, ok := v.(string); ok {
+				p.Headers[k] = s
+			}
+		}
+	}
+	return nil
+}
+
+func (a *PiAdapter) GetConfigPath(scope string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	switch scope {
+	case "user":
+		return filepath.Join(homeDir, ".pi", "agent", "mcp.json"), nil
+	case "project":
+		return ".pi/mcp.json", nil
+	default:
+		return "", fmt.Errorf("unsupported scope for Pi: %s (only user and project)", scope)
+	}
+}
+
+func (a *PiAdapter) ReadConfig(scope string) (*ToolConfig, error) {
+	path, err := a.GetConfigPath(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return &ToolConfig{MCPServers: make(map[string]MCP)}, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("malformed JSON: %w", err)
+	}
+
+	toolCfg := &ToolConfig{MCPServers: make(map[string]MCP)}
+
+	if mcpServers, ok := raw["mcpServers"].(map[string]interface{}); ok {
+		for name, serverData := range mcpServers {
+			serverJSON, _ := json.Marshal(serverData)
+			var wrapped piMCP
+			if err := json.Unmarshal(serverJSON, &wrapped); err == nil {
+				wrapped.Name = name
+				toolCfg.MCPServers[name] = wrapped.MCP
+			}
+		}
+	}
+
+	return toolCfg, nil
+}
+
+func (a *PiAdapter) WriteConfig(scope string, mcps []MCP) error {
+	path, err := a.GetConfigPath(scope)
+	if err != nil {
+		return err
+	}
+
+	var config map[string]interface{}
+	if data, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(data, &config)
+	}
+	if config == nil {
+		config = make(map[string]interface{})
+	}
+
+	mcpServers := make(map[string]piMCP)
+	for _, mcp := range mcps {
+		mcpServers[mcp.Name] = piMCP{MCP: mcp}
+	}
+
+	config["mcpServers"] = mcpServers
+
+	tempPath := path + ".tmp"
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tempPath, path); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	return nil
+}
+
+func (a *PiAdapter) IsInstalled() bool {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(homeDir, ".pi"))
 	return err == nil
 }
 
