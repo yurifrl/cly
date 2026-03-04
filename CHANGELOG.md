@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-03
+
+### Added
+- `cly agents start` background process model with PID/status files under `~/.config/cly/`
+- `cly agents add [repo]` to register repositories in global config (`~/.config/cly/agents.yaml`)
+- `cly agents logs` with `--tail` and `--follow` for daemon log inspection
+
+### Changed
+- Replaced `cly agents run` with `cly agents sync [repo]` as one-shot sync + exit
+- `cly agents` now stores global settings and tracked repos in `~/.config/cly/agents.yaml`
+- Daemon sync now runs across configured repos on a periodic loop, enabling newly added repos without restart
+
+### Removed
+- `cly agents configure` command
+- Legacy socket-based daemon control path
+
 ## 2026-02-13
 
 ### Added

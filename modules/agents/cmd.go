@@ -1,57 +1,86 @@
 package agents
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 var (
 	flagDryRun bool
-	flagGlobal bool
-	flagLocal  bool
 	flagIDE    string
-	flagDetach bool
-	flagRm     bool
+
+	flagFollow bool
+	flagTail   int
 )
+
+const daemonSyncInterval = 3 * time.Second
 
 // Register adds the agents command tree to the parent.
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "agents",
 		Short: "Sync .agents configs to IDE directories",
-		Long:  "Synchronize .agents configurations to IDE-specific directories (.claude, .opencode, .crush).",
+		Long:  "Synchronize repository .agents configurations to IDE-specific directories (.claude, .opencode, .crush).",
 	}
 
 	cmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "Show what would be synced without writing")
-	cmd.PersistentFlags().BoolVar(&flagGlobal, "global", false, "Sync only global configs")
 	cmd.PersistentFlags().StringVarP(&flagIDE, "ide", "i", "", "Sync only this IDE (claude, opencode, crush)")
 
-	runCmd := &cobra.Command{
-		Use:   "run",
-		Short: "Run agents sync (foreground watcher by default)",
+	syncCmd := &cobra.Command{
+		Use:   "sync [repo]",
+		Short: "Run one sync and exit",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runSync,
+	}
+
+	startCmd := &cobra.Command{
+		Use:   "start [repo]",
+		Short: "Start background sync daemon",
+		Args:  cobra.MaximumNArgs(1),
 		RunE:  runStart,
 	}
-	runCmd.Flags().BoolVarP(&flagDetach, "detach", "d", false, "Run as background daemon with socket")
-	runCmd.Flags().BoolVar(&flagRm, "rm", false, "One-shot sync and exit")
 
-	configureCmd := &cobra.Command{
-		Use:   "configure",
-		Short: "Create agents.yaml config file",
-		RunE:  runConfigure,
+	addCmd := &cobra.Command{
+		Use:   "add [repo]",
+		Short: "Add repository to global sync list",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runAdd,
 	}
-	configureCmd.Flags().BoolVar(&flagLocal, "local", false, "Create .agents/agents.yaml in current directory instead of global")
+
+	logsCmd := &cobra.Command{
+		Use:   "logs",
+		Short: "Show daemon logs",
+		RunE:  runLogs,
+	}
+	logsCmd.Flags().BoolVarP(&flagFollow, "follow", "f", false, "Follow log output")
+	logsCmd.Flags().IntVar(&flagTail, "tail", 100, "Number of lines to show")
+
+	internalDaemonCmd := &cobra.Command{
+		Use:    "__daemon",
+		Hidden: true,
+		RunE:   runDaemon,
+	}
 
 	cmd.AddCommand(
-		runCmd,
+		syncCmd,
+		startCmd,
+		addCmd,
+		logsCmd,
 		&cobra.Command{
 			Use:   "status",
-			Short: "Query running daemon status",
+			Short: "Show daemon status",
 			RunE:  runStatus,
 		},
 		&cobra.Command{
@@ -59,424 +88,433 @@ func Register(parent *cobra.Command) {
 			Short: "Stop running daemon",
 			RunE:  runStop,
 		},
-		configureCmd,
+		internalDaemonCmd,
 	)
 
 	parent.AddCommand(cmd)
 }
 
-func runStart(cmd *cobra.Command, args []string) error {
-	if flagRm {
-		return doSync()
-	}
-	if flagDetach {
-		if err := doSync(); err != nil {
-			return err
-		}
-		return startDaemon()
-	}
-	// Default: foreground watcher, no socket
-	if err := doSync(); err != nil {
+func runSync(cmd *cobra.Command, args []string) error {
+	repo, err := resolveRepoArg(args)
+	if err != nil {
 		return err
 	}
-	return startWatcher()
+
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		return err
+	}
+
+	ides := chooseIDEs(cfg)
+	stats, err := syncRepo(repo, ides, flagDryRun)
+	if err != nil {
+		return err
+	}
+
+	logSuccess("sync completed",
+		lf("repo", repo),
+		lf("written", stats.Written),
+		lf("skipped", stats.Skipped),
+		lf("errors", stats.Errors),
+		lf("dry_run", flagDryRun),
+	)
+	if stats.Errors > 0 {
+		logWarn("sync completed with errors", lf("repo", repo), lf("errors", stats.Errors))
+	}
+	return nil
+}
+
+func runAdd(cmd *cobra.Command, args []string) error {
+	repo, err := resolveRepoArg(args)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		return err
+	}
+
+	added := AddRepo(cfg, repo)
+	if err := SaveGlobalConfig(cfg); err != nil {
+		return err
+	}
+
+	if added {
+		logSuccess("repo added", lf("repo", repo))
+	} else {
+		logInfo("repo already tracked", lf("repo", repo))
+	}
+
+	running, _ := IsDaemonRunning()
+	if running {
+		logInfo("daemon running; repo will sync on next cycle", lf("repo", repo))
+	}
+	return nil
+}
+
+func runStart(cmd *cobra.Command, args []string) error {
+	repo, err := resolveRepoArg(args)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		return err
+	}
+
+	added := AddRepo(cfg, repo)
+	if err := SaveGlobalConfig(cfg); err != nil {
+		return err
+	}
+
+	running, pid := IsDaemonRunning()
+	if running {
+		if added {
+			logInfo("daemon already running; repo added", lf("pid", pid), lf("repo", repo))
+		} else {
+			logInfo("daemon already running", lf("pid", pid))
+		}
+		return nil
+	}
+
+	if err := os.MkdirAll(GlobalConfigDir(), 0755); err != nil {
+		return err
+	}
+
+	logFile, err := os.OpenFile(LogFilePath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+
+	daemonCmd := exec.Command(os.Args[0], "agents", "__daemon")
+	daemonCmd.Stdout = logFile
+	daemonCmd.Stderr = logFile
+	daemonCmd.Stdin = nil
+	daemonCmd.Env = os.Environ()
+	daemonCmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+	if err := daemonCmd.Start(); err != nil {
+		return err
+	}
+
+	for i := 0; i < 30; i++ {
+		time.Sleep(100 * time.Millisecond)
+		running, pid = IsDaemonRunning()
+		if running {
+			logSuccess("daemon started", lf("pid", pid), lf("log_file", LogFilePath()))
+			return nil
+		}
+	}
+
+	return errors.New("daemon failed to start")
+}
+
+func runDaemon(cmd *cobra.Command, args []string) error {
+	running, pid := IsDaemonRunning()
+	if running && pid != os.Getpid() {
+		return fmt.Errorf("daemon already running (pid %d)", pid)
+	}
+
+	if err := writePID(os.Getpid()); err != nil {
+		return err
+	}
+	defer os.Remove(PidFilePath())
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	status := DaemonStatus{
+		PID:       os.Getpid(),
+		StartedAt: time.Now(),
+	}
+	_ = writeDaemonStatus(status)
+
+	syncAndUpdate := func() {
+		stats, err := syncAllConfiguredRepos(false)
+		status.LastSyncAt = time.Now()
+		status.LastRepo = stats.Repos
+		status.LastWrite = stats.Written
+		status.LastSkip = stats.Skipped
+		if err != nil {
+			status.LastError = err.Error()
+			logError("sync cycle failed", lf("error", err))
+		} else {
+			status.LastError = ""
+		}
+		_ = writeDaemonStatus(status)
+		if stats.Written > 0 || stats.Errors > 0 {
+			logInfo("sync cycle", lf("repos", stats.Repos), lf("written", stats.Written), lf("skipped", stats.Skipped), lf("errors", stats.Errors))
+		}
+	}
+
+	syncAndUpdate()
+
+	ticker := time.NewTicker(daemonSyncInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			syncAndUpdate()
+		}
+	}
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	client := NewDaemonClient(SocketPath)
-	resp, err := client.Status()
-	if err != nil {
-		return fmt.Errorf("daemon not running")
+	running, pid := IsDaemonRunning()
+	if running {
+		logInfo("daemon status", lf("running", "yes"), lf("pid", pid))
+	} else {
+		logInfo("daemon status", lf("running", "no"))
 	}
-	if resp.OK {
-		fmt.Println("daemon running")
-		if data, ok := resp.Data.(map[string]interface{}); ok {
-			for k, v := range data {
-				fmt.Printf("  %s: %v\n", k, v)
-			}
+
+	cfg, err := LoadGlobalConfig()
+	if err == nil {
+		logInfo("tracked repositories", lf("count", len(cfg.Repos)))
+	}
+
+	status, err := readDaemonStatus()
+	if err == nil {
+		logInfo("daemon lifecycle", lf("started_at", status.StartedAt.Format(time.RFC3339)))
+		if !status.LastSyncAt.IsZero() {
+			logInfo("last sync", lf("at", status.LastSyncAt.Format(time.RFC3339)))
+			logInfo("last cycle", lf("repos", status.LastRepo), lf("written", status.LastWrite), lf("skipped", status.LastSkip))
+		}
+		if status.LastError != "" {
+			logError("last daemon error", lf("error", status.LastError))
 		}
 	}
+
 	return nil
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
-	client := NewDaemonClient(SocketPath)
-	if err := client.Stop(); err != nil {
+	running, pid := IsDaemonRunning()
+	if !running {
+		return fmt.Errorf("daemon not running")
+	}
+
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 		return err
 	}
-	fmt.Println("daemon stopped")
-	return nil
-}
 
-const defaultConfigContent = "ides:\n  - claude\n  - opencode\n"
-
-func runConfigure(cmd *cobra.Command, args []string) error {
-	var dir string
-	if flagLocal {
-		dir = ".agents"
-	} else {
-		dir = filepath.Join(homeDir(), ".agents")
+	for i := 0; i < 30; i++ {
+		time.Sleep(100 * time.Millisecond)
+		running, _ := IsDaemonRunning()
+		if !running {
+			logSuccess("daemon stopped")
+			return nil
+		}
 	}
 
-	path := filepath.Join(dir, ConfigFileName)
+	return fmt.Errorf("daemon did not stop in time (pid %d)", pid)
+}
 
-	// If file exists, print it and exit
-	if data, err := os.ReadFile(path); err == nil {
-		fmt.Printf("%s already exists:\n%s", path, string(data))
+func runLogs(cmd *cobra.Command, args []string) error {
+	if flagTail < 0 {
+		return fmt.Errorf("--tail must be >= 0")
+	}
+
+	if err := printLogTail(LogFilePath(), flagTail); err != nil {
+		return err
+	}
+
+	if !flagFollow {
 		return nil
 	}
 
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	return followLog(LogFilePath())
+}
+
+func printLogTail(path string, tail int) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("log file not found: %s", path)
+		}
 		return err
 	}
 
-	if err := os.WriteFile(path, []byte(defaultConfigContent), 0644); err != nil {
-		return err
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
 	}
 
-	fmt.Printf("created %s\n", path)
+	start := 0
+	if tail > 0 && len(lines) > tail {
+		start = len(lines) - tail
+	}
+
+	for _, line := range lines[start:] {
+		fmt.Println(line)
+	}
 	return nil
 }
 
-func doSync() error {
-	for _, scope := range syncScopes() {
-		sourceDirs := ResolveSourceDirs(scope.global)
+func followLog(path string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-		cfg, ides := loadConfigForScope(sourceDirs)
-		if cfg == nil {
-			continue // no config = no sync for this scope
-		}
-
-		for _, sourceDir := range sourceDirs {
-			if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-				continue
-			}
-
-			for _, ideName := range ides {
-				ide := GetIDEDef(ideName)
-				if ide == nil {
-					continue
-				}
-
-				targetBase := resolveTarget(ide, scope.global)
-				plan, err := Discover(sourceDir, ide, targetBase)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "discover %s/%s: %v\n", sourceDir, ideName, err)
-					continue
-				}
-
-				if len(plan.Items) == 0 {
-					continue
-				}
-
-				result, err := Reconcile(plan, flagDryRun)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "reconcile %s/%s: %v\n", sourceDir, ideName, err)
-					continue
-				}
-
-				prefix := ""
-				if flagDryRun {
-					prefix = "[dry-run] "
-				}
-				if result.Written > 0 || flagDryRun {
-					fmt.Printf("%s%s → %s: %d written, %d skipped\n",
-						prefix, filepath.Base(sourceDir), ideName, result.Written, result.Skipped)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func startDaemon() error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Handle signals
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigs
-		cancel()
-	}()
-
-	// Build merged reverse map from all scopes/IDEs
-	reverseMap := make(map[string]string)
-
-	// syncAndCollectPlans does a forward sync and returns the merged reverse map
-	syncFn := func() (*ReconcileResult, error) {
-		combined := &ReconcileResult{}
-
-		for _, scope := range syncScopes() {
-			sourceDirs := ResolveSourceDirs(scope.global)
-			cfg, ides := loadConfigForScope(sourceDirs)
-			if cfg == nil {
-				continue
-			}
-
-			for _, sourceDir := range sourceDirs {
-				if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-					continue
-				}
-				for _, ideName := range ides {
-					ide := GetIDEDef(ideName)
-					if ide == nil {
-						continue
-					}
-					targetBase := resolveTarget(ide, scope.global)
-					plan, err := Discover(sourceDir, ide, targetBase)
-					if err != nil {
-						continue
-					}
-					// Merge reverse map
-					for t, s := range plan.ReverseMap {
-						reverseMap[t] = s
-					}
-					result, err := Reconcile(plan, false)
-					if err != nil {
-						continue
-					}
-					combined.Written += result.Written
-					combined.Skipped += result.Skipped
-				}
-			}
-		}
-		return combined, nil
-	}
-
-	daemon := NewDaemon(SocketPath, syncFn)
-
-	// Set up watcher — forward sync callback will be set after watcher is created
-	watcher, err := NewWatcher(nil)
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	watcher.onSync = func() {
-		watcher.SuppressBriefly()
-		result, err := syncFn()
-		if err == nil && result.Written > 0 {
-			fmt.Printf("synced: %d written, %d skipped\n", result.Written, result.Skipped)
-		}
-	}
+	defer f.Close()
 
-	// Set up reverse sync callback
-	watcher.SetReverseSync(func(path string) {
-		watcher.SuppressBriefly()
-		written, err := ReverseReconcile(path, reverseMap)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "reverse sync %s: %v\n", path, err)
-			return
-		}
-		if written {
-			fmt.Printf("reverse synced: %s\n", filepath.Base(path))
-		}
-	})
-
-	// Watch source dirs
-	for _, scope := range syncScopes() {
-		sourceDirs := ResolveSourceDirs(scope.global)
-		for _, dir := range sourceDirs {
-			if _, err := os.Stat(dir); err == nil {
-				watchRecursive(watcher, dir)
-			}
-		}
-	}
-
-	// Watch target dirs for bidirectional sync
-	for _, scope := range syncScopes() {
-		sourceDirs := ResolveSourceDirs(scope.global)
-		cfg, ides := loadConfigForScope(sourceDirs)
-		if cfg == nil {
-			continue
-		}
-		for _, ideName := range ides {
-			ide := GetIDEDef(ideName)
-			if ide == nil {
-				continue
-			}
-			targetBase := resolveTarget(ide, scope.global)
-			if _, err := os.Stat(targetBase); err == nil {
-				watchRecursiveTarget(watcher, targetBase)
-			}
-		}
-	}
-
-	fmt.Printf("daemon listening on %s\n", SocketPath)
-
-	// Run watcher and daemon concurrently
-	errCh := make(chan error, 2)
-	go func() { errCh <- watcher.Run(ctx) }()
-	go func() { errCh <- daemon.Run(ctx) }()
-
-	return <-errCh
-}
-
-func startWatcher() error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigs
-		cancel()
-	}()
-
-	reverseMap := make(map[string]string)
-
-	syncFn := func() (*ReconcileResult, error) {
-		combined := &ReconcileResult{}
-		for _, scope := range syncScopes() {
-			sourceDirs := ResolveSourceDirs(scope.global)
-			cfg, ides := loadConfigForScope(sourceDirs)
-			if cfg == nil {
-				continue
-			}
-			for _, sourceDir := range sourceDirs {
-				if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-					continue
-				}
-				for _, ideName := range ides {
-					ide := GetIDEDef(ideName)
-					if ide == nil {
-						continue
-					}
-					targetBase := resolveTarget(ide, scope.global)
-					plan, err := Discover(sourceDir, ide, targetBase)
-					if err != nil {
-						continue
-					}
-					for t, s := range plan.ReverseMap {
-						reverseMap[t] = s
-					}
-					result, err := Reconcile(plan, false)
-					if err != nil {
-						continue
-					}
-					combined.Written += result.Written
-					combined.Skipped += result.Skipped
-				}
-			}
-		}
-		return combined, nil
-	}
-
-	watcher, err := NewWatcher(nil)
+	pos, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
 		return err
 	}
-	watcher.onSync = func() {
-		watcher.SuppressBriefly()
-		result, err := syncFn()
-		if err == nil && result.Written > 0 {
-			fmt.Printf("synced: %d written, %d skipped\n", result.Written, result.Skipped)
-		}
-	}
-	watcher.SetReverseSync(func(path string) {
-		watcher.SuppressBriefly()
-		written, err := ReverseReconcile(path, reverseMap)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "reverse sync %s: %v\n", path, err)
-			return
-		}
-		if written {
-			fmt.Printf("reverse synced: %s\n", filepath.Base(path))
-		}
-	})
 
-	for _, scope := range syncScopes() {
-		sourceDirs := ResolveSourceDirs(scope.global)
-		for _, dir := range sourceDirs {
-			if _, err := os.Stat(dir); err == nil {
-				watchRecursive(watcher, dir)
+	reader := bufio.NewReader(f)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			stat, err := os.Stat(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
 			}
-		}
-	}
-	for _, scope := range syncScopes() {
-		sourceDirs := ResolveSourceDirs(scope.global)
-		cfg, ides := loadConfigForScope(sourceDirs)
-		if cfg == nil {
-			continue
-		}
-		for _, ideName := range ides {
-			ide := GetIDEDef(ideName)
-			if ide == nil {
+			if stat.Size() < pos {
+				if _, err := f.Seek(0, io.SeekStart); err != nil {
+					return err
+				}
+				reader.Reset(f)
+				pos = 0
+			}
+			if stat.Size() == pos {
 				continue
 			}
-			targetBase := resolveTarget(ide, scope.global)
-			if _, err := os.Stat(targetBase); err == nil {
-				watchRecursiveTarget(watcher, targetBase)
+			if _, err := f.Seek(pos, io.SeekStart); err != nil {
+				return err
 			}
+			reader.Reset(f)
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					return err
+				}
+				fmt.Print(line)
+			}
+			currentPos, err := f.Seek(0, io.SeekCurrent)
+			if err != nil {
+				return err
+			}
+			pos = currentPos
 		}
 	}
-
-	fmt.Println("watching for changes (ctrl+c to stop)")
-	return watcher.Run(ctx)
 }
 
-// watchRecursive adds a directory and all its subdirectories to the watcher (source dirs).
-func watchRecursive(w *Watcher, root string) {
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+type syncSummary struct {
+	Repos   int
+	Written int
+	Skipped int
+	Errors  int
+}
+
+func syncAllConfiguredRepos(dryRun bool) (syncSummary, error) {
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		return syncSummary{}, err
+	}
+
+	ides := chooseIDEs(cfg)
+	totals := syncSummary{}
+
+	for _, repo := range cfg.Repos {
+		repoStats, err := syncRepo(repo, ides, dryRun)
 		if err != nil {
-			return nil
+			totals.Errors++
+			logError("repo sync failed", lf("repo", repo), lf("error", err))
+			continue
 		}
-		if info.IsDir() {
-			w.Add(path)
-		}
-		return nil
-	})
+		totals.Repos++
+		totals.Written += repoStats.Written
+		totals.Skipped += repoStats.Skipped
+		totals.Errors += repoStats.Errors
+	}
+
+	return totals, nil
 }
 
-// watchRecursiveTarget adds a directory and all its subdirectories as target dirs.
-func watchRecursiveTarget(w *Watcher, root string) {
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+func syncRepo(repo string, ides []string, dryRun bool) (syncSummary, error) {
+	totals := syncSummary{Repos: 1}
+	sourceDir := filepath.Join(repo, ".agents")
+
+	if st, err := os.Stat(sourceDir); err != nil || !st.IsDir() {
+		return syncSummary{}, fmt.Errorf("missing %s", sourceDir)
+	}
+
+	for _, ideName := range ides {
+		ide := GetIDEDef(ideName)
+		if ide == nil {
+			totals.Errors++
+			continue
+		}
+
+		targetBase := filepath.Join(repo, ide.LocalDir)
+		plan, err := Discover(sourceDir, ide, targetBase)
 		if err != nil {
-			return nil
+			totals.Errors++
+			continue
 		}
-		if info.IsDir() {
-			w.AddTargetDir(path)
+		if len(plan.Items) == 0 {
+			continue
 		}
-		return nil
-	})
-}
 
-type syncScope struct {
-	global bool
-}
-
-func syncScopes() []syncScope {
-	if flagGlobal {
-		return []syncScope{{global: true}}
-	}
-	return []syncScope{{global: false}, {global: true}}
-}
-
-// loadConfigForScope finds and parses config for a set of source dirs.
-// Returns nil if no config found (no config = no sync).
-func loadConfigForScope(sourceDirs []string) (*Config, []string) {
-	configPath := FindConfigFile(sourceDirs)
-	if configPath == "" {
-		return nil, nil
+		result, err := Reconcile(plan, dryRun)
+		if err != nil {
+			totals.Errors++
+			continue
+		}
+		totals.Written += result.Written
+		totals.Skipped += result.Skipped
+		totals.Errors += len(result.Errors)
 	}
 
-	cfg, _ := ParseConfig(configPath)
-	if cfg == nil {
-		return nil, nil
-	}
+	return totals, nil
+}
 
+func chooseIDEs(cfg *Config) []string {
 	ides := cfg.IDEs
 	if flagIDE != "" {
 		ides = []string{flagIDE}
 	}
-
-	return cfg, ides
+	return ides
 }
 
-func resolveTarget(ide *IDEDef, global bool) string {
-	if global {
-		return ide.GlobalDir
+func resolveRepoArg(args []string) (string, error) {
+	path := "."
+	if len(args) == 1 {
+		path = args[0]
 	}
-	return ide.LocalDir
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	abs = filepath.Clean(abs)
+
+	st, err := os.Stat(abs)
+	if err != nil {
+		return "", err
+	}
+	if !st.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", abs)
+	}
+	return abs, nil
 }

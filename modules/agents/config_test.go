@@ -12,14 +12,15 @@ import (
 func TestParseConfig(t *testing.T) {
 	t.Run("valid yaml config", func(t *testing.T) {
 		dir := t.TempDir()
-		content := "ides:\n  - claude\n  - opencode\n  - crush\n"
+		content := "ides:\n  - claude\n  - opencode\nrepos:\n  - /tmp/repo1\n  - /tmp/repo2\n"
 		err := os.WriteFile(filepath.Join(dir, "agents.yaml"), []byte(content), 0644)
 		require.NoError(t, err)
 
 		cfg, err := ParseConfig(filepath.Join(dir, "agents.yaml"))
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
-		assert.Equal(t, []string{"claude", "opencode", "crush"}, cfg.IDEs)
+		assert.Equal(t, []string{"claude", "opencode"}, cfg.IDEs)
+		assert.Equal(t, []string{"/tmp/repo1", "/tmp/repo2"}, cfg.Repos)
 	})
 
 	t.Run("missing file returns nil", func(t *testing.T) {
@@ -30,7 +31,7 @@ func TestParseConfig(t *testing.T) {
 
 	t.Run("empty ides uses defaults", func(t *testing.T) {
 		dir := t.TempDir()
-		content := "ides: []\n"
+		content := "ides: []\nrepos: []\n"
 		err := os.WriteFile(filepath.Join(dir, "agents.yaml"), []byte(content), 0644)
 		require.NoError(t, err)
 
@@ -38,38 +39,52 @@ func TestParseConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
 		assert.Equal(t, DefaultIDEs, cfg.IDEs)
+		assert.Empty(t, cfg.Repos)
 	})
 }
 
-func TestFindConfigFile(t *testing.T) {
-	t.Run("finds agents.yaml", func(t *testing.T) {
-		dir := t.TempDir()
-		p := filepath.Join(dir, "agents.yaml")
-		require.NoError(t, os.WriteFile(p, []byte("ides:\n  - claude\n"), 0644))
+func TestLoadSaveGlobalConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
-		found := FindConfigFile([]string{dir})
-		assert.Equal(t, p, found)
-	})
+	cfg := &Config{
+		IDEs:  []string{"claude"},
+		Repos: []string{"/b/repo", "/a/repo", "/b/repo"},
+	}
+	require.NoError(t, SaveGlobalConfig(cfg))
 
-	t.Run("returns empty when not found", func(t *testing.T) {
-		dir := t.TempDir()
-		found := FindConfigFile([]string{dir})
-		assert.Empty(t, found)
-	})
+	assert.FileExists(t, GlobalConfigPath())
+
+	loaded, err := LoadGlobalConfig()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"claude"}, loaded.IDEs)
+	assert.Equal(t, []string{"/a/repo", "/b/repo"}, loaded.Repos)
 }
 
-func TestResolveSourceDirs(t *testing.T) {
-	t.Run("global sources", func(t *testing.T) {
-		dirs := ResolveSourceDirs(true)
-		assert.Len(t, dirs, 1)
-		assert.Contains(t, dirs[0], ".agents")
-	})
+func TestAddRepo(t *testing.T) {
+	cfg := &Config{
+		IDEs:  append([]string{}, DefaultIDEs...),
+		Repos: []string{"/a/repo"},
+	}
 
-	t.Run("local sources", func(t *testing.T) {
-		dirs := ResolveSourceDirs(false)
-		assert.Len(t, dirs, 2)
-		assert.Equal(t, ".agents", dirs[0])
-	})
+	added := AddRepo(cfg, "/b/repo")
+	assert.True(t, added)
+	assert.Equal(t, []string{"/a/repo", "/b/repo"}, cfg.Repos)
+
+	added = AddRepo(cfg, "/a/repo")
+	assert.False(t, added)
+	assert.Equal(t, []string{"/a/repo", "/b/repo"}, cfg.Repos)
+}
+
+func TestGlobalPaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	assert.Equal(t, filepath.Join(home, ".config", "cly"), GlobalConfigDir())
+	assert.Equal(t, filepath.Join(home, ".config", "cly", "agents.yaml"), GlobalConfigPath())
+	assert.Equal(t, filepath.Join(home, ".config", "cly", "agents.pid"), PidFilePath())
+	assert.Equal(t, filepath.Join(home, ".config", "cly", "agents.log"), LogFilePath())
+	assert.Equal(t, filepath.Join(home, ".config", "cly", "agents.status.yaml"), StatusFilePath())
 }
 
 func TestIDEDefs(t *testing.T) {
@@ -88,17 +103,6 @@ func TestIDEDefs(t *testing.T) {
 	assert.Equal(t, "agent", opencode.DirRenames["agents"])
 	assert.Equal(t, "skill", opencode.DirRenames["skills"])
 
-	crush := GetIDEDef("crush")
-	require.NotNil(t, crush)
-
 	unknown := GetIDEDef("nonexistent")
 	assert.Nil(t, unknown)
-}
-
-func TestSpecialFiles(t *testing.T) {
-	claude := GetIDEDef("claude")
-	assert.Equal(t, "settings.json", claude.SpecialFiles["claude.json"])
-
-	opencode := GetIDEDef("opencode")
-	assert.Equal(t, "opencode.json", opencode.SpecialFiles["opencode.json"])
 }

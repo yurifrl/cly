@@ -12,67 +12,49 @@ func newTestRoot() *cobra.Command {
 	return root
 }
 
-func TestRegister_RunSubcommand(t *testing.T) {
-	root := newTestRoot()
-	// "agents run" should exist
-	cmd, _, err := root.Find([]string{"agents", "run"})
-	if err != nil {
-		t.Fatalf("find agents run: %v", err)
-	}
-	if cmd.Use != "run" {
-		t.Fatalf("expected 'run', got %q", cmd.Use)
-	}
-
-	// start should have -d flag
-	f := cmd.Flags().Lookup("detach")
-	if f == nil {
-		t.Fatal("missing --detach flag")
-	}
-	if f.Shorthand != "d" {
-		t.Fatalf("expected shorthand 'd', got %q", f.Shorthand)
-	}
-
-	// start should have --rm flag
-	f = cmd.Flags().Lookup("rm")
-	if f == nil {
-		t.Fatal("missing --rm flag")
-	}
-}
-
-func TestRegister_NoDaemonOrSyncSubcommand(t *testing.T) {
+func TestRegister_NewSubcommands(t *testing.T) {
 	root := newTestRoot()
 
-	// "daemon" should not exist
-	cmd, _, _ := root.Find([]string{"agents", "daemon"})
-	if cmd != nil && cmd.Use == "daemon" {
-		t.Fatal("daemon subcommand should be removed")
-	}
-
-	// "sync" should not exist
-	cmd, _, _ = root.Find([]string{"agents", "sync"})
-	if cmd != nil && cmd.Use == "sync" {
-		t.Fatal("sync subcommand should be removed")
-	}
-}
-
-func TestRegister_StatusStopConfigure(t *testing.T) {
-	root := newTestRoot()
-
-	for _, name := range []string{"status", "stop", "configure"} {
+	for _, name := range []string{"sync", "start", "add", "logs", "status", "stop"} {
 		cmd, _, err := root.Find([]string{"agents", name})
 		if err != nil {
 			t.Fatalf("find agents %s: %v", name, err)
 		}
-		if cmd.Use != name {
-			t.Fatalf("expected %q, got %q", name, cmd.Use)
+		if cmd.Use == "" {
+			t.Fatalf("expected subcommand %q to exist", name)
 		}
+	}
+}
+
+func TestRegister_RemovedSubcommands(t *testing.T) {
+	root := newTestRoot()
+
+	for _, name := range []string{"run", "configure", "daemon"} {
+		cmd, _, _ := root.Find([]string{"agents", name})
+		if cmd != nil && cmd.Name() == name {
+			t.Fatalf("subcommand %q should be removed", name)
+		}
+	}
+}
+
+func TestRegister_LogsFlags(t *testing.T) {
+	root := newTestRoot()
+	cmd, _, err := root.Find([]string{"agents", "logs"})
+	if err != nil {
+		t.Fatalf("find agents logs: %v", err)
+	}
+
+	if cmd.Flags().Lookup("follow") == nil {
+		t.Fatal("missing --follow on logs")
+	}
+	if cmd.Flags().Lookup("tail") == nil {
+		t.Fatal("missing --tail on logs")
 	}
 }
 
 func TestRegister_BareAgentsShowsHelp(t *testing.T) {
 	root := newTestRoot()
 	cmd, _, _ := root.Find([]string{"agents"})
-	// runDefault should not be set (bare agents = help)
 	if cmd.RunE != nil {
 		t.Fatal("bare 'agents' should not have RunE (show help instead)")
 	}

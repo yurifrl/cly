@@ -66,6 +66,9 @@ func discoverShared(sourceDir string, ide *IDEDef, targetBase string, plan *Sync
 			if err != nil || info.IsDir() {
 				return err
 			}
+			if !shouldSyncFile(path) {
+				return nil
+			}
 
 			rel, _ := filepath.Rel(srcSub, path)
 			targetPath := filepath.Join(targetBase, targetSubdir, rel)
@@ -102,6 +105,9 @@ func discoverShared(sourceDir string, ide *IDEDef, targetBase string, plan *Sync
 	for srcName, dstName := range ide.SpecialFiles {
 		srcPath := filepath.Join(sourceDir, srcName)
 		if _, err := os.Stat(srcPath); err == nil {
+			if !shouldSyncFile(srcPath) {
+				continue
+			}
 			transform := TransformNone
 			if strings.HasSuffix(srcName, ".jsonc") {
 				transform = TransformJSONCSK
@@ -126,6 +132,9 @@ func discoverIDESpecific(ideDir string, ide *IDEDef, targetBase string, plan *Sy
 	return filepath.Walk(ideDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
+		}
+		if !shouldSyncFile(path) {
+			return nil
 		}
 
 		rel, _ := filepath.Rel(ideDir, path)
@@ -158,4 +167,14 @@ func classifyTransform(path string, ide *IDEDef) TransformKind {
 	}
 
 	return TransformNone
+}
+
+func shouldSyncFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".md", ".yaml", ".yml", ".json", ".jsonc":
+		return true
+	default:
+		return false
+	}
 }
