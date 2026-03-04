@@ -29,6 +29,47 @@ func (m *Model) ensureCursorVisible() {
 	}
 }
 
+func listItemRenderHeight(item ListItem) int {
+	if item.Type == ListItemSeparator {
+		return 2 // separator renders a blank line + separator line
+	}
+	return 1
+}
+
+func (m *Model) indexAtMouseY(y int) int {
+	if len(m.filteredItems) == 0 {
+		return -1
+	}
+
+	headerLines := 4
+	footerLines := 6
+	effectiveHeight := m.viewportHeight - headerLines - footerLines
+	if effectiveHeight < 5 {
+		effectiveHeight = 5
+	}
+
+	endIdx := m.scrollOffset + effectiveHeight
+	if endIdx > len(m.filteredItems) {
+		endIdx = len(m.filteredItems)
+	}
+
+	listStartY := headerLines
+	if m.scrollOffset > 0 {
+		listStartY++ // top "more above" indicator
+	}
+
+	lineY := listStartY
+	for i := m.scrollOffset; i < endIdx; i++ {
+		h := listItemRenderHeight(m.filteredItems[i])
+		if y >= lineY && y < lineY+h {
+			return i
+		}
+		lineY += h
+	}
+
+	return -1
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -40,6 +81,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if m.showHelp {
+			if msg.Action != tea.MouseActionPress {
+				return m, nil
+			}
 			switch msg.Button {
 			case tea.MouseButtonWheelUp:
 				if m.helpScrollOffset > 0 {
@@ -50,15 +94,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+
+		if m.showContextSwitcher {
+			if msg.Button == tea.MouseButtonLeft {
+				// Box has border + padding; options start a few rows below the top.
+				row := msg.Y - 4
+				if row >= 0 {
+					idx := row / 2
+					if idx >= 0 && idx < len(contextOptions) {
+						m.contextMenuCursor = idx
+						selected := contextOptions[m.contextMenuCursor]
+						return m, m.switchContext(selected.ai, selected.scope)
+					}
+				}
+			}
+			return m, nil
+		}
+
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
+			if msg.Action != tea.MouseActionPress {
+				return m, nil
+			}
 			if m.cursor > 0 {
 				m.cursor--
 				m.ensureCursorVisible()
 			}
 		case tea.MouseButtonWheelDown:
+			if msg.Action != tea.MouseActionPress {
+				return m, nil
+			}
 			if m.cursor < len(m.filteredItems)-1 {
 				m.cursor++
+				m.ensureCursorVisible()
+			}
+		case tea.MouseButtonLeft:
+			idx := m.indexAtMouseY(msg.Y)
+			if idx >= 0 && idx < len(m.filteredItems) {
+				m.cursor = idx
 				m.ensureCursorVisible()
 			}
 		}
