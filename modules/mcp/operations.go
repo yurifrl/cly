@@ -23,6 +23,7 @@ func (m Model) performOperation() tea.Msg {
 
 	for _, mcp := range m.availableMCPs {
 		if m.checkedMCPs[mcp.Name] {
+			mcp.ExtraFields = m.mergedExtraFields(mcp.Name)
 			mcpsToWrite = append(mcpsToWrite, mcp)
 		}
 	}
@@ -69,6 +70,50 @@ func (m Model) performOperation() tea.Msg {
 		success: true,
 		message: message,
 	}
+}
+
+// mergedExtraFields combines global extra params with per-MCP extra params.
+// Per-MCP values override global ones for the same key.
+func (m Model) mergedExtraFields(mcpName string) map[string]interface{} {
+	if m.globalConfig == nil || len(m.globalConfig.ExtraParams) == 0 {
+		return nil
+	}
+
+	// Build a lookup from key → ExtraParam definition
+	paramByKey := make(map[string]ExtraParam)
+	for _, p := range m.globalConfig.ExtraParams {
+		paramByKey[p.Key] = p
+	}
+
+	result := make(map[string]interface{})
+
+	// Apply global params first
+	for key, on := range m.globalExtraParams {
+		if on {
+			if p, ok := paramByKey[key]; ok {
+				result[key] = p.Value
+			}
+		}
+	}
+
+	// Per-MCP params override globals (same key → per-MCP wins)
+	if perMCP, ok := m.mcpExtraParams[mcpName]; ok {
+		for key, on := range perMCP {
+			if on {
+				if p, ok := paramByKey[key]; ok {
+					result[key] = p.Value
+				}
+			} else {
+				// Explicitly turned off per-MCP → remove even if global has it
+				delete(result, key)
+			}
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 type uiPreferencesSavedMsg struct {

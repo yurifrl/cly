@@ -35,6 +35,14 @@ func GetAdapter(ai string) (Adapter, error) {
 // ClaudeAdapter implements the Adapter interface for Claude Code
 type ClaudeAdapter struct{}
 
+// applyExtraFields merges ExtraFields from an MCP into a raw map (used by all adapters).
+// ExtraFields keys are written at the root level of the MCP JSON entry.
+func applyExtraFields(m map[string]interface{}, mcp MCP) {
+	for k, v := range mcp.ExtraFields {
+		m[k] = v
+	}
+}
+
 // claudeMCP wraps MCP with custom JSON marshaling for Claude Code
 type claudeMCP struct {
 	MCP
@@ -60,6 +68,7 @@ func (c claudeMCP) MarshalJSON() ([]byte, error) {
 	if len(c.Headers) > 0 {
 		m["headers"] = c.Headers
 	}
+	applyExtraFields(m, c.MCP)
 	return json.Marshal(m)
 }
 
@@ -275,6 +284,7 @@ func (p piMCP) MarshalJSON() ([]byte, error) {
 	if len(p.Headers) > 0 {
 		m["headers"] = p.Headers
 	}
+	applyExtraFields(m, p.MCP)
 	return json.Marshal(m)
 }
 
@@ -454,6 +464,7 @@ func (c cursorMCP) MarshalJSON() ([]byte, error) {
 	if len(c.Headers) > 0 {
 		m["headers"] = c.Headers
 	}
+	applyExtraFields(m, c.MCP)
 	return json.Marshal(m)
 }
 
@@ -632,6 +643,7 @@ func (d desktopMCP) MarshalJSON() ([]byte, error) {
 	if len(d.Headers) > 0 {
 		m["headers"] = d.Headers
 	}
+	applyExtraFields(m, d.MCP)
 	return json.Marshal(m)
 }
 

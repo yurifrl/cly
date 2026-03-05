@@ -76,6 +76,16 @@ func (m Model) View() string {
 		return m.renderContextSwitcher()
 	}
 
+	// Render base UI, then overlay extra params modal if open
+	base := m.renderBaseView()
+	if m.showExtraModal {
+		return m.renderWithModalOverlay(base)
+	}
+	return base
+}
+
+// renderBaseView renders the main list UI (without modal).
+func (m Model) renderBaseView() string {
 	var b strings.Builder
 
 	// Title
@@ -210,6 +220,9 @@ func (m Model) View() string {
 					line += lipgloss.NewStyle().Foreground(colorGray).Render(fmt.Sprintf(" [%s]", tags))
 				}
 
+				// Add extra param badges
+				line += m.renderExtraParamBadges(mcpName)
+
 				// Add pending indicator
 				if isPending {
 					if isChecked && !wasInstalled {
@@ -298,11 +311,76 @@ func (m Model) View() string {
 	b.WriteString("\n\n")
 
 	// Help
-	helpText := "↑/k ↓/j nav • n/N section • Space toggle • Enter apply • / search • q quit"
+	helpText := "↑/k ↓/j nav • n/N section • Space toggle • e extra params • g global • Enter apply • / search • q quit"
 	if m.searchFocused {
 		helpText += " • Shift+Space for space"
 	}
 	b.WriteString(helpText + "\n")
 
 	return b.String()
+}
+
+// renderWithModalOverlay places the extra params modal centered over the base view.
+func (m Model) renderWithModalOverlay(base string) string {
+	lines := strings.Split(base, "\n")
+	height := len(lines)
+	width := 0
+	for _, l := range lines {
+		w := lipgloss.Width(l)
+		if w > width {
+			width = w
+		}
+	}
+	if width < 50 {
+		width = 50
+	}
+	if height < 20 {
+		height = 20
+	}
+
+	modal := m.extraModal.View()
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modal,
+		lipgloss.WithWhitespaceChars("·"),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("236")),
+	)
+}
+
+// renderExtraParamBadges returns badge strings for extra params active on an MCP.
+// Per-MCP params show as [key], global params show as [G:key].
+func (m Model) renderExtraParamBadges(mcpName string) string {
+	if m.globalConfig == nil || len(m.globalConfig.ExtraParams) == 0 {
+		return ""
+	}
+
+	badgeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("135")).
+		Bold(true)
+	globalBadgeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("226")).
+		Bold(true)
+
+	var badges []string
+	seen := make(map[string]bool)
+
+	// Per-MCP badges (take precedence)
+	if perMCP, ok := m.mcpExtraParams[mcpName]; ok {
+		for _, p := range m.globalConfig.ExtraParams {
+			if perMCP[p.Key] {
+				badges = append(badges, badgeStyle.Render("["+p.Key+"]"))
+				seen[p.Key] = true
+			}
+		}
+	}
+
+	// Global badges (only if not already shown as per-MCP)
+	for _, p := range m.globalConfig.ExtraParams {
+		if m.globalExtraParams[p.Key] && !seen[p.Key] {
+			badges = append(badges, globalBadgeStyle.Render("[G:"+p.Key+"]"))
+		}
+	}
+
+	if len(badges) == 0 {
+		return ""
+	}
+	return " " + strings.Join(badges, " ")
 }

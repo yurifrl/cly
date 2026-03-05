@@ -13,4 +13,7 @@ type MCP struct {
 	Tags        []string               `json:"tags,omitempty"`        // Custom metadata
 	Description string                 `json:"description,omitempty"` // Custom metadata
 	SourceFile  string                 `json:"-"`                     // Track which file MCP came from (not serialized)
+	// ExtraFields holds additional key-value pairs injected at write-time from ExtraParams config.
+	// These are NOT loaded from catalog YAML — they are set by the TUI before WriteConfig is called.
+	ExtraFields map[string]interface{} `json:"-"`
 }

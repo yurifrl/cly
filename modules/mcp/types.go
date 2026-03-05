@@ -6,6 +6,15 @@ type Context struct {
 	Scope string
 }
 
+// ExtraParam defines a configurable extra field that can be injected into MCP entries at write-time.
+// Users define available params in ~/.config/mcpcli/config.yaml under extraParams.
+// Example: key=lifecycle, value=lazy → adds "lifecycle": "lazy" to the MCP JSON.
+type ExtraParam struct {
+	Key   string      `json:"key"             yaml:"key"`
+	Value interface{} `json:"value"           yaml:"value"`
+	Label string      `json:"label,omitempty" yaml:"label,omitempty"`
+}
+
 // UIConfig represents UI preferences that can be persisted
 type UIConfig struct {
 	HiddenSections []string `json:"hiddenSections,omitempty" yaml:"hiddenSections,omitempty"`
@@ -23,6 +32,7 @@ type GlobalConfig struct {
 	Presets     map[string][]string       `json:"presets,omitempty"`
 	Projects    map[string]ProjectConfig  `json:"projects,omitempty"`
 	UI          UIConfig                  `json:"ui,omitempty" yaml:"ui,omitempty"`
+	ExtraParams []ExtraParam              `json:"extraParams,omitempty" yaml:"extraParams,omitempty"`
 }
 
 // ProjectConfig represents project-specific configuration

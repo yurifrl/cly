@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -72,6 +73,28 @@ func (m *Model) indexAtMouseY(y int) int {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	// Delegate to extra params modal when it's open
+	if m.showExtraModal {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			updated, closed, applied := m.extraModal.Update(keyMsg.String())
+			m.extraModal = updated
+			if applied {
+				// Save per-MCP active params
+				active := make(map[string]bool)
+				for _, p := range m.extraModal.params {
+					active[p.Key] = m.extraModal.active[p.Key]
+				}
+				m.mcpExtraParams[m.extraModal.mcpName] = active
+				m.showExtraModal = false
+				m.statusMessage = fmt.Sprintf("Extra params updated for %s", m.extraModal.mcpName)
+			} else if closed {
+				m.showExtraModal = false
+			}
+			return m, nil
+		}
+		return m, nil
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -560,8 +583,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMessage = "Applying changes..."
 			m.exitAfterApply = false
 			return m, m.applyChanges()
+
+		case "e":
+			// Open extra params modal for the selected MCP
+			if m.cursor < len(m.filteredItems) {
+				item := m.filteredItems[m.cursor]
+				if item.Type == ListItemMCP && item.MCP != nil {
+					params := m.availableExtraParams()
+					if len(params) == 0 {
+						m.statusMessage = "No extra params defined. Add 'extraParams' to ~/.config/mcpcli/config.yaml"
+					} else {
+						mcpName := strings.TrimSpace(item.Name)
+						m.extraModal = newExtraParamsModal(mcpName, params, m.mcpExtraParams[mcpName])
+						m.showExtraModal = true
+					}
+				}
+			}
+			return m, nil
+
+		case "g":
+			// Cycle global extra params: each press toggles the next param on/off
+			params := m.availableExtraParams()
+			if len(params) == 0 {
+				m.statusMessage = "No extra params defined. Add 'extraParams' to ~/.config/mcpcli/config.yaml"
+			} else {
+				idx := m.globalParamCycle % len(params)
+				p := params[idx]
+				m.globalExtraParams[p.Key] = !m.globalExtraParams[p.Key]
+				m.globalParamCycle++
+				if m.globalExtraParams[p.Key] {
+					m.statusMessage = fmt.Sprintf("Global: %s = %v ON (all MCPs)", p.Key, p.Value)
+				} else {
+					m.statusMessage = fmt.Sprintf("Global: %s OFF", p.Key)
+				}
+			}
+			return m, nil
 		}
 	}
 
 	return m, nil
+}
+
+// availableExtraParams returns the extra params defined in global config, or empty slice.
+func (m *Model) availableExtraParams() []ExtraParam {
+	if m.globalConfig == nil {
+		return nil
+	}
+	return m.globalConfig.ExtraParams
 }
