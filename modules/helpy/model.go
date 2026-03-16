@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,6 +42,9 @@ type model struct {
 	rendered        string
 	searching       bool
 	paletteOpen     bool
+	chatOpen        bool
+	chat            chatModel
+	chatEnabled     bool
 	searchQuery     string
 	matches         []int
 	matchIndex      int
@@ -112,6 +116,39 @@ func (m *model) Init() tea.Cmd {
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// When chat is open, delegate most messages to chat
+	if m.chatOpen {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			m.resizeForChat()
+			// Forward to chat too
+			var chatCmd tea.Cmd
+			m.chat, chatCmd = m.chat.Update(tea.WindowSizeMsg{
+				Width:  msg.Width,
+				Height: m.chatHeight(),
+			})
+			cmds = append(cmds, chatCmd)
+			return m, tea.Batch(cmds...)
+
+		case tea.KeyMsg:
+			if msg.String() == "esc" && !m.chat.loading {
+				m.chatOpen = false
+				m.resizeForDoc()
+				return m, nil
+			}
+
+		case streamChunkMsg, spinner.TickMsg:
+			// These always go to chat
+		}
+
+		var chatCmd tea.Cmd
+		m.chat, chatCmd = m.chat.Update(msg)
+		cmds = append(cmds, chatCmd)
+		return m, tea.Batch(cmds...)
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -187,6 +224,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+p":
 			m.openPalette()
 			return m, textinput.Blink
+		case "ctrl+a":
+			if m.chatEnabled {
+				m.chatOpen = true
+				m.resizeForChat()
+				cmd := m.chat.Init()
+				return m, cmd
+			}
+			return m, nil
 		case "n":
 			if len(m.matches) > 0 {
 				m.matchIndex = (m.matchIndex + 1) % len(m.matches)
@@ -231,6 +276,10 @@ func (m *model) View() string {
 		footer = m.helpView()
 	}
 
+	if m.chatOpen {
+		return m.viewport.View() + "\n" + m.chat.View()
+	}
+
 	return m.viewport.View() + footer
 }
 
@@ -273,7 +322,12 @@ func (m *model) paletteView() string {
 }
 
 func (m *model) helpView() string {
-	return helpStyle("\n  ↑/↓: Navigate • /: Search • ^P: Headers • q: Quit\n")
+	hint := "\n  ↑/↓: Navigate • /: Search • ^P: Headers"
+	if m.chatEnabled {
+		hint += " • ^A: AI Chat"
+	}
+	hint += " • q: Quit\n"
+	return helpStyle(hint)
 }
 
 func (m *model) openPalette() {
@@ -387,4 +441,35 @@ func (m *model) clearSearch() {
 	m.matches = nil
 	m.matchIndex = 0
 	m.searchInput.Reset()
+}
+
+// chatHeight returns the height allocated to the chat panel.
+func (m *model) chatHeight() int {
+	h := m.height * 40 / 100 // 40% of screen
+	if h < 10 {
+		h = 10
+	}
+	return h
+}
+
+// resizeForChat shrinks the doc viewport and sizes the chat panel.
+func (m *model) resizeForChat() {
+	chatH := m.chatHeight()
+	m.viewport.Height = m.height - chatH - 1
+	m.viewport.Width = m.width
+	m.setContent(m.content, m.width)
+
+	m.chat.width = m.width
+	m.chat.height = chatH
+	m.chat.viewport.Width = m.width
+	m.chat.textarea.SetWidth(m.width)
+	m.chat.viewport.Height = chatH - m.chat.textarea.Height() - 3
+	m.chat.refreshViewport()
+}
+
+// resizeForDoc restores the doc viewport to full height.
+func (m *model) resizeForDoc() {
+	m.viewport.Height = m.height - 2
+	m.viewport.Width = m.width
+	m.setContent(m.content, m.width)
 }
