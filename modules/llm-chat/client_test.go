@@ -3,7 +3,6 @@ package llmchat
 import (
 	"context"
 	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,10 +10,7 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	// Check if mods is available
-	if _, err := exec.LookPath("mods"); err != nil {
-		t.Skip("mods binary not found in PATH")
-	}
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-123")
 
 	tests := []struct {
 		name    string
@@ -24,14 +20,22 @@ func TestNewClient(t *testing.T) {
 		{
 			name: "with model",
 			flags: map[string]interface{}{
-				"model": "claude-sonnet-4-5",
+				"model": "claude-sonnet-4-20250514",
+				"api":   "anthropic",
 			},
 			wantErr: false,
 		},
 		{
-			name:    "empty flags",
+			name:    "empty flags defaults to anthropic",
 			flags:   map[string]interface{}{},
 			wantErr: false,
+		},
+		{
+			name: "openai provider",
+			flags: map[string]interface{}{
+				"api": "openai",
+			},
+			wantErr: false, // OPENAI_API_KEY may be set in env
 		},
 	}
 
@@ -51,53 +55,23 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClient_SendMessage(t *testing.T) {
-	// Skip unless explicitly enabled - this makes real API calls
 	if os.Getenv("RUN_INTEGRATION_TESTS") == "" {
 		t.Skip("Skipping integration test (set RUN_INTEGRATION_TESTS=1 to run)")
 	}
 
-	// Skip if mods not available
-	if _, err := exec.LookPath("mods"); err != nil {
-		t.Skip("mods binary not found in PATH")
-	}
-
-	// Skip if no API key
 	if os.Getenv("ANTHROPIC_API_KEY") == "" {
 		t.Skip("ANTHROPIC_API_KEY not set")
 	}
 
 	flags := map[string]interface{}{
-		"model": "claude-sonnet-4-5",
+		"model": "claude-sonnet-4-20250514",
 		"api":   "anthropic",
 	}
 	client, err := NewClient(flags)
 	require.NoError(t, err)
 
-	tests := []struct {
-		name           string
-		conversationID string
-		userMsg        string
-		wantErr        bool
-	}{
-		{
-			name:           "simple question",
-			conversationID: "",
-			userMsg:        "What is 2+2? Answer with just the number.",
-			wantErr:        false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			response, err := client.SendMessage(ctx, tt.conversationID, tt.userMsg, true)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.NotEmpty(t, response)
-			}
-		})
-	}
+	ctx := context.Background()
+	response, err := client.SendMessage(ctx, "", "What is 2+2? Answer with just the number.", true)
+	require.NoError(t, err)
+	assert.NotEmpty(t, response)
 }

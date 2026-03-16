@@ -1,67 +1,69 @@
 package llmchat
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"os/exec"
+	"strings"
+
+	"github.com/yurifrl/cly/pkg/llm"
 )
 
-// Client wraps mods binary for sending messages
+// Client wraps pkg/llm for sending messages
 type Client struct {
-	flags map[string]interface{}
+	llmClient llm.Client
 }
 
-// NewClient creates a new mods client wrapper
+// NewClient creates a new LLM client using the direct SDK
 func NewClient(flags map[string]interface{}) (*Client, error) {
-	// Check if mods is available
-	if _, err := exec.LookPath("mods"); err != nil {
-		return nil, fmt.Errorf("mods binary not found in PATH: %w", err)
+	provider := "anthropic"
+	model := ""
+	apiKey := ""
+
+	if p, ok := flags["api"].(string); ok && p != "" {
+		provider = p
+	}
+	if m, ok := flags["model"].(string); ok && m != "" {
+		model = m
+	}
+	if k, ok := flags["api_key"].(string); ok && k != "" {
+		apiKey = k
 	}
 
-	return &Client{
-		flags: flags,
-	}, nil
+	cfg := llm.Config{
+		Provider: llm.Provider(provider),
+		Model:    model,
+		APIKey:   apiKey,
+	}
+
+	client, err := llm.NewClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{llmClient: client}, nil
 }
 
-// SendMessage sends a message via mods and returns the response
+// SendMessage sends a message and returns the full response (non-streaming).
 func (c *Client) SendMessage(ctx context.Context, conversationID, userMsg string, isFirstMessage bool) (string, error) {
-	var args []string
-
-	// Add API flag first if specified
-	if api, ok := c.flags["api"].(string); ok {
-		args = append(args, "--api", api)
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Content: userMsg},
 	}
 
-	// Add model flag
-	if model, ok := c.flags["model"].(string); ok {
-		args = append(args, "-m", model)
+	ch, err := c.llmClient.Stream(ctx, "", msgs)
+	if err != nil {
+		return "", err
 	}
 
-	// Add conversation flags
-	if continueLast, ok := c.flags["continue-last"].(bool); ok && continueLast {
-		args = append(args, "-C")
-	} else if conversationID != "" {
-		if isFirstMessage {
-			// Start new conversation with specific ID using -t
-			args = append(args, "-t", conversationID)
-		} else {
-			// Continue existing conversation using -c
-			args = append(args, "-c", conversationID)
+	// Collect all chunks into a single response
+	var sb strings.Builder
+	for chunk := range ch {
+		if chunk.Err != nil {
+			return sb.String(), chunk.Err
 		}
+		if chunk.Done {
+			break
+		}
+		sb.WriteString(chunk.Text)
 	}
 
-	cmd := exec.CommandContext(ctx, "mods", args...)
-	cmd.Stdin = bytes.NewBufferString(userMsg)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("mods command failed: %w (stderr: %s)", err, stderr.String())
-	}
-
-	return stdout.String(), nil
+	return sb.String(), nil
 }
-

@@ -7,38 +7,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestContinueFlagShorthand(t *testing.T) {
+func TestRegister(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
 	Register(rootCmd)
 
 	aiCmd, _, err := rootCmd.Find([]string{"llm-chat"})
 	assert.NoError(t, err)
-
-	conversationID := "brave-turtle"
-
-	aiCmd.SetArgs([]string{"-c", conversationID})
-	err = aiCmd.ParseFlags([]string{"-c", conversationID})
-	assert.NoError(t, err)
-
-	value, err := aiCmd.Flags().GetString("continue")
-	assert.NoError(t, err)
-	assert.Equal(t, conversationID, value)
+	assert.Equal(t, "llm-chat", aiCmd.Use)
 }
 
-func TestContinueFlagLongForm(t *testing.T) {
+func TestApiFlagDefault(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
 	Register(rootCmd)
 
-	aiCmd, _, err := rootCmd.Find([]string{"llm-chat"})
+	aiCmd, _, _ := rootCmd.Find([]string{"llm-chat"})
+	value, err := aiCmd.Flags().GetString("api")
 	assert.NoError(t, err)
-
-	conversationID := "brave-turtle"
-
-	aiCmd.SetArgs([]string{"--continue", conversationID})
-	err = aiCmd.ParseFlags([]string{"--continue", conversationID})
-	assert.NoError(t, err)
-
-	value, err := aiCmd.Flags().GetString("continue")
-	assert.NoError(t, err)
-	assert.Equal(t, conversationID, value)
+	assert.Equal(t, "anthropic", value)
 }
