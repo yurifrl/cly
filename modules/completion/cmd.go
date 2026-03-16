@@ -67,9 +67,14 @@ func Register(parent *cobra.Command) {
 		Use:   "fish",
 		Short: "Generate fish completions",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cache, _ := cmd.Flags().GetBool("cache")
+			if cache {
+				return cacheFish(parent)
+			}
 			return genFish(parent, cmd.OutOrStdout())
 		},
 	}
+	fishCmd.Flags().Bool("cache", false, "Write to cache file (~/.cache/fish_completions/cly.fish); skip if already cached")
 
 	installCmd := &cobra.Command{
 		Use:   "install",
@@ -126,7 +131,59 @@ func genFish(root *cobra.Command, w interface{ Write([]byte) (int, error) }) err
 	return err
 }
 
+// CachePath returns the well-known cache file path.
+func CachePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cache", "fish_completions", "cly.fish"), nil
+}
+
+// ClearCache removes the cached completion file.
+func ClearCache() error {
+	p, err := CachePath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func cacheFish(root *cobra.Command) error {
+	p, err := CachePath()
+	if err != nil {
+		return err
+	}
+
+	// Skip if cache already exists
+	if _, err := os.Stat(p); err == nil {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		return fmt.Errorf("creating cache directory: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := genFish(root, &buf); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(p, buf.Bytes(), 0644); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "Cached completions to %s\n", p)
+	return nil
+}
+
 func installFish(root *cobra.Command, dir string) error {
+	// Clear stale cache so next shell start regenerates it
+	ClearCache()
+
 	var buf bytes.Buffer
 	if err := genFish(root, &buf); err != nil {
 		return err
