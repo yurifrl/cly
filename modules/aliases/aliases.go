@@ -10,7 +10,6 @@ import (
 var skipCommands = map[string]bool{
 	"help":       true,
 	"completion": true,
-	"aliases":    true,
 }
 
 type AliasEntry struct {

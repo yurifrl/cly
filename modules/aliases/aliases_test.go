@@ -101,12 +101,13 @@ func TestFormatFishCompletionsSkipsOverrides(t *testing.T) {
 	assert.NotContains(t, out, "complete -c zl")
 }
 
-func TestSkipAliasesCommand(t *testing.T) {
+func TestSkipHelpAndCompletion(t *testing.T) {
 	root := buildTestRoot()
-	root.AddCommand(&cobra.Command{Use: "aliases", Short: "Generate aliases"})
+	root.AddCommand(&cobra.Command{Use: "completion", Short: "Generate completions"})
 
 	entries := GenerateAliases(root, mockLookPath)
 	for _, e := range entries {
-		assert.NotEqual(t, "aliases", e.Alias, "aliases command should not alias itself")
+		assert.NotEqual(t, "help", e.Alias, "help command should not be aliased")
+		assert.NotEqual(t, "completion", e.Alias, "completion command should not be aliased")
 	}
 }
