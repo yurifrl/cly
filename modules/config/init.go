@@ -65,6 +65,14 @@ modules:
     python_file: ~/.config/cly/bundles/Pythonfile
     brew_file: ~/.config/cly/bundles/Brewfile
     rust_file: ~/.config/cly/bundles/Rustfile
+  agent_session:
+    providers:
+      claude:
+        command: claude
+        resume_args: ["-r", "{id}"]
+      pi:
+        command: pi
+        resume_args: ["--session", "{id}"]
   notify:
     enabled: true
     sound: false
@@ -92,6 +100,17 @@ modules:
     show_count: true
   dotfiles:
     zellij_plugins_dir: ~/.config/zellij/plugins
+    op:
+      account: ""
+    jobs:
+      retries:
+        enabled: true
+        max_attempts: 5
+        initial_delay: 2s
+        multiplier: 2
+        max_delay: 1m
+        jitter: true
+        reset_after: 10m
   backup:
     # GCS bucket for backups (configure in config.local.yaml)
     gcs_bucket: ""
