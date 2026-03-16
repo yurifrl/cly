@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	claudesession "github.com/yurifrl/cly/modules/claude-session"
+	agentsession "github.com/yurifrl/cly/modules/agent-session"
 )
 
 func TestRunRename_ValidName(t *testing.T) {
@@ -25,22 +25,22 @@ func TestResumeOrCreateSession_CreateNew(t *testing.T) {
 	sessionsFile := filepath.Join(tmpDir, "sessions.json")
 	workDir := t.TempDir()
 
-	sessions := claudesession.Sessions{}
-	err := claudesession.Save(sessionsFile, sessions)
+	sessions := agentsession.Sessions{}
+	err := agentsession.Save(sessionsFile, sessions)
 	require.NoError(t, err)
 
 	sessionID := uuid.New().String()
-	sessions["testproj"] = claudesession.Entry{
+	sessions["testproj"] = agentsession.Entry{
 		ID:   sessionID,
 		Name: "testproj",
 		Path: workDir,
 	}
-	err = claudesession.Save(sessionsFile, sessions)
+	err = agentsession.Save(sessionsFile, sessions)
 	require.NoError(t, err)
 
-	loaded, err := claudesession.Load(sessionsFile)
+	loaded, err := agentsession.Load(sessionsFile)
 	require.NoError(t, err)
-	entry := claudesession.FindByName(loaded, "testproj")
+	entry := agentsession.FindByName(loaded, "testproj")
 	require.NotNil(t, entry)
 	assert.Equal(t, sessionID, entry.ID)
 	assert.Equal(t, workDir, entry.Path)
@@ -52,19 +52,19 @@ func TestResumeOrCreateSession_ResumeExisting(t *testing.T) {
 	workDir := t.TempDir()
 
 	existingID := uuid.New().String()
-	sessions := claudesession.Sessions{
-		"existing": claudesession.Entry{
+	sessions := agentsession.Sessions{
+		"existing": agentsession.Entry{
 			ID:   existingID,
 			Name: "existing",
 			Path: workDir,
 		},
 	}
-	err := claudesession.Save(sessionsFile, sessions)
+	err := agentsession.Save(sessionsFile, sessions)
 	require.NoError(t, err)
 
-	loaded, err := claudesession.Load(sessionsFile)
+	loaded, err := agentsession.Load(sessionsFile)
 	require.NoError(t, err)
-	entry := claudesession.FindByName(loaded, "existing")
+	entry := agentsession.FindByName(loaded, "existing")
 	require.NotNil(t, entry)
 	assert.Equal(t, existingID, entry.ID)
 }

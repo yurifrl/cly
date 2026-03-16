@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	claudesession "github.com/yurifrl/cly/modules/claude-session"
+	agentsession "github.com/yurifrl/cly/modules/agent-session"
 	"github.com/yurifrl/cly/pkg/session"
 )
 
@@ -70,12 +70,12 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 func restoreSession(name string) error {
-	sessions, err := claudesession.Load(claudesession.FilePath())
+	sessions, err := agentsession.Load(agentsession.FilePath())
 	if err != nil {
 		return err
 	}
 
-	entry := claudesession.FindByName(sessions, name)
+	entry := agentsession.FindByName(sessions, name)
 	if entry == nil {
 		return fmt.Errorf("session %q not found", name)
 	}
@@ -95,12 +95,12 @@ func resumeOrCreateSession(name string) error {
 		return err
 	}
 
-	sessions, err := claudesession.Load(claudesession.FilePath())
+	sessions, err := agentsession.Load(agentsession.FilePath())
 	if err != nil {
 		return err
 	}
 
-	entry := claudesession.FindByName(sessions, name)
+	entry := agentsession.FindByName(sessions, name)
 	if entry != nil {
 		fmt.Printf("📂 Resuming session: %s (id=%s)\n", name, entry.ID)
 		return session.ExecClaude([]string{"-r", entry.ID})
@@ -111,12 +111,13 @@ func resumeOrCreateSession(name string) error {
 
 	sessionID := uuid.New().String()
 
-	sessions[name] = claudesession.Entry{
-		ID:   sessionID,
-		Name: name,
-		Path: path,
+	sessions["claude:"+name] = agentsession.Entry{
+		ID:       sessionID,
+		Name:     name,
+		Provider: "claude",
+		Path:     path,
 	}
-	if err := claudesession.Save(claudesession.FilePath(), sessions); err != nil {
+	if err := agentsession.Save(agentsession.FilePath(), sessions); err != nil {
 		return err
 	}
 
