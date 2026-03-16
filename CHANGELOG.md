@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-03-12
+
+### Added
+- `cly zs` — interactive Zellij smart sessionizer that combines existing sessions, zoxide directories, and optional layout selection
+
 ## 2026-03-03
 
 ### Added

@@ -30,6 +30,14 @@ modules:
     rust_file: ~/.config/cly/bundles/Rustfile
   helpy:
     preprompt: "You help answer questions based on the HELP.md below. Explain commands, shortcuts, and workflows. ONLY modify files if explicitly instructed."
+    docs_dir: ~/DotFiles/docs
+    ai:
+      enabled: true
+      provider: "anthropic"
+      model: "claude-sonnet-4-20250514"
+      api_key: ""
+      api_key_env: "ANTHROPIC_API_KEY"
+      system_prompt: "You are a helpful assistant. Answer questions about the document provided. Be concise and reference specific sections when possible."
   notify:
     enabled: true
     sound: false
@@ -58,6 +66,17 @@ modules:
     show_count: true
   dotfiles:
     zellij_plugins_dir: ~/.config/zellij/plugins
+    op:
+      account: ""
+    jobs:
+      retries:
+        enabled: true
+        max_attempts: 5
+        initial_delay: 2s
+        multiplier: 2
+        max_delay: 1m
+        jitter: true
+        reset_after: 10m
   statusline:
     format: "$context │ $model │ $cost │ $custom"
     context:
@@ -86,10 +105,10 @@ type HookConfig struct {
 }
 
 type StatuslineConfig struct {
-	Format  string                `yaml:"format" mapstructure:"format"`
-	Context StatuslineItemConfig  `yaml:"context" mapstructure:"context"`
-	Model   StatuslineItemConfig  `yaml:"model" mapstructure:"model"`
-	Cost    StatuslineItemConfig  `yaml:"cost" mapstructure:"cost"`
+	Format  string                 `yaml:"format" mapstructure:"format"`
+	Context StatuslineItemConfig   `yaml:"context" mapstructure:"context"`
+	Model   StatuslineItemConfig   `yaml:"model" mapstructure:"model"`
+	Cost    StatuslineItemConfig   `yaml:"cost" mapstructure:"cost"`
 	Custom  StatuslineCustomConfig `yaml:"custom" mapstructure:"custom"`
 }
 
@@ -104,13 +123,13 @@ type StatuslineCustomConfig struct {
 }
 
 type NotifyConfig struct {
-	Enabled         bool                  `yaml:"enabled" mapstructure:"enabled"`
-	Sound           bool                  `yaml:"sound" mapstructure:"sound"`
-	UseZellijStatus bool                  `yaml:"use_zellij_status" mapstructure:"use_zellij_status"` // zjstatus plugin
-	UseZellijNotify    bool                `yaml:"use_zellij_notify" mapstructure:"use_zellij_notify"`       // old notify plugin
-	UseZellijAttention bool                `yaml:"use_zellij_attention" mapstructure:"use_zellij_attention"` // zellij-attention plugin
-	Icon            string                `yaml:"icon" mapstructure:"icon"`
-	Hooks           map[string]HookConfig `yaml:"hooks" mapstructure:"hooks"`
+	Enabled            bool                  `yaml:"enabled" mapstructure:"enabled"`
+	Sound              bool                  `yaml:"sound" mapstructure:"sound"`
+	UseZellijStatus    bool                  `yaml:"use_zellij_status" mapstructure:"use_zellij_status"`       // zjstatus plugin
+	UseZellijNotify    bool                  `yaml:"use_zellij_notify" mapstructure:"use_zellij_notify"`       // old notify plugin
+	UseZellijAttention bool                  `yaml:"use_zellij_attention" mapstructure:"use_zellij_attention"` // zellij-attention plugin
+	Icon               string                `yaml:"icon" mapstructure:"icon"`
+	Hooks              map[string]HookConfig `yaml:"hooks" mapstructure:"hooks"`
 }
 
 type Config struct {

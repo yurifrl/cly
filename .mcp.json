@@ -23,17 +23,16 @@
     },
     "filesystem": {
       "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/tmp"
+        "run",
+        "-i",
+        "--rm",
+        "--mount",
+        "type=bind,src=/Users/yuri/Workdir,dst=/projects/workspace",
+        "mcp/filesystem",
+        "/projects"
       ],
-      "command": "npx"
-    },
-    "git": {
-      "args": [
-        "mcp-server-git"
-      ],
-      "command": "uvx"
+      "command": "container",
+      "type": "stdio"
     },
     "github": {
       "args": [
@@ -68,25 +67,6 @@
         "https://gitmcp.io/charmbracelet/lipgloss"
       ],
       "command": "npx"
-    },
-    "serena": {
-      "args": [
-        "--from",
-        "git+https://github.com/oraios/serena",
-        "serena",
-        "start-mcp-server",
-        "--context",
-        "ide-assistant",
-        "--project",
-        "$(pwd)",
-        "--enable-web-dashboard",
-        "false"
-      ],
-      "command": "uvx",
-      "type": "stdio"
-    },
-    "vectorcode": {
-      "command": "vectorcode-mcp-server"
     },
     "viper_docs": {
       "args": [

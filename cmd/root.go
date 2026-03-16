@@ -5,19 +5,19 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	agentsession "github.com/yurifrl/cly/modules/agent-session"
 	"github.com/yurifrl/cly/modules/agents"
-	"github.com/yurifrl/cly/modules/llm-chat"
 	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
 	"github.com/yurifrl/cly/modules/bundle"
 	"github.com/yurifrl/cly/modules/claude"
-	claudesession "github.com/yurifrl/cly/modules/claude-session"
 	claudetasks "github.com/yurifrl/cly/modules/claude-tasks"
 	"github.com/yurifrl/cly/modules/completion"
 	"github.com/yurifrl/cly/modules/config"
 	"github.com/yurifrl/cly/modules/demo"
 	"github.com/yurifrl/cly/modules/dotfiles"
 	"github.com/yurifrl/cly/modules/helpy"
+	llmchat "github.com/yurifrl/cly/modules/llm-chat"
 	"github.com/yurifrl/cly/modules/mcp"
 	"github.com/yurifrl/cly/modules/notify"
 	"github.com/yurifrl/cly/modules/obsidian"
@@ -26,6 +26,7 @@ import (
 	"github.com/yurifrl/cly/modules/update"
 	"github.com/yurifrl/cly/modules/uuid"
 	"github.com/yurifrl/cly/modules/zl"
+	"github.com/yurifrl/cly/modules/zs"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
 )
@@ -65,17 +66,17 @@ func init() {
 	RootCmd.SetVersionTemplate(versionString())
 	completion.Register(RootCmd)
 	agents.Register(RootCmd)
-	llmchat.Register(RootCmd)
 	aliases.Register(RootCmd)
 	backup.Register(RootCmd)
 	claude.Register(RootCmd)
-	claudesession.Register(RootCmd)
+	agentsession.Register(RootCmd)
 	claudetasks.Register(RootCmd)
 	uuid.Register(RootCmd)
 	demo.Register(RootCmd)
 	config.Register(RootCmd)
 	dotfiles.Register(RootCmd)
 	helpy.Register(RootCmd)
+	llmchat.Register(RootCmd)
 	mcp.Register(RootCmd)
 	bundle.Register(RootCmd)
 	notify.Register(RootCmd)
@@ -83,6 +84,7 @@ func init() {
 	statusline.Register(RootCmd)
 	update.Register(RootCmd)
 	zl.Register(RootCmd)
+	zs.Register(RootCmd)
 	cmd.Register(RootCmd)
 }
 

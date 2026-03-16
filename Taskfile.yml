@@ -41,11 +41,10 @@ tasks:
     deps: [build, build:mcp]
 
   install:
-    desc: Install CLI to /usr/local/bin
+    desc: Install CLI to ~/.local/bin
     aliases: [i]
     cmds:
-      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
-      - sudo mv {{.BUILD_DIR}}/{{.BINARY_NAME}} /usr/local/bin/{{.BINARY_NAME}}
+      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o ~/.local/bin/{{.BINARY_NAME}} .
       - cly completion fish install
 
   install:mcp:

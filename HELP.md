@@ -13,7 +13,8 @@ task test                     # Run tests
 ```bash
 cly uuid                      # Generate UUIDs
 cly helpy / hy                # View help (this file or ~/DotFiles/HELP.md)
-cly helpy -i / hy -i          # Open Claude Code IDE with DotFiles + cly context
+cly helpy -i / hy -i          # Open Pi with DotFiles + cly context
+cly helpy -i --ai claude      # Override AI CLI (e.g. claude, opencode)
 cly demo <name>               # Run TUI demos
 cly scraper browser           # Launch scraper browser
 cly scraper aliexpress --url  # Scrape AliExpress

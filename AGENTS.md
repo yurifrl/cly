@@ -197,3 +197,21 @@ For non-trivial changes, use OpenSpec workflow. Read `openspec/AGENTS.md` when:
 - Demo modules are adapted from official Bubbletea examples in `.references/`
 - Tests skip if dependencies unavailable (e.g., 1Password CLI)
 - Config falls back to embedded defaults if no file exists
+
+## Tech Debt: Helpy AI Chat & LLM
+
+### Critical — Fix first
+- [ ] **AI chat is completely broken**: responses trickle in one word at a time with multi-second gaps between tokens. Should be instantaneous — other AI tools stream thousands of context tokens faster. The TUI locks completely during streaming: can't cancel, can't scroll, can't quit. Unusable in current state.
+- [ ] **No doc context passed**: the AI system prompt should include the full current document + frontmatter, but the context isn't reaching the model reliably. This is the core value prop — the AI must know what you're reading.
+- [ ] **`llm-chat` is broken**: still references the old mods-based client patterns internally. Needs full refactor to use `pkg/llm` SDK directly (Anthropic/OpenAI).
+
+### Aliases
+- [ ] Add `lchat` and `lc` as aliases for `llm-chat` (same pattern as `hy` for `helpy`).
+
+### Features
+- [ ] **Pipe support (`-p`)**: `echo "what is this?" | cly helpy -p` should accept stdin and print the AI answer inline (no TUI), like a one-shot query with doc context.
+- [ ] **Be AI-agnostic**: remove all mentions of "Claude" from `--help` text, flag descriptions, and function names. The tool supports Anthropic and OpenAI — language should reflect that.
+
+### UX
+- [ ] Show a visible streaming indicator (spinner + token count or elapsed time) so it's clear the AI is still working.
+- [ ] Allow typing the next question while a response is still streaming.
