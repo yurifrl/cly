@@ -169,7 +169,25 @@ func TestExtractHeadersEmpty(t *testing.T) {
 }
 
 func TestIdeFlag(t *testing.T) {
-	t.Run("ideFlag is false by default", func(t *testing.T) {
-		assert.False(t, ideFlag)
+	t.Run("ideFlag is empty by default", func(t *testing.T) {
+		assert.Empty(t, ideFlag)
 	})
+
+	t.Run("ideDefault returns pi when no env var", func(t *testing.T) {
+		t.Setenv("CLY_HELPY_IDE", "")
+		assert.Equal(t, "pi", ideDefault())
+	})
+
+	t.Run("ideDefault returns env var value", func(t *testing.T) {
+		t.Setenv("CLY_HELPY_IDE", "claude")
+		assert.Equal(t, "claude", ideDefault())
+	})
+}
+
+func TestResolveAI(t *testing.T) {
+	t.Skip("resolveAI was removed — AI is now handled by pkg/llm directly")
+}
+
+func TestBuildAICommand(t *testing.T) {
+	t.Skip("buildAICommand was removed — AI is now handled by pkg/llm directly")
 }
