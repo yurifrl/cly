@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 type Mapping struct {
@@ -15,10 +16,36 @@ type Mapping struct {
 	LineNum     int
 }
 
+type JobRun string
+
+const (
+	JobRunStartup  JobRun = "startup"
+	JobRunInterval JobRun = "interval"
+	JobRunOnce     JobRun = "once"
+)
+
+type Job struct {
+	Name      string
+	Run       JobRun
+	Command   string
+	Every     string
+	KeepAlive bool
+	LineNum   int
+}
+
+type OpMapping struct {
+	Source      string
+	Destination string
+	Account     string
+	LineNum     int
+}
+
 type Config struct {
 	BaseDir         string
 	Mappings        []Mapping
 	InstallCommands []string
+	Jobs            []Job
+	OpMappings      []OpMapping
 	Errors          []string
 }
 
@@ -30,9 +57,7 @@ func ParseConfig(configPath string) (*Config, error) {
 	defer file.Close()
 
 	baseDir := filepath.Dir(configPath)
-	cfg := &Config{
-		BaseDir: baseDir,
-	}
+	cfg := &Config{BaseDir: baseDir}
 
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
@@ -44,14 +69,22 @@ func ParseConfig(configPath string) (*Config, error) {
 			continue
 		}
 
-		if strings.HasPrefix(line, "!") {
+		switch {
+		case strings.HasPrefix(line, "!"):
 			cmd := strings.TrimSpace(line[1:])
 			cfg.InstallCommands = append(cfg.InstallCommands, cmd)
-			continue
-		}
-
-		if err := parseMappingLine(cfg, line, lineNum, baseDir); err != nil {
-			cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
+		case strings.HasPrefix(line, "@op "):
+			if err := parseOpLine(cfg, line, lineNum, baseDir); err != nil {
+				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
+			}
+		case strings.HasPrefix(line, "@"):
+			if err := parseJobLine(cfg, line, lineNum); err != nil {
+				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
+			}
+		default:
+			if err := parseMappingLine(cfg, line, lineNum, baseDir); err != nil {
+				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
+			}
 		}
 	}
 
@@ -60,6 +93,98 @@ func ParseConfig(configPath string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func parseJobLine(cfg *Config, line string, lineNum int) error {
+	parts := strings.SplitN(line, " -- ", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid job format, expected '@startup name -- command'")
+	}
+
+	meta := strings.Fields(parts[0])
+	if len(meta) < 2 {
+		return fmt.Errorf("job name is required")
+	}
+
+	job := Job{
+		Name:    meta[1],
+		Command: strings.TrimSpace(parts[1]),
+		LineNum: lineNum,
+	}
+
+	if job.Command == "" {
+		return fmt.Errorf("job command is empty")
+	}
+	if !isValidJobName(job.Name) {
+		return fmt.Errorf("invalid job name %q", job.Name)
+	}
+	if hasJobName(cfg.Jobs, job.Name) {
+		return fmt.Errorf("duplicate job name %q", job.Name)
+	}
+
+	switch meta[0] {
+	case "@startup":
+		job.Run = JobRunStartup
+		for _, token := range meta[2:] {
+			if token == "keepalive" {
+				job.KeepAlive = true
+				continue
+			}
+			return fmt.Errorf("unknown startup option %q", token)
+		}
+	case "@interval":
+		if len(meta) < 3 {
+			return fmt.Errorf("interval job requires every=<duration>")
+		}
+		if len(meta) > 3 {
+			return fmt.Errorf("interval job only supports '@interval name every=<duration> -- command'")
+		}
+		if !strings.HasPrefix(meta[2], "every=") {
+			return fmt.Errorf("interval job requires every=<duration>")
+		}
+		job.Run = JobRunInterval
+		job.Every = strings.TrimPrefix(meta[2], "every=")
+		if job.Every == "" {
+			return fmt.Errorf("interval job requires every=<duration>")
+		}
+	case "@once":
+		if len(meta) > 2 {
+			return fmt.Errorf("once job only supports '@once name -- command'")
+		}
+		job.Run = JobRunOnce
+	default:
+		return fmt.Errorf("unknown job directive %q", meta[0])
+	}
+
+	cfg.Jobs = append(cfg.Jobs, job)
+	return nil
+}
+
+func hasJobName(jobs []Job, name string) bool {
+	for _, job := range jobs {
+		if job.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func isValidJobName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			continue
+		}
+		switch r {
+		case '-', '_', '.':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func parseMappingLine(cfg *Config, line string, lineNum int, baseDir string) error {
@@ -113,4 +238,44 @@ func expandTilde(path string) string {
 		return filepath.Join(home, path[2:])
 	}
 	return path
+}
+
+func parseOpLine(cfg *Config, line string, lineNum int, baseDir string) error {
+	// @op [account=...] ./source -> ~/destination
+	rest := strings.TrimPrefix(line, "@op ")
+	rest = strings.TrimSpace(rest)
+
+	var account string
+	if strings.HasPrefix(rest, "account=") {
+		spaceIdx := strings.IndexByte(rest, ' ')
+		if spaceIdx == -1 {
+			return fmt.Errorf("@op requires source -> destination")
+		}
+		account = strings.TrimPrefix(rest[:spaceIdx], "account=")
+		rest = strings.TrimSpace(rest[spaceIdx+1:])
+	}
+
+	parts := strings.SplitN(rest, "->", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("@op requires source -> destination")
+	}
+
+	source := strings.TrimSpace(parts[0])
+	destination := strings.TrimSpace(parts[1])
+
+	if source == "" || destination == "" {
+		return fmt.Errorf("@op source or destination is empty")
+	}
+
+	source = resolvePath(source, baseDir)
+	destination = expandTilde(destination)
+
+	cfg.OpMappings = append(cfg.OpMappings, OpMapping{
+		Source:      source,
+		Destination: destination,
+		Account:     account,
+		LineNum:     lineNum,
+	})
+
+	return nil
 }

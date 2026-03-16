@@ -87,6 +87,45 @@ func TestDotfilesIntegration(t *testing.T) {
 		assert.Contains(t, string(output), "✓")
 	})
 
+	t.Run("jobs flag applies once jobs", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		markerFile := filepath.Join(tmpDir, "marker.txt")
+		configContent := `@once bootstrap -- printf 'done\n' >> ` + markerFile
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+		cmd := exec.Command(binary, "dotfiles", "-j", "--config", configPath)
+		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "output: %s", output)
+
+		data, err := os.ReadFile(markerFile)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), "done")
+	})
+
+	t.Run("force reruns once jobs", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		markerFile := filepath.Join(tmpDir, "marker.txt")
+		configContent := `@once bootstrap -- printf 'done\n' >> ` + markerFile
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+		cmd := exec.Command(binary, "dotfiles", "-j", "--config", configPath)
+		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "output: %s", output)
+
+		cmd = exec.Command(binary, "dotfiles", "-j", "-f", "--config", configPath)
+		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+		output, err = cmd.CombinedOutput()
+		require.NoError(t, err, "output: %s", output)
+
+		data, err := os.ReadFile(markerFile)
+		require.NoError(t, err)
+		assert.Equal(t, 2, strings.Count(string(data), "done\n"))
+	})
+
 	t.Run("unlink removes symlinks", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		sourceFile := filepath.Join(tmpDir, "source.txt")

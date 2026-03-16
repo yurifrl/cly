@@ -14,6 +14,8 @@ import (
 
 var (
 	installFlag bool
+	jobsFlag    bool
+	forceFlag   bool
 	configFlag  string
 )
 
@@ -26,6 +28,8 @@ func Register(parent *cobra.Command) {
 	}
 
 	cmd.Flags().BoolVarP(&installFlag, "install", "i", false, "Execute install commands (lines starting with !)")
+	cmd.Flags().BoolVarP(&jobsFlag, "jobs", "j", false, "Apply declarative jobs (@startup/@interval/@once)")
+	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions (rerun @once jobs)")
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 
 	statusCmd := &cobra.Command{
@@ -41,6 +45,7 @@ func Register(parent *cobra.Command) {
 	}
 
 	cmd.AddCommand(statusCmd, unlinkCmd)
+	registerJobsCommands(cmd)
 	parent.AddCommand(cmd)
 }
 
@@ -97,6 +102,25 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if len(cfg.OpMappings) > 0 {
+		fmt.Printf("\n%s Injecting %d 1Password template(s)\n", style.BlueStyle.Render("🔑"), len(cfg.OpMappings))
+		if err := ApplyOpMappings(cfg); err != nil {
+			return err
+		}
+	}
+
+	if len(cfg.Jobs) > 0 {
+		if jobsFlag {
+			fmt.Printf("\n%s Applying %d job(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Jobs))
+			if err := ApplyJobs(cfg, JobApplyOptions{Force: forceFlag}); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("\n%s %d job(s) skipped (use -j to apply)\n",
+				style.YellowStyle.Render("⏭️ "), len(cfg.Jobs))
+		}
+	}
+
 	return nil
 }
 
@@ -124,6 +148,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	if len(cfg.InstallCommands) > 0 {
 		fmt.Printf("\nInstall commands: %d (use -i to execute)\n", len(cfg.InstallCommands))
+	}
+	if len(cfg.Jobs) > 0 {
+		fmt.Printf("Jobs: %d (use 'dotfiles jobs status' for details)\n", len(cfg.Jobs))
+	}
+	if len(cfg.OpMappings) > 0 {
+		fmt.Printf("1Password templates: %d (use -i to inject)\n", len(cfg.OpMappings))
 	}
 
 	return nil
