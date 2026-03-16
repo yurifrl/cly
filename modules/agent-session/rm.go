@@ -1,4 +1,4 @@
-package claudesession
+package agentsession
 
 import (
 	"fmt"
@@ -15,17 +15,26 @@ func rmCmd() *cobra.Command {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
+			provider, err := providerFromCmd(cmd)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
 			sessions, err := Load(filePathFn())
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
 			names := make([]string, 0, len(sessions))
-			for _, e := range sessions {
+			for _, e := range filterByProvider(sessions, provider.Name) {
 				names = append(names, e.Name)
 			}
 			return names, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			provider, err := providerFromCmd(cmd)
+			if err != nil {
+				return err
+			}
+
 			name := args[0]
 			filePath := filePathFn()
 
@@ -34,17 +43,17 @@ func rmCmd() *cobra.Command {
 				return err
 			}
 
-			if FindByName(sessions, name) == nil {
-				return fmt.Errorf("session %q not found", name)
+			if FindByNameForProvider(sessions, provider.Name, name) == nil {
+				return fmt.Errorf("%s session %q not found", provider.Name, name)
 			}
 
-			sessions = Remove(sessions, name)
+			sessions = RemoveForProvider(sessions, provider.Name, name)
 
 			if err := Save(filePath, sessions); err != nil {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted session %q\n", name)
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted %s session %q\n", provider.Name, name)
 			return nil
 		},
 	}

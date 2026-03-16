@@ -1,4 +1,4 @@
-package claudesession
+package agentsession
 
 import (
 	"fmt"
@@ -21,10 +21,16 @@ func lsCmd() *cobra.Command {
 }
 
 func runLS(cmd *cobra.Command, all bool) error {
+	provider, err := providerFromCmd(cmd)
+	if err != nil {
+		return err
+	}
+
 	sessions, err := Load(filePathFn())
 	if err != nil {
 		return err
 	}
+	sessions = filterByProvider(sessions, provider.Name)
 
 	if !all {
 		cwd, err := os.Getwd()
@@ -35,11 +41,11 @@ func runLS(cmd *cobra.Command, all bool) error {
 	}
 
 	if len(sessions) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No saved sessions")
+		fmt.Fprintf(cmd.OutOrStdout(), "No saved %s sessions\n", provider.Name)
 		return nil
 	}
 
-	entry, yolo, err := runPicker(sessions, "Sessions")
+	entry, yolo, err := runPicker(sessions, providerSupportsYolo(provider))
 	if err != nil {
 		return err
 	}
@@ -47,5 +53,5 @@ func runLS(cmd *cobra.Command, all bool) error {
 		return nil
 	}
 
-	return resumeEntry(entry, yolo)
+	return resumeEntry(entry, provider, yolo)
 }

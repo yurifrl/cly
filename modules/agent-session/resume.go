@@ -1,4 +1,4 @@
-package claudesession
+package agentsession
 
 import (
 	"fmt"
@@ -17,40 +17,54 @@ func resumeCmd() *cobra.Command {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
+			provider, err := providerFromCmd(cmd)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
 			sessions, err := Load(filePathFn())
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
 			names := make([]string, 0, len(sessions))
-			for _, e := range sessions {
+			for _, e := range filterByProvider(sessions, provider.Name) {
 				names = append(names, e.Name)
 			}
 			return names, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			provider, err := providerFromCmd(cmd)
+			if err != nil {
+				return err
+			}
+
 			query := args[0]
 			sessions, err := Load(filePathFn())
 			if err != nil {
 				return err
 			}
 
-			entry := findEntry(sessions, query)
+			entry := findEntry(sessions, provider.Name, query)
 			if entry == nil {
-				return fmt.Errorf("session %q not found", query)
+				return fmt.Errorf("%s session %q not found", provider.Name, query)
 			}
 
-			return resumeEntry(entry, false)
+			return resumeEntry(entry, provider, false)
 		},
 	}
 }
 
-func resumeEntry(entry *Entry, yolo bool) error {
+func resumeEntry(entry *Entry, provider Provider, yolo bool) error {
+	if err := ensureProviderSupportsYolo(provider, yolo); err != nil {
+		return err
+	}
+
+	entry.Provider = provider.Name
 	entry.SavedAt = time.Now()
 	sessions, err := Load(filePathFn())
 	if err != nil {
 		return err
 	}
-	sessions[entry.Name] = *entry
+	upsertEntry(sessions, *entry)
 	if err := Save(filePathFn(), sessions); err != nil {
 		return err
 	}
@@ -64,5 +78,5 @@ func resumeEntry(entry *Entry, yolo bool) error {
 			return fmt.Errorf("chdir %s: %w", entry.Path, err)
 		}
 	}
-	return execClaude(entry, yolo)
+	return execProvider(entry, provider, yolo)
 }

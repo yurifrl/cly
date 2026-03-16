@@ -1,4 +1,4 @@
-package claudesession
+package agentsession
 
 import (
 	"fmt"
@@ -16,6 +16,11 @@ func saveCmd() *cobra.Command {
 		Short: "Save or update a session",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			provider, err := providerFromCmd(cmd)
+			if err != nil {
+				return err
+			}
+
 			name := args[0]
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -28,7 +33,7 @@ func saveCmd() *cobra.Command {
 				return err
 			}
 
-			entry := FindByName(sessions, name)
+			entry := FindByNameForProvider(sessions, provider.Name, name)
 			if entry == nil {
 				id := uuid.New().String()
 				if len(args) > 1 {
@@ -36,6 +41,7 @@ func saveCmd() *cobra.Command {
 				}
 				e := Entry{
 					Name:        name,
+					Provider:    provider.Name,
 					ID:          id,
 					Path:        cwd,
 					Description: flagDesc,
@@ -49,16 +55,17 @@ func saveCmd() *cobra.Command {
 				if flagDesc != "" {
 					entry.Description = flagDesc
 				}
+				entry.Provider = provider.Name
 				entry.Path = cwd
 				entry.SavedAt = time.Now()
 			}
 
-			sessions[name] = *entry
+			upsertEntry(sessions, *entry)
 			if err := Save(filePath, sessions); err != nil {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Saved session %q (id=%s)\n", name, entry.ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Saved %s session %q (id=%s)\n", provider.Name, name, entry.ID)
 			return nil
 		},
 	}

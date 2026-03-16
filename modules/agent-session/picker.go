@@ -1,4 +1,4 @@
-package claudesession
+package agentsession
 
 import (
 	"fmt"
@@ -18,6 +18,7 @@ var (
 	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	dateStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("72"))
 	idStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	providerTagStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	yoloOnStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	footerBoxStyle    = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
@@ -30,9 +31,14 @@ type pickerItem struct{ entry Entry }
 
 func (i pickerItem) FilterValue() string { return i.entry.Name }
 
+func providerTag(provider string) string {
+	provider = effectiveProvider(Entry{Provider: provider})
+	return providerTagStyle.Render(provider)
+}
+
 func (i pickerItem) headline() string {
 	sep := dimStyle.Render(" · ")
-	parts := []string{}
+	parts := []string{providerTag(i.entry.Provider)}
 	if !i.entry.SavedAt.IsZero() {
 		parts = append(parts, dateStyle.Render(i.entry.SavedAt.Format("2006-01-02 15:04")))
 	}
@@ -58,12 +64,13 @@ func (d simpleDelegate) Render(w io.Writer, m list.Model, index int, listItem li
 }
 
 type pickerModel struct {
-	list     list.Model
-	sessions Sessions
-	order    SortOrder
-	chosen   *Entry
-	yolo     bool
-	quit     bool
+	list      list.Model
+	sessions  Sessions
+	order     SortOrder
+	chosen    *Entry
+	yolo      bool
+	allowYolo bool
+	quit      bool
 }
 
 func (m pickerModel) Init() tea.Cmd { return nil }
@@ -91,7 +98,9 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list.SetItems(items)
 			return m, nil
 		case "y":
-			m.yolo = !m.yolo
+			if m.allowYolo {
+				m.yolo = !m.yolo
+			}
 			return m, nil
 		case "enter":
 			i, ok := m.list.SelectedItem().(pickerItem)
@@ -118,22 +127,23 @@ func (m pickerModel) View() string {
 	footer := ""
 	if i, ok := m.list.SelectedItem().(pickerItem); ok {
 		e := i.entry
-		content := dimStyle.Render("📁 "+shortenPath(e.Path)) + "\n" +
+		content := dimStyle.Render("🤖 "+effectiveProvider(e)) + "\n" +
+			dimStyle.Render("📁 "+shortenPath(e.Path)) + "\n" +
 			dimStyle.Render("📝 "+e.Description)
 		footer = footerBoxStyle.Render(content) + "\n"
 	}
 
-	yoloStatus := dimStyle.Render("off")
-	if m.yolo {
-		yoloStatus = yoloOnStyle.Render("ON")
+	helpText := m.list.Help.View(m.list) + dimStyle.Render("  • s: "+m.order.Label())
+	if m.allowYolo {
+		yoloStatus := dimStyle.Render("off")
+		if m.yolo {
+			yoloStatus = yoloOnStyle.Render("ON")
+		}
+		helpText += dimStyle.Render("  • y: yolo ") + yoloStatus
 	}
 
 	pagination := m.list.Styles.PaginationStyle.Render(m.list.Paginator.View()) + "\n"
-	help := m.list.Styles.HelpStyle.Render(
-		m.list.Help.View(m.list) +
-			dimStyle.Render("  • s: "+m.order.Label()) +
-			dimStyle.Render("  • y: yolo ") + yoloStatus,
-	)
+	help := m.list.Styles.HelpStyle.Render(helpText)
 
 	return strings.TrimLeft(m.list.View(), "\n") + "\n" + footer + pagination + help
 }
@@ -199,7 +209,7 @@ func sortedEntries(sessions Sessions, order SortOrder) []Entry {
 	return entries
 }
 
-func runPicker(sessions Sessions, title string) (*Entry, bool, error) {
+func runPicker(sessions Sessions, allowYolo bool) (*Entry, bool, error) {
 	entries := sortedEntries(sessions, SortDateDesc)
 	items := make([]list.Item, 0, len(entries))
 	for _, e := range entries {
@@ -218,7 +228,7 @@ func runPicker(sessions Sessions, title string) (*Entry, bool, error) {
 	l.Styles.PaginationStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
 	l.Styles.HelpStyle = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
 
-	p := tea.NewProgram(pickerModel{list: l, sessions: sessions, order: SortDateDesc})
+	p := tea.NewProgram(pickerModel{list: l, sessions: sessions, order: SortDateDesc, allowYolo: allowYolo})
 	m, err := p.Run()
 	if err != nil {
 		return nil, false, err
