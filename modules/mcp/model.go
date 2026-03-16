@@ -48,11 +48,11 @@ type Model struct {
 	// Extra params state
 	mcpExtraParams    map[string]map[string]bool // [mcpName][paramKey] → active (per-MCP)
 	globalExtraParams map[string]bool            // [paramKey] → active (applied to all MCPs)
-	globalParamCycle  int                        // index for cycling with 'g' key
 
 	// Extra params modal (shown over the list when showExtraModal is true)
-	showExtraModal bool
-	extraModal     ExtraParamsModal
+	showExtraModal    bool
+	extraModalIsGlobal bool // true = modal is editing global params, false = per-MCP
+	extraModal        ExtraParamsModal
 }
 
 // NewModel creates a new TUI model with initial state
@@ -101,8 +101,8 @@ func NewModel(catalog *Catalog, globalCfg *GlobalConfig, ctx Context, contextSou
 		cursor:            0,
 		scrollOffset:      0,
 		viewportHeight:    20,
-		mcpExtraParams:    make(map[string]map[string]bool),
-		globalExtraParams: make(map[string]bool),
+		mcpExtraParams:     make(map[string]map[string]bool),
+		globalExtraParams:  make(map[string]bool),
 	}
 }
 

@@ -80,14 +80,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updated, closed, applied := m.extraModal.Update(keyMsg.String())
 			m.extraModal = updated
 			if applied {
-				// Save per-MCP active params
 				active := make(map[string]bool)
 				for _, p := range m.extraModal.params {
 					active[p.Key] = m.extraModal.active[p.Key]
 				}
-				m.mcpExtraParams[m.extraModal.mcpName] = active
-				m.showExtraModal = false
-				m.statusMessage = fmt.Sprintf("Extra params updated for %s", m.extraModal.mcpName)
+				if m.extraModalIsGlobal {
+					// Save as global params — per-MCP overrides are preserved untouched
+					m.globalExtraParams = active
+					m.showExtraModal = false
+					m.statusMessage = "Global extra params updated"
+				} else {
+					// Save as per-MCP params
+					m.mcpExtraParams[m.extraModal.mcpName] = active
+					m.showExtraModal = false
+					m.statusMessage = fmt.Sprintf("Extra params updated for %s", m.extraModal.mcpName)
+				}
 			} else if closed {
 				m.showExtraModal = false
 			}
@@ -595,6 +602,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						mcpName := strings.TrimSpace(item.Name)
 						m.extraModal = newExtraParamsModal(mcpName, params, m.mcpExtraParams[mcpName])
+						m.extraModalIsGlobal = false
 						m.showExtraModal = true
 					}
 				}
@@ -602,20 +610,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "g":
-			// Cycle global extra params: each press toggles the next param on/off
+			// Open global extra params modal (same UI as per-MCP, applies to all MCPs)
 			params := m.availableExtraParams()
 			if len(params) == 0 {
 				m.statusMessage = "No extra params defined. Add 'extraParams' to ~/.config/mcpcli/config.yaml"
 			} else {
-				idx := m.globalParamCycle % len(params)
-				p := params[idx]
-				m.globalExtraParams[p.Key] = !m.globalExtraParams[p.Key]
-				m.globalParamCycle++
-				if m.globalExtraParams[p.Key] {
-					m.statusMessage = fmt.Sprintf("Global: %s = %v ON (all MCPs)", p.Key, p.Value)
-				} else {
-					m.statusMessage = fmt.Sprintf("Global: %s OFF", p.Key)
-				}
+				m.extraModal = newExtraParamsModal("global (all MCPs)", params, m.globalExtraParams)
+				m.extraModalIsGlobal = true
+				m.showExtraModal = true
 			}
 			return m, nil
 		}
