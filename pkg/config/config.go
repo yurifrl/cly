@@ -62,6 +62,8 @@ modules:
         zellij_event: "stop"
   uuid:
     default_version: v4
+  install:
+    source_dir: /Users/yuri/Workdir/Yuri/cly
   demo:
     show_count: true
   dotfiles:
@@ -93,6 +95,15 @@ modules:
   # backup:
   #   gcs_bucket: op://Personal/gcs-backup/bucket-name
   #   gcs_token: op://Personal/gcs-backup/token
+  git-commits:
+    batch_size: 40000
+    timeout: 30000
+    split_prompt: ""
+    ai:
+      provider: "anthropic"
+      model: "claude-sonnet-4-20250514"
+      api_key: ""
+      api_key_env: "ANTHROPIC_API_KEY"
 `)
 
 type HookConfig struct {
