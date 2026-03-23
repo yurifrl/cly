@@ -4,16 +4,18 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 type Entry struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Provider    string    `json:"provider,omitempty"`
-	Path        string    `json:"path"`
-	Description string    `json:"description,omitempty"`
-	SavedAt     time.Time `json:"saved_at,omitempty"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name,omitempty"`
+	Provider    string            `json:"provider,omitempty"`
+	Path        string            `json:"path"`
+	Description string            `json:"description,omitempty"`
+	SavedAt     time.Time         `json:"saved_at,omitempty"`
+	Meta        map[string]string `json:"meta,omitempty"`
 }
 
 type Sessions map[string]Entry
@@ -160,4 +162,29 @@ func RemoveForProvider(s Sessions, provider, name string) Sessions {
 		delete(s, key)
 	}
 	return s
+}
+
+func filterByName(s Sessions, substring string) Sessions {
+	substring = strings.ToLower(substring)
+	out := Sessions{}
+	for k, e := range s {
+		if strings.Contains(strings.ToLower(e.Name), substring) {
+			out[k] = e
+		}
+	}
+	return out
+}
+
+// FindByIDAny finds an entry by ID across all providers.
+func FindByIDAny(s Sessions, id string) *Entry {
+	for _, e := range s {
+		if e.ID == id {
+			entry := e
+			if entry.Provider == "" {
+				entry.Provider = defaultProvider
+			}
+			return &entry
+		}
+	}
+	return nil
 }
