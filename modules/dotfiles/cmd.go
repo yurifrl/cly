@@ -15,6 +15,8 @@ import (
 var (
 	installFlag bool
 	jobsFlag    bool
+	opFlag      bool
+	allFlag     bool
 	forceFlag   bool
 	configFlag  string
 )
@@ -29,6 +31,8 @@ func Register(parent *cobra.Command) {
 
 	cmd.Flags().BoolVarP(&installFlag, "install", "i", false, "Execute install commands (lines starting with !)")
 	cmd.Flags().BoolVarP(&jobsFlag, "jobs", "j", false, "Apply declarative jobs (@startup/@interval/@once)")
+	cmd.Flags().BoolVarP(&opFlag, "op", "o", false, "Inject 1Password templates")
+	cmd.Flags().BoolVarP(&allFlag, "all", "a", false, "Run everything (install, jobs, 1Password)")
 	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions (rerun @once jobs)")
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 
@@ -84,12 +88,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, m := range cfg.Mappings {
-		result := CreateSymlink(m)
-		printResult(m, result)
+		if IsJsoncToJson(m) {
+			result := CopyJsoncToJson(m)
+			printJsoncResult(m, result)
+		} else {
+			result := CreateSymlink(m)
+			printResult(m, result)
+		}
 	}
 
 	if len(cfg.InstallCommands) > 0 {
-		if installFlag {
+		if installFlag || allFlag {
 			for _, cmdStr := range cfg.InstallCommands {
 				fmt.Printf("%s %s\n", style.BlueStyle.Render("⚡ Executing:"), cmdStr)
 				if err := executeCommand(cmdStr, cfg.BaseDir); err != nil {
@@ -103,14 +112,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(cfg.OpMappings) > 0 {
-		fmt.Printf("\n%s Injecting %d 1Password template(s)\n", style.BlueStyle.Render("🔑"), len(cfg.OpMappings))
-		if err := ApplyOpMappings(cfg); err != nil {
-			return err
+		if opFlag || allFlag {
+			fmt.Printf("\n%s Injecting %d 1Password template(s)\n", style.BlueStyle.Render("🔑"), len(cfg.OpMappings))
+			if err := ApplyOpMappings(cfg); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("\n%s %d 1Password template(s) skipped (use -o to inject)\n",
+				style.YellowStyle.Render("⏭️ "), len(cfg.OpMappings))
 		}
 	}
 
 	if len(cfg.Jobs) > 0 {
-		if jobsFlag {
+		if jobsFlag || allFlag {
 			fmt.Printf("\n%s Applying %d job(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Jobs))
 			if err := ApplyJobs(cfg, JobApplyOptions{Force: forceFlag}); err != nil {
 				return err
@@ -153,7 +167,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Jobs: %d (use 'dotfiles jobs status' for details)\n", len(cfg.Jobs))
 	}
 	if len(cfg.OpMappings) > 0 {
-		fmt.Printf("1Password templates: %d (use -i to inject)\n", len(cfg.OpMappings))
+		fmt.Printf("1Password templates: %d (use -o to inject)\n", len(cfg.OpMappings))
 	}
 
 	return nil
@@ -218,6 +232,40 @@ func printResult(m Mapping, r LinkResult) {
 		fmt.Printf("  %s %s\n",
 			style.RedStyle.Render("❌ Error:"),
 			r.Error)
+	case StateError:
+		fmt.Printf("  %s %s\n",
+			style.RedStyle.Render("❌ Error:"),
+			r.Error)
+	}
+}
+
+func printJsoncResult(m Mapping, r LinkResult) {
+	src := shortenPath(m.Source)
+	dest := shortenPath(m.Destination)
+
+	fmt.Printf("%s %s -> %s\n",
+		style.BlueStyle.Render("📄 Copying (jsonc→json):"),
+		src, dest)
+
+	switch r.State {
+	case StateLinked:
+		if r.CreatedDir {
+			fmt.Printf("  %s %s\n",
+				style.BlueStyle.Render("📁 Creating directory:"),
+				filepath.Dir(dest))
+		}
+		if r.RemovedExisting {
+			fmt.Printf("  %s %s\n",
+				style.YellowStyle.Render("🗑️  Overwriting:"),
+				dest)
+		}
+		fmt.Printf("  %s %s -> %s\n",
+			style.GreenStyle.Render("✅ Copied:"),
+			src, dest)
+	case StateMissing:
+		fmt.Printf("  %s Source '%s' does not exist, skipping\n",
+			style.YellowStyle.Render("⚠️  Warning:"),
+			src)
 	case StateError:
 		fmt.Printf("  %s %s\n",
 			style.RedStyle.Render("❌ Error:"),
