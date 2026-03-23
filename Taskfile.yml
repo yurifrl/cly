@@ -44,8 +44,7 @@ tasks:
     desc: Install CLI to ~/.local/bin
     aliases: [i]
     cmds:
-      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o ~/.local/bin/{{.BINARY_NAME}} .
-      - cly completion fish install
+      - cly install
 
   install:mcp:
     desc: Install mcp to /usr/local/bin
