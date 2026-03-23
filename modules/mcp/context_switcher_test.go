@@ -7,11 +7,11 @@ import (
 )
 
 func TestContextOptionsOrder(t *testing.T) {
-	// claude:project should be first (index 0) so it starts selected
+	// agents:project should be first (index 0) so it starts selected
 	first := contextOptions[0]
-	assert.Equal(t, "claude", first.ai)
+	assert.Equal(t, "agents", first.ai)
 	assert.Equal(t, "project", first.scope)
-	assert.Equal(t, "Claude Code (project)", first.label)
+	assert.Equal(t, "Agents (project)", first.label)
 }
 
 func TestFormatMCPCount(t *testing.T) {

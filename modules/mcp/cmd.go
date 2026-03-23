@@ -233,6 +233,8 @@ func launchTUI(ai, scope string) error {
 
 func getAdapter(ai string) (Adapter, error) {
 	switch ai {
+	case "agents":
+		return &AgentsAdapter{}, nil
 	case "claude":
 		return &ClaudeAdapter{}, nil
 	case "cursor":
@@ -242,7 +244,7 @@ func getAdapter(ai string) (Adapter, error) {
 	case "pi":
 		return &PiAdapter{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported AI tool: %s (available: claude, cursor, desktop, pi)", ai)
+		return nil, fmt.Errorf("unsupported AI tool: %s (available: agents, claude, cursor, desktop, pi)", ai)
 	}
 }
 
@@ -667,6 +669,7 @@ func checkAITools() (bool, string) {
 		name    string
 		adapter Adapter
 	}{
+		{"Agents", &AgentsAdapter{}},
 		{"Claude Code", &ClaudeAdapter{}},
 		{"Cursor IDE", &CursorAdapter{}},
 		{"Claude Desktop", &DesktopAdapter{}},
@@ -738,11 +741,11 @@ func setContext(contextStr string) error {
 
 	ai, scope := parts[0], parts[1]
 
-	validAI := map[string]bool{"claude": true, "cursor": true, "desktop": true, "pi": true}
+	validAI := map[string]bool{"agents": true, "claude": true, "cursor": true, "desktop": true, "pi": true}
 	validScope := map[string]bool{"user": true, "project": true, "local": true}
 
 	if !validAI[ai] {
-		return fmt.Errorf("invalid AI: %s (available: claude, cursor, desktop, pi)", ai)
+		return fmt.Errorf("invalid AI: %s (available: agents, claude, cursor, desktop, pi)", ai)
 	}
 	if !validScope[scope] {
 		return fmt.Errorf("invalid scope: %s (available: user, project, local)", scope)

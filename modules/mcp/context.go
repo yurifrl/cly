@@ -86,7 +86,7 @@ func (d *Detector) DetectContext() (Context, error) {
 	}
 
 	// Priority 5: Hardcoded fallback
-	return Context{AI: "claude", Scope: "user"}, nil
+	return Context{AI: "agents", Scope: "project"}, nil
 }
 
 // GetContextSource returns a human-readable description of where the context came from

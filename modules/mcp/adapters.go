@@ -19,6 +19,8 @@ type Adapter interface {
 // GetAdapter returns the appropriate adapter for the AI tool
 func GetAdapter(ai string) (Adapter, error) {
 	switch ai {
+	case "agents":
+		return &AgentsAdapter{}, nil
 	case "claude":
 		return &ClaudeAdapter{}, nil
 	case "cursor":
@@ -28,7 +30,7 @@ func GetAdapter(ai string) (Adapter, error) {
 	case "pi":
 		return &PiAdapter{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported AI tool: %s (valid: claude, cursor, desktop, pi)", ai)
+		return nil, fmt.Errorf("unsupported AI tool: %s (valid: agents, claude, cursor, desktop, pi)", ai)
 	}
 }
 
@@ -824,4 +826,182 @@ func (a *DesktopAdapter) IsInstalled() bool {
 
 	_, err = os.Stat(checkPath)
 	return err == nil
+}
+
+// AgentsAdapter implements the Adapter interface for .agents/mcp.json convention
+type AgentsAdapter struct{}
+
+type agentsMCP struct {
+	MCP
+}
+
+func (a agentsMCP) MarshalJSON() ([]byte, error) {
+	m := make(map[string]interface{})
+	if a.Type != "" {
+		m["type"] = a.Type
+	}
+	if a.Command != "" {
+		m["command"] = a.Command
+	}
+	if len(a.Args) > 0 {
+		m["args"] = a.Args
+	}
+	if a.URL != "" {
+		m["url"] = a.URL
+	}
+	if len(a.Env) > 0 {
+		m["env"] = a.Env
+	}
+	if len(a.Headers) > 0 {
+		m["headers"] = a.Headers
+	}
+	applyExtraFields(m, a.MCP)
+	return json.Marshal(m)
+}
+
+func (a *agentsMCP) UnmarshalJSON(data []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	if typeVal, ok := raw["type"].(string); ok {
+		a.Type = typeVal
+	} else if transportVal, ok := raw["transport"].(string); ok {
+		a.Type = transportVal
+	}
+
+	if a.Type == "" {
+		if _, hasCommand := raw["command"]; hasCommand {
+			a.Type = "stdio"
+		} else if _, hasURL := raw["url"]; hasURL {
+			a.Type = "http"
+		}
+	}
+
+	if cmd, ok := raw["command"].(string); ok {
+		a.Command = cmd
+	}
+	if args, ok := raw["args"].([]interface{}); ok {
+		a.Args = make([]string, len(args))
+		for i, arg := range args {
+			if s, ok := arg.(string); ok {
+				a.Args[i] = s
+			}
+		}
+	}
+	if url, ok := raw["url"].(string); ok {
+		a.URL = url
+	}
+	if env, ok := raw["env"].(map[string]interface{}); ok {
+		a.Env = env
+	}
+	if headers, ok := raw["headers"].(map[string]interface{}); ok {
+		a.Headers = make(map[string]string)
+		for k, v := range headers {
+			if s, ok := v.(string); ok {
+				a.Headers[k] = s
+			}
+		}
+	}
+	return nil
+}
+
+func (a *AgentsAdapter) GetConfigPath(scope string) (string, error) {
+	switch scope {
+	case "project":
+		return ".agents/mcp.json", nil
+	case "user":
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(homeDir, ".agents", "mcp.json"), nil
+	default:
+		return "", fmt.Errorf("unsupported scope for agents: %s (only user and project)", scope)
+	}
+}
+
+func (a *AgentsAdapter) ReadConfig(scope string) (*ToolConfig, error) {
+	path, err := a.GetConfigPath(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return &ToolConfig{MCPServers: make(map[string]MCP)}, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("malformed JSON: %w", err)
+	}
+
+	toolCfg := &ToolConfig{MCPServers: make(map[string]MCP)}
+
+	if mcpServers, ok := raw["mcpServers"].(map[string]interface{}); ok {
+		for name, serverData := range mcpServers {
+			serverJSON, _ := json.Marshal(serverData)
+			var wrapped agentsMCP
+			if err := json.Unmarshal(serverJSON, &wrapped); err == nil {
+				wrapped.Name = name
+				toolCfg.MCPServers[name] = wrapped.MCP
+			}
+		}
+	}
+
+	return toolCfg, nil
+}
+
+func (a *AgentsAdapter) WriteConfig(scope string, mcps []MCP) error {
+	path, err := a.GetConfigPath(scope)
+	if err != nil {
+		return err
+	}
+
+	var config map[string]interface{}
+	if data, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(data, &config)
+	}
+	if config == nil {
+		config = make(map[string]interface{})
+	}
+
+	mcpServers := make(map[string]agentsMCP)
+	for _, mcp := range mcps {
+		mcpServers[mcp.Name] = agentsMCP{MCP: mcp}
+	}
+
+	config["mcpServers"] = mcpServers
+
+	tempPath := path + ".tmp"
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tempPath, path); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	return nil
+}
+
+func (a *AgentsAdapter) IsInstalled() bool {
+	// Agents convention is always "installed" — the files are created on demand
+	return true
 }

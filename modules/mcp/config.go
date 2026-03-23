@@ -96,8 +96,8 @@ func createDefaultGlobalConfig() *GlobalConfig {
 		Presets:  make(map[string][]string),
 		Projects: make(map[string]ProjectConfig),
 	}
-	cfg.Defaults.AI = "claude"
-	cfg.Defaults.Scope = "user"
+	cfg.Defaults.AI = "agents"
+	cfg.Defaults.Scope = "project"
 	return cfg
 }
 

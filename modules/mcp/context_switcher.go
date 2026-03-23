@@ -14,6 +14,8 @@ type contextOption struct {
 }
 
 var contextOptions = []contextOption{
+	{"agents", "project", "Agents (project)", "edits .agents/mcp.json, shared/added to repo"},
+	{"agents", "user", "Agents (user)", "global ~/.agents/mcp.json"},
 	{"claude", "project", "Claude Code (project)", "edits .mcp.json, shared/added to repo"},
 	{"claude", "user", "Claude Code (user)", "global, available in all your projects"},
 	{"claude", "local", "Claude Code (local)", "edits ~/.claude.json under projects[cwd] key"},
@@ -44,6 +46,8 @@ func (m Model) renderContextSwitcher() string {
 		// Check if tool is installed
 		var adapter Adapter
 		switch opt.ai {
+		case "agents":
+			adapter = &AgentsAdapter{}
 		case "claude":
 			adapter = &ClaudeAdapter{}
 		case "pi":

@@ -13,6 +13,8 @@ func (m Model) switchContext(ai, scope string) tea.Cmd {
 	return func() tea.Msg {
 		var adapter Adapter
 		switch ai {
+		case "agents":
+			adapter = &AgentsAdapter{}
 		case "claude":
 			adapter = &ClaudeAdapter{}
 		case "pi":
