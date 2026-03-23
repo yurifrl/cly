@@ -108,7 +108,7 @@ func run(cobraCmd *cobra.Command, args []string) error {
 	}
 
 	// Find asset for current platform
-	osName, arch := detectPlatform()
+	osName, arch := DetectPlatform()
 	asset, found := release.FindAssetForPlatform(osName, arch)
 	if !found {
 		return fmt.Errorf("no binary available for %s-%s", osName, arch)
