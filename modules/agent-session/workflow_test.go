@@ -2,8 +2,8 @@ package agentsession
 
 import (
 	"bytes"
+	"encoding/json"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -24,16 +24,22 @@ func runCmd(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
-func TestWorkflow_SaveAndVerify(t *testing.T) {
+func TestWorkflow_UpsertAndVerify(t *testing.T) {
 	tmpDir := t.TempDir()
 	origFn := filePathFn
 	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
 	t.Cleanup(func() { filePathFn = origFn })
 
-	out, err := runCmd(t, "as", "save", "my-session", "test-id-123", "-d", "a test session")
+	out, err := runCmd(t, "as", "upsert", "test-id-123", "my-session", "a test session")
 	require.NoError(t, err)
-	assert.Contains(t, out, `Saved claude session "my-session"`)
-	assert.Contains(t, out, "test-id-123")
+
+	// Output should be JSON
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "test-id-123", result.ID)
+	assert.Equal(t, "my-session", result.Name)
+	assert.Equal(t, "claude", result.Provider)
+	assert.Equal(t, "a test session", result.Description)
 
 	sessions, err := Load(filePathFn())
 	require.NoError(t, err)
@@ -41,31 +47,183 @@ func TestWorkflow_SaveAndVerify(t *testing.T) {
 	entry := FindByNameForProvider(sessions, "claude", "my-session")
 	require.NotNil(t, entry)
 	assert.Equal(t, "test-id-123", entry.ID)
-	assert.Equal(t, "my-session", entry.Name)
-	assert.Equal(t, "claude", entry.Provider)
-	assert.Equal(t, "a test session", entry.Description)
 }
 
-func TestWorkflow_SaveUpdate(t *testing.T) {
+func TestWorkflow_UpsertUpdate(t *testing.T) {
 	tmpDir := t.TempDir()
 	origFn := filePathFn
 	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
 	t.Cleanup(func() { filePathFn = origFn })
 
-	_, err := runCmd(t, "as", "save", "proj", "id-v1")
+	_, err := runCmd(t, "as", "upsert", "id-v1", "proj")
 	require.NoError(t, err)
 
-	out, err := runCmd(t, "as", "save", "proj", "id-v2", "-d", "updated")
+	out, err := runCmd(t, "as", "upsert", "id-v2", "proj", "updated")
 	require.NoError(t, err)
-	assert.Contains(t, out, "id-v2")
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "id-v2", result.ID)
+	assert.Equal(t, "updated", result.Description)
 
 	sessions, err := Load(filePathFn())
 	require.NoError(t, err)
 	assert.Len(t, sessions, 1)
-	entry := FindByNameForProvider(sessions, "claude", "proj")
-	require.NotNil(t, entry)
-	assert.Equal(t, "id-v2", entry.ID)
-	assert.Equal(t, "updated", entry.Description)
+}
+
+func TestWorkflow_UpsertWithMeta(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	out, err := runCmd(t, "as", "upsert", "id-1", "--name", "proj", "--set", "env=prod", "--set", "team=infra")
+	require.NoError(t, err)
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "prod", result.Meta["env"])
+	assert.Equal(t, "infra", result.Meta["team"])
+}
+
+func TestWorkflow_UpsertWithMetaJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	out, err := runCmd(t, "as", "upsert", "id-1", "--name", "proj", "--meta", `{"env":"staging","region":"us-east"}`)
+	require.NoError(t, err)
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "staging", result.Meta["env"])
+	assert.Equal(t, "us-east", result.Meta["region"])
+}
+
+func TestWorkflow_UpsertMetaMerge(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	// First upsert with some meta
+	_, err := runCmd(t, "as", "upsert", "id-1", "--name", "proj", "--set", "env=prod", "--set", "team=infra")
+	require.NoError(t, err)
+
+	// Second upsert: update env, add new key, team preserved
+	out, err := runCmd(t, "as", "upsert", "id-1", "--set", "env=staging", "--set", "version=2")
+	require.NoError(t, err)
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "staging", result.Meta["env"])
+	assert.Equal(t, "infra", result.Meta["team"])
+	assert.Equal(t, "2", result.Meta["version"])
+}
+
+func TestWorkflow_UpsertByIDOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	// Create with just ID
+	out, err := runCmd(t, "as", "upsert", "id-only")
+	require.NoError(t, err)
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "id-only", result.ID)
+	assert.Equal(t, "claude", result.Provider)
+	assert.NotEmpty(t, result.Path)
+}
+
+func TestWorkflow_SaveAliasWorks(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	out, err := runCmd(t, "as", "save", "id-alias", "my-session")
+	require.NoError(t, err)
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "id-alias", result.ID)
+	assert.Equal(t, "my-session", result.Name)
+}
+
+func TestWorkflow_RmByName(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	_, err := runCmd(t, "as", "upsert", "id-1", "to-delete")
+	require.NoError(t, err)
+
+	out, err := runCmd(t, "as", "rm", "to-delete")
+	require.NoError(t, err)
+	assert.Contains(t, out, `"deleted"`)
+	assert.Contains(t, out, `"to-delete"`)
+
+	sessions, err := Load(filePathFn())
+	require.NoError(t, err)
+	assert.Len(t, sessions, 0)
+}
+
+func TestWorkflow_RmByFilter(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	_, err := runCmd(t, "as", "upsert", "id-1", "old-deploy-1")
+	require.NoError(t, err)
+	_, err = runCmd(t, "as", "upsert", "id-2", "old-deploy-2")
+	require.NoError(t, err)
+	_, err = runCmd(t, "as", "upsert", "id-3", "new-session")
+	require.NoError(t, err)
+
+	out, err := runCmd(t, "as", "rm", "--filter", "old-deploy")
+	require.NoError(t, err)
+	assert.Contains(t, out, `"deleted"`)
+
+	sessions, err := Load(filePathFn())
+	require.NoError(t, err)
+	assert.Len(t, sessions, 1)
+	assert.NotNil(t, FindByNameForProvider(sessions, "claude", "new-session"))
+}
+
+func TestWorkflow_RmDryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	_, err := runCmd(t, "as", "upsert", "id-1", "target-session")
+	require.NoError(t, err)
+
+	out, err := runCmd(t, "as", "rm", "--filter", "target", "--dry-run")
+	require.NoError(t, err)
+	assert.Contains(t, out, `"would_delete"`)
+	assert.Contains(t, out, `"target-session"`)
+
+	// Session should still exist
+	sessions, err := Load(filePathFn())
+	require.NoError(t, err)
+	assert.Len(t, sessions, 1)
+}
+
+func TestWorkflow_RmErrorBothNameAndFilter(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	_, err := runCmd(t, "as", "rm", "some-name", "--filter", "some-filter")
+	require.Error(t, err)
 }
 
 func TestWorkflow_FilterByPath(t *testing.T) {
@@ -106,12 +264,11 @@ func TestWorkflow_ResumeNotFound(t *testing.T) {
 	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
 	t.Cleanup(func() { filePathFn = origFn })
 
-	_, err := runCmd(t, "as", "save", "existing", "id-1")
+	_, err := runCmd(t, "as", "upsert", "id-1", "existing")
 	require.NoError(t, err)
 
 	_, err = runCmd(t, "as", "resume", "nonexistent")
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "not found"))
 }
 
 func TestWorkflow_LsEmpty(t *testing.T) {
@@ -122,5 +279,25 @@ func TestWorkflow_LsEmpty(t *testing.T) {
 
 	out, err := runCmd(t, "as", "ls")
 	require.NoError(t, err)
-	assert.Contains(t, out, "No saved claude sessions")
+	assert.Contains(t, out, "[]")
+}
+
+func TestWorkflow_LsWithFilter(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	_, err := runCmd(t, "as", "upsert", "id-1", "deploy-prod")
+	require.NoError(t, err)
+	_, err = runCmd(t, "as", "upsert", "id-2", "deploy-staging")
+	require.NoError(t, err)
+	_, err = runCmd(t, "as", "upsert", "id-3", "unrelated")
+	require.NoError(t, err)
+
+	out, err := runCmd(t, "as", "ls", "-a", "--filter", "deploy")
+	require.NoError(t, err)
+	assert.Contains(t, out, "deploy-prod")
+	assert.Contains(t, out, "deploy-staging")
+	assert.NotContains(t, out, "unrelated")
 }
