@@ -170,8 +170,8 @@ func (u *Updater) Install(newPath, currentPath string) error {
 	return nil
 }
 
-// detectPlatform returns the current OS and architecture
-func detectPlatform() (string, string) {
+// DetectPlatform returns the current OS and architecture
+func DetectPlatform() (string, string) {
 	return runtime.GOOS, runtime.GOARCH
 }
 

@@ -13,7 +13,7 @@ import (
 )
 
 func TestDetectPlatform(t *testing.T) {
-	osName, arch := detectPlatform()
+	osName, arch := DetectPlatform()
 
 	assert.Contains(t, []string{"darwin", "linux"}, osName)
 	assert.Contains(t, []string{"arm64", "amd64"}, arch)
