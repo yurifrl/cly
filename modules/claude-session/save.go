@@ -11,6 +11,7 @@ import (
 
 func saveCmd() *cobra.Command {
 	var flagDesc string
+	var flagID string
 	cmd := &cobra.Command{
 		Use:   "save <name> [id]",
 		Short: "Save or update a session",
@@ -22,17 +23,34 @@ func saveCmd() *cobra.Command {
 				return err
 			}
 
+			// Resolve id from positional arg or flag
+			var id string
+			if len(args) > 1 {
+				id = args[1]
+			}
+			if flagID != "" {
+				id = flagID
+			}
+
 			filePath := filePathFn()
 			sessions, err := Load(filePath)
 			if err != nil {
 				return err
 			}
 
-			entry := FindByName(sessions, name)
+			// Find existing: by id first (if provided), then by name
+			var entry *Entry
+			if id != "" {
+				entry = FindByID(sessions, id)
+			}
 			if entry == nil {
-				id := uuid.New().String()
-				if len(args) > 1 {
-					id = args[1]
+				entry = FindByName(sessions, name)
+			}
+
+			if entry == nil {
+				// Create new
+				if id == "" {
+					id = uuid.New().String()
 				}
 				e := Entry{
 					Name:        name,
@@ -43,8 +61,13 @@ func saveCmd() *cobra.Command {
 				}
 				entry = &e
 			} else {
-				if len(args) > 1 {
-					entry.ID = args[1]
+				// Update existing — remove old key if name changed
+				if entry.Name != name {
+					delete(sessions, entry.Name)
+					entry.Name = name
+				}
+				if id != "" {
+					entry.ID = id
 				}
 				if flagDesc != "" {
 					entry.Description = flagDesc
@@ -63,5 +86,6 @@ func saveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&flagDesc, "description", "d", "", "Session description")
+	cmd.Flags().StringVar(&flagID, "id", "", "Session ID to find/update (looks up by ID before name)")
 	return cmd
 }
