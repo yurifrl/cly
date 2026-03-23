@@ -34,6 +34,10 @@ type Client interface {
 	// Stream sends messages with a system prompt and streams the response.
 	// The returned channel receives StreamChunk values until Done is true or an error occurs.
 	Stream(ctx context.Context, systemPrompt string, messages []Message) (<-chan StreamChunk, error)
+
+	// Complete sends messages with a system prompt and returns the full response.
+	// Use for structured output (JSON) where streaming is unnecessary.
+	Complete(ctx context.Context, systemPrompt string, messages []Message) (string, error)
 }
 
 // Provider identifies the LLM provider.

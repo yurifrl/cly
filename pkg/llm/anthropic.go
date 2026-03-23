@@ -85,3 +85,45 @@ func (c *anthropicClient) Stream(ctx context.Context, systemPrompt string, messa
 
 	return ch, nil
 }
+
+func (c *anthropicClient) Complete(ctx context.Context, systemPrompt string, messages []Message) (string, error) {
+	var anthropicMsgs []anthropic.MessageParam
+	for _, msg := range messages {
+		switch msg.Role {
+		case RoleUser:
+			anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
+				anthropic.NewTextBlock(msg.Content),
+			))
+		case RoleAssistant:
+			anthropicMsgs = append(anthropicMsgs, anthropic.NewAssistantMessage(
+				anthropic.NewTextBlock(msg.Content),
+			))
+		}
+	}
+
+	params := anthropic.MessageNewParams{
+		Model:     anthropic.Model(c.model),
+		MaxTokens: int64(16384),
+		Messages:  anthropicMsgs,
+	}
+
+	if systemPrompt != "" {
+		params.System = []anthropic.TextBlockParam{
+			{Text: systemPrompt},
+		}
+	}
+
+	resp, err := c.client.Messages.New(ctx, params)
+	if err != nil {
+		return "", fmt.Errorf("anthropic complete error: %w", err)
+	}
+
+	var result string
+	for _, block := range resp.Content {
+		if block.Type == "text" {
+			result += block.Text
+		}
+	}
+
+	return result, nil
+}

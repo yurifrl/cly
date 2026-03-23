@@ -70,3 +70,32 @@ func (c *openaiClient) Stream(ctx context.Context, systemPrompt string, messages
 
 	return ch, nil
 }
+
+func (c *openaiClient) Complete(ctx context.Context, systemPrompt string, messages []Message) (string, error) {
+	var openaiMsgs []openai.ChatCompletionMessageParamUnion
+	if systemPrompt != "" {
+		openaiMsgs = append(openaiMsgs, openai.SystemMessage(systemPrompt))
+	}
+	for _, msg := range messages {
+		switch msg.Role {
+		case RoleUser:
+			openaiMsgs = append(openaiMsgs, openai.UserMessage(msg.Content))
+		case RoleAssistant:
+			openaiMsgs = append(openaiMsgs, openai.AssistantMessage(msg.Content))
+		}
+	}
+
+	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:    c.model,
+		Messages: openaiMsgs,
+	})
+	if err != nil {
+		return "", fmt.Errorf("openai complete error: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("openai returned no choices")
+	}
+
+	return resp.Choices[0].Message.Content, nil
+}

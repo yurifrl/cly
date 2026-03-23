@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -94,4 +95,36 @@ func TestResolveAPIKey_Priority(t *testing.T) {
 		APIKey:   "direct-key",
 	})
 	assert.Equal(t, "direct-key", key)
+}
+
+func TestComplete_AnthropicClientCreation(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-123")
+
+	client, err := NewClient(Config{
+		Provider: ProviderAnthropic,
+		Model:    "claude-sonnet-4-20250514",
+	})
+	require.NoError(t, err)
+
+	// Verify client implements Complete method
+	_, ok := client.(interface {
+		Complete(ctx context.Context, systemPrompt string, messages []Message) (string, error)
+	})
+	assert.True(t, ok, "anthropic client should implement Complete")
+}
+
+func TestComplete_OpenAIClientCreation(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "test-key-123")
+
+	client, err := NewClient(Config{
+		Provider: ProviderOpenAI,
+		Model:    "gpt-4o",
+	})
+	require.NoError(t, err)
+
+	// Verify client implements Complete method
+	_, ok := client.(interface {
+		Complete(ctx context.Context, systemPrompt string, messages []Message) (string, error)
+	})
+	assert.True(t, ok, "openai client should implement Complete")
 }
