@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+
+if [ "$(command -v zellij)" = "" ]; then
+    echo "Zellij is not installed"
+    exit 1
+fi
+
+if [ "$(command -v zoxide)" = "" ]; then
+    echo "Zoxide is not installed"
+    exit 1
+fi
+
+get_fuzzy_cmd() {
+    if [ -x "$(command -v sk)" ]; then
+        echo "sk"
+    else
+        echo "fzf"
+    fi
+}
+
+get_preview_cmd() {
+    if [ -x "$(command -v bat)" ]; then
+        echo "bat --color=always --style=numbers --wrap=auto"
+    else
+        echo "cat"
+    fi
+}
+
+home_replacer() {
+    HOME_REPLACER=""
+    echo "$HOME" | grep -E "^[a-zA-Z0-9\-_/.@]+$" &>/dev/null
+    HOME_SED_SAFE=$?
+    if [ $HOME_SED_SAFE -eq 0 ]; then
+        HOME_REPLACER="s|^$HOME/|~/|"
+    fi
+    echo "$HOME_REPLACER"
+}
+
+transform_home_path() {
+    HOME_SED_SAFE=$?
+    if [ $HOME_SED_SAFE -eq 0 ]; then
+        echo "$1" | sed -e "s|^~/|$HOME/|"
+    else
+        echo "$1"
+    fi
+}
+
+select_session_dir() {
+    current_sessions=$1
+    zoxide_list=$(zoxide query -l)
+
+    if [ "$current_sessions" = "" ]; then
+        list="$zoxide_list"
+    else
+        list=$(echo "$current_sessions $zoxide_list" | tr ' ' '\n')
+    fi
+
+    header="Select session:"
+    project_dir=$(echo "$list" | sed -e "$(home_replacer)" | $(get_fuzzy_cmd) --reverse --header "$header")
+
+    if [ "$project_dir" = "" ]; then
+        echo ""
+        exit
+    fi
+
+    transform_home_path "$project_dir"
+}
+
+select_tab_dir() {
+    header="Select tab directory:"
+    project_dir=$(zoxide query -l | sed -e "$(home_replacer)" | $(get_fuzzy_cmd) --reverse --header "$header")
+
+    if [ "$project_dir" = "" ]; then
+        echo ""
+        exit
+    fi
+
+    transform_home_path "$project_dir"
+}
+
+get_session_name() {
+    project_dir=$1
+    provided_session_name=$2
+
+    directory=$(basename "$project_dir")
+    session_name=""
+    if [ "$provided_session_name" = "" ]; then
+        session_name=$(echo "$directory" | tr ' .:' '_')
+    else
+        session_name="$provided_session_name"
+    fi
+    echo "$session_name"
+}
+
+get_layouts_list() {
+    layout_dir=$(zellij setup --check | grep "LAYOUT DIR" | grep -o '".*"' | tr -d '"')
+
+    if [ "$layout_dir" = "" ]; then
+        echo ""
+        exit
+    fi
+
+    layouts=$(find "$layout_dir" | tail -n+2)
+    echo "$layouts"
+}
+
+select_layout() {
+    layouts=$1
+    session_name=$2
+
+    header="Select layout for '$session_name'"
+    layout_path=$(
+        {
+            echo "$layouts" |
+                awk '{
+          full = $0
+          bn = full
+          sub(/^.*\//, "", bn)
+          sub(/\.[^.]+$/, "", bn)
+          print full "\t" bn
+        }'
+            echo -e "default\tdefault"
+        } | $(get_fuzzy_cmd) --with-nth=2 --reverse --header "$header" --tabstop=4 --ansi --preview="$(get_preview_cmd) {1}" | cut -f1
+    )
+
+    if [ "$layout_path" = "" ]; then
+        echo ""
+        exit
+    fi
+
+    echo "$layout_path"
+}
+
+get_session_layout() {
+    session_name=$1
+    layouts=$(get_layouts_list)
+    if [ "$layouts" = "" ]; then
+        echo "default"
+        exit
+    fi
+    select_layout "$layouts" "$session_name"
+}
+
+get_tab_layout() {
+    session_name=$1
+    layouts=$(get_layouts_list)
+    if [ "$layouts" = "" ]; then
+        echo "default"
+        exit
+    fi
+
+    layouts_for_tabs=""
+    for layout in $layouts; do
+        has_tab=$(grep "tab " "$layout")
+        if [ "$has_tab" = "" ]; then
+            layouts_for_tabs="$layouts_for_tabs $layout"
+        fi
+    done
+
+    layouts_for_tabs=$(echo "$layouts_for_tabs" | tr ' ' '\n')
+
+    select_layout "$layouts_for_tabs" "$session_name"
+}
+
+outside_zellij() {
+    sessions_list=$(zellij list-sessions -s)
+
+    project_dir=$(select_session_dir "$sessions_list")
+    if [ "$project_dir" = "" ]; then
+        exit 0
+    fi
+
+    session_name=$(get_session_name "$project_dir" "$1")
+    session=$(echo "$sessions_list" | grep "^$session_name$")
+
+    if [ "$session" = "" ]; then
+        layout=$(get_session_layout "$session_name")
+
+        if [ "$layout" = "" ]; then
+            exit 0
+        fi
+
+        zellij --session "$session_name" --new-session-with-layout "$layout" options --default-cwd "$project_dir"
+        exit 0
+    fi
+
+    zellij attach "$session_name"
+    exit 0
+
+}
+
+inside_zellij() {
+    project_dir=$(select_tab_dir)
+    if [ "$project_dir" = "" ]; then
+        exit 0
+    fi
+
+    tab_name=$(get_session_name "$project_dir" "$1")
+
+    layout=$(get_tab_layout "$tab_name")
+    if [ "$layout" = "" ]; then
+        exit 0
+    fi
+
+    zellij action new-tab --layout "$layout" --name "$tab_name" --cwd "$project_dir"
+    zellij action go-to-tab-name "$tab_name"
+}
+
+main() {
+    if [[ -z $ZELLIJ ]]; then
+        outside_zellij "$@"
+    else
+        inside_zellij "$@"
+    fi
+}
+
+main "$@"
