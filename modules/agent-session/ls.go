@@ -1,57 +1,71 @@
 package agentsession
 
 import (
+	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 )
 
 func lsCmd() *cobra.Command {
-	var flagAll bool
+	var flagFilter string
 	cmd := &cobra.Command{
 		Use:   "ls",
-		Short: "List sessions (current dir by default)",
+		Short: "List sessions as JSON (current dir by default, -a for all)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLS(cmd, flagAll)
+			sessions, err := loadScopedSessions(cmd)
+			if err != nil {
+				return err
+			}
+
+			if flagFilter != "" {
+				sessions = filterByName(sessions, flagFilter)
+			}
+
+			if len(sessions) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "[]")
+				return nil
+			}
+
+			entries := sortedEntries(sessions, SortDateDesc)
+			rows := make([]lsRow, 0, len(entries))
+			for _, e := range entries {
+				rows = append(rows, lsRow{
+					Name:        e.Name,
+					Provider:    effectiveProvider(e),
+					SavedAt:     formatSavedAt(e.SavedAt),
+					ID:          e.ID,
+					Path:        e.Path,
+					Description: e.Description,
+					Meta:        e.Meta,
+				})
+			}
+
+			data, err := json.MarshalIndent(rows, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), string(data))
+			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&flagAll, "all", "a", false, "Show all sessions")
+	cmd.Flags().StringVarP(&flagFilter, "filter", "f", "", "Filter sessions by name (case-insensitive substring)")
 	return cmd
 }
 
-func runLS(cmd *cobra.Command, all bool) error {
-	provider, err := providerFromCmd(cmd)
-	if err != nil {
-		return err
-	}
+type lsRow struct {
+	Name        string            `json:"name,omitempty"`
+	Provider    string            `json:"provider"`
+	SavedAt     string            `json:"saved_at,omitempty"`
+	ID          string            `json:"id"`
+	Path        string            `json:"path"`
+	Description string            `json:"description,omitempty"`
+	Meta        map[string]string `json:"meta,omitempty"`
+}
 
-	sessions, err := Load(filePathFn())
-	if err != nil {
-		return err
+func formatSavedAt(t interface{ IsZero() bool; Format(string) string }) string {
+	if t.IsZero() {
+		return ""
 	}
-	sessions = filterByProvider(sessions, provider.Name)
-
-	if !all {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		sessions = filterByPath(sessions, cwd)
-	}
-
-	if len(sessions) == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "No saved %s sessions\n", provider.Name)
-		return nil
-	}
-
-	entry, yolo, err := runPicker(sessions, providerSupportsYolo(provider))
-	if err != nil {
-		return err
-	}
-	if entry == nil {
-		return nil
-	}
-
-	return resumeEntry(entry, provider, yolo)
+	return t.Format("2006-01-02 15:04")
 }

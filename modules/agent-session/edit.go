@@ -30,11 +30,10 @@ func editCmd() *cobra.Command {
 			}
 
 			filePath := filePathFn()
-			sessions, err := Load(filePath)
+			sessions, err := loadScopedSessions(cmd)
 			if err != nil {
 				return err
 			}
-			sessions = filterByProvider(sessions, provider.Name)
 
 			var entry *Entry
 			if len(args) == 1 {
@@ -79,7 +78,7 @@ func editCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Updated %s session %q\n", provider.Name, entry.Name)
+			return jsonOut(cmd, entry)
 			return nil
 		},
 	}

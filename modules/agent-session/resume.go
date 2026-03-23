@@ -17,16 +17,12 @@ func resumeCmd() *cobra.Command {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
-			provider, err := providerFromCmd(cmd)
-			if err != nil {
-				return nil, cobra.ShellCompDirectiveNoFileComp
-			}
-			sessions, err := Load(filePathFn())
+			sessions, err := loadScopedSessions(cmd)
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
 			names := make([]string, 0, len(sessions))
-			for _, e := range filterByProvider(sessions, provider.Name) {
+			for _, e := range sessions {
 				names = append(names, e.Name)
 			}
 			return names, cobra.ShellCompDirectiveNoFileComp
@@ -38,7 +34,7 @@ func resumeCmd() *cobra.Command {
 			}
 
 			query := args[0]
-			sessions, err := Load(filePathFn())
+			sessions, err := loadScopedSessions(cmd)
 			if err != nil {
 				return err
 			}

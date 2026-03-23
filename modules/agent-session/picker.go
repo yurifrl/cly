@@ -38,7 +38,10 @@ func providerTag(provider string) string {
 
 func (i pickerItem) headline() string {
 	sep := dimStyle.Render(" · ")
-	parts := []string{providerTag(i.entry.Provider)}
+	parts := []string{}
+	if effectiveProvider(i.entry) != "" {
+		parts = append(parts, providerTag(i.entry.Provider))
+	}
 	if !i.entry.SavedAt.IsZero() {
 		parts = append(parts, dateStyle.Render(i.entry.SavedAt.Format("2006-01-02 15:04")))
 	}

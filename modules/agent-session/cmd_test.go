@@ -28,8 +28,9 @@ func TestSubcommandsRegistered(t *testing.T) {
 	}{
 		{"ls", []string{"as", "ls"}},
 		{"rm", []string{"as", "rm"}},
-		{"save", []string{"as", "save"}},
+		{"upsert", []string{"as", "upsert"}},
 		{"resume", []string{"as", "resume"}},
+		{"tui", []string{"as", "tui"}},
 	}
 
 	for _, tt := range tests {
@@ -39,6 +40,15 @@ func TestSubcommandsRegistered(t *testing.T) {
 			assert.Equal(t, tt.name, cmd.Name())
 		})
 	}
+}
+
+func TestSaveAliasWorks(t *testing.T) {
+	root := &cobra.Command{Use: "root"}
+	Register(root)
+
+	cmd, _, err := root.Find([]string{"as", "save"})
+	require.NoError(t, err)
+	assert.Equal(t, "upsert", cmd.Name())
 }
 
 func TestRootRunENoArgs(t *testing.T) {
@@ -59,23 +69,58 @@ func TestRootHasProviderFlag(t *testing.T) {
 	flag := cmd.PersistentFlags().Lookup(providerFlag)
 	require.NotNil(t, flag)
 	assert.Equal(t, "p", flag.Shorthand)
-	assert.Equal(t, defaultProvider, flag.DefValue)
+	assert.Equal(t, "all", flag.DefValue)
 }
 
-func TestLsCmdHasAllFlag(t *testing.T) {
+func TestLsCmdHasFlags(t *testing.T) {
 	cmd := lsCmd()
-	flag := cmd.Flags().Lookup("all")
-	require.NotNil(t, flag)
-	assert.Equal(t, "false", flag.DefValue)
-	assert.Equal(t, "a", flag.Shorthand)
+	filterFlag := cmd.Flags().Lookup("filter")
+	require.NotNil(t, filterFlag)
+	assert.Equal(t, "f", filterFlag.Shorthand)
 }
 
-func TestSaveCmdArgs(t *testing.T) {
-	cmd := saveCmd()
-	assert.Equal(t, "save <name> [id]", cmd.Use)
+func TestParentHasScopeFlags(t *testing.T) {
+	root := &cobra.Command{Use: "root"}
+	Register(root)
+	cmd, _, err := root.Find([]string{"as"})
+	require.NoError(t, err)
+
+	allFlag := cmd.PersistentFlags().Lookup("all")
+	require.NotNil(t, allFlag)
+	assert.Equal(t, "a", allFlag.Shorthand)
+
+	dirFlag := cmd.PersistentFlags().Lookup("directory")
+	require.NotNil(t, dirFlag)
+}
+
+func TestUpsertCmdArgs(t *testing.T) {
+	cmd := upsertCmd()
+	assert.Equal(t, "upsert <id> [name] [description]", cmd.Use)
+	assert.Contains(t, cmd.Aliases, "save")
+
 	flag := cmd.Flags().Lookup("description")
 	require.NotNil(t, flag)
 	assert.Equal(t, "d", flag.Shorthand)
+
+	nameFlag := cmd.Flags().Lookup("name")
+	require.NotNil(t, nameFlag)
+	assert.Equal(t, "n", nameFlag.Shorthand)
+
+	setFlag := cmd.Flags().Lookup("set")
+	require.NotNil(t, setFlag)
+
+	metaFlag := cmd.Flags().Lookup("meta")
+	require.NotNil(t, metaFlag)
+}
+
+func TestRmCmdHasFlags(t *testing.T) {
+	cmd := rmCmd()
+	filterFlag := cmd.Flags().Lookup("filter")
+	require.NotNil(t, filterFlag)
+	assert.Equal(t, "f", filterFlag.Shorthand)
+
+	dryRunFlag := cmd.Flags().Lookup("dry-run")
+	require.NotNil(t, dryRunFlag)
 }
 
 func TestResumeCmdArgs(t *testing.T) {
