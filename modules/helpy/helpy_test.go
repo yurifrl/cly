@@ -151,21 +151,100 @@ Final content.
 	require.Len(t, headers, 4)
 
 	assert.Equal(t, "Main Title", headers[0].title)
+	assert.Equal(t, "main-title", headers[0].slug)
+	assert.Equal(t, 1, headers[0].level)
 	assert.Equal(t, 0, headers[0].line)
 
 	assert.Equal(t, "Section One", headers[1].title)
+	assert.Equal(t, "section-one", headers[1].slug)
+	assert.Equal(t, 2, headers[1].level)
 	assert.Equal(t, 4, headers[1].line)
 
 	assert.Equal(t, "Subsection", headers[2].title)
+	assert.Equal(t, "subsection", headers[2].slug)
+	assert.Equal(t, 3, headers[2].level)
 	assert.Equal(t, 8, headers[2].line)
 
 	assert.Equal(t, "Section Two", headers[3].title)
+	assert.Equal(t, "section-two", headers[3].slug)
+	assert.Equal(t, 2, headers[3].level)
 	assert.Equal(t, 12, headers[3].line)
 }
 
 func TestExtractHeadersEmpty(t *testing.T) {
 	headers := extractHeaders("no headers here")
 	assert.Empty(t, headers)
+}
+
+func TestToSlug(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Fish Shell", "fish-shell"},
+		{"cmux", "cmux"},
+		{"Zellij Session Switching (zswitch)", "zellij-session-switching-zswitch"},
+		{"pi-cmux (inside pi)", "pi-cmux-inside-pi"},
+		{"I Commands (i prefix)", "i-commands-i-prefix"},
+		{"Copy, Cut, Paste (Move Files)", "copy-cut-paste-move-files"},
+		{"Kubernetes & Cloud", "kubernetes-cloud"},
+		{"nvim-tree (File Explorer)", "nvim-tree-file-explorer"},
+		{"Quit & Save", "quit-save"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.want, toSlug(tt.input))
+		})
+	}
+}
+
+func TestExtractSection(t *testing.T) {
+	content := `# Main Title
+
+Some intro text.
+
+## Section One
+
+Content here.
+
+### Subsection
+
+More content.
+
+## Section Two
+
+Final content.`
+
+	t.Run("extracts section with children", func(t *testing.T) {
+		section, found := extractSection(content, "section-one")
+		require.True(t, found)
+		assert.Contains(t, section, "## Section One")
+		assert.Contains(t, section, "Content here.")
+		assert.Contains(t, section, "### Subsection")
+		assert.Contains(t, section, "More content.")
+		assert.NotContains(t, section, "Section Two")
+	})
+
+	t.Run("extracts leaf section", func(t *testing.T) {
+		section, found := extractSection(content, "subsection")
+		require.True(t, found)
+		assert.Contains(t, section, "### Subsection")
+		assert.Contains(t, section, "More content.")
+		assert.NotContains(t, section, "Section Two")
+	})
+
+	t.Run("extracts last section", func(t *testing.T) {
+		section, found := extractSection(content, "section-two")
+		require.True(t, found)
+		assert.Contains(t, section, "## Section Two")
+		assert.Contains(t, section, "Final content.")
+	})
+
+	t.Run("returns false for unknown slug", func(t *testing.T) {
+		_, found := extractSection(content, "nonexistent")
+		assert.False(t, found)
+	})
 }
 
 func TestIdeFlag(t *testing.T) {

@@ -1,6 +1,7 @@
 package helpy
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,10 +9,12 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/llm"
+	"golang.org/x/term"
 )
 
 const defaultFilePath = "~/DotFiles/HELP.md"
@@ -22,6 +25,23 @@ var ideFlag string
 var promptFlag string
 var docsFlag bool
 var chatFlag bool
+var interactiveFlag bool
+var outputFlag string
+
+// addFlags registers the shared flags on a command.
+func addFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
+	cmd.Flags().StringVarP(&ideFlag, "ide", "i", "", "open IDE tool (pi, claude, gemini, etc.) [$CLY_HELPY_IDE]")
+	cmd.Flags().Lookup("ide").NoOptDefVal = ideDefault()
+	cmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "send prompt to Claude")
+	cmd.Flags().BoolVarP(&docsFlag, "docs", "d", false, "browse docs with fuzzy finder")
+	cmd.Flags().BoolVarP(&chatFlag, "chat", "c", false, "open AI chat with doc context")
+	cmd.Flags().BoolVar(&interactiveFlag, "it", false, "open interactive TUI viewer")
+	cmd.Flags().StringVarP(&outputFlag, "output", "o", "", "output format: json, raw")
+	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"json\tStructured JSON output", "raw\tRaw markdown (no rendering)"}, cobra.ShellCompDirectiveNoFileComp
+	})
+}
 
 // ideDefault returns the default IDE tool name from env or "pi".
 func ideDefault() string {
@@ -40,52 +60,72 @@ var errorStyle = lipgloss.NewStyle().
 
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use:   "helpy",
-		Short: "Display help file in a TUI viewer",
-		Long:  "Display a markdown help file with syntax highlighting and scrolling",
-		RunE:  run,
+		Use:               "helpy [section]",
+		Short:             "Display help file in a TUI viewer",
+		Long:              "Display a markdown help file with syntax highlighting and scrolling.\nOptionally pass a section name to jump directly to that header.",
+		RunE:              run,
+		ValidArgsFunction: headerCompletions,
 	}
+	addFlags(cmd)
 
-	cmd.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
-	cmd.Flags().StringVarP(&ideFlag, "ide", "i", "", "open IDE tool (pi, claude, gemini, etc.) [$CLY_HELPY_IDE]")
-	cmd.Flags().Lookup("ide").NoOptDefVal = ideDefault()
-	cmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "send prompt to Claude")
-	cmd.Flags().BoolVarP(&docsFlag, "docs", "d", false, "browse docs with fuzzy finder")
-	cmd.Flags().BoolVarP(&chatFlag, "chat", "c", false, "open AI chat with doc context")
+	sectionsCmd := &cobra.Command{
+		Use:   "sections",
+		Short: "List available sections",
+		RunE:  runSections,
+	}
+	sectionsCmd.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
+	sectionsCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "output format: json")
+	_ = sectionsCmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"json\tStructured JSON output"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	cmd.AddCommand(sectionsCmd)
 
-	// Create alias command
 	alias := &cobra.Command{
-		Use:   "hy",
-		Short: "Alias for helpy",
-		RunE:  run,
+		Use:               "hy [section]",
+		Short:             "Alias for helpy",
+		RunE:              run,
+		ValidArgsFunction: headerCompletions,
 	}
-	alias.Flags().StringVarP(&fileFlag, "file", "f", defaultFilePath, "path to help file")
-	alias.Flags().StringVarP(&ideFlag, "ide", "i", "", "open IDE tool (pi, claude, gemini, etc.) [$CLY_HELPY_IDE]")
-	alias.Flags().Lookup("ide").NoOptDefVal = ideDefault()
-	alias.Flags().StringVarP(&promptFlag, "prompt", "p", "", "send prompt to Claude")
-	alias.Flags().BoolVarP(&docsFlag, "docs", "d", false, "browse docs with fuzzy finder")
-	alias.Flags().BoolVarP(&chatFlag, "chat", "c", false, "open AI chat with doc context")
+	addFlags(alias)
 
 	parent.AddCommand(cmd)
 	parent.AddCommand(alias)
 }
 
+// headerCompletions returns HELP.md headers as slug completions.
+func headerCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	// Only complete the first arg (the section to jump to)
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	path := resolveFilePath(fileFlag)
+	content, err := readFileContent(path)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	_, body := parseFrontmatter(content)
+	headers := extractHeaders(body)
+
+	var completions []string
+	for _, h := range headers {
+		completions = append(completions, h.slug+"\t"+h.title)
+	}
+
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
 func run(cmd *cobra.Command, args []string) error {
-	// Handle --docs flag
 	if docsFlag {
 		return runDocsPicker()
 	}
-
-	// Handle --chat flag: standalone AI chat with doc context
 	if chatFlag {
 		return runChat()
 	}
-
-	// Handle --prompt flag
 	if promptFlag != "" {
 		return runPrompt(promptFlag)
 	}
-
 	if ideFlag != "" {
 		return runIDE(cmd, args, ideFlag)
 	}
@@ -93,6 +133,9 @@ func run(cmd *cobra.Command, args []string) error {
 	path := resolveFilePath(fileFlag)
 	rawContent, err := readFileContent(path)
 	if err != nil {
+		if outputFlag == "json" {
+			return jsonError("file_not_found", fmt.Sprintf("Error reading file: %v", err))
+		}
 		msg := fmt.Sprintf("Error reading file: %v", err)
 		fmt.Println(errorStyle.Render(msg))
 		return nil
@@ -100,12 +143,42 @@ func run(cmd *cobra.Command, args []string) error {
 
 	meta, content := parseFrontmatter(rawContent)
 
+	// If a section slug was provided, extract only that section
+	if len(args) > 0 {
+		slug := args[0]
+		section, found := extractSection(content, slug)
+		if found {
+			content = section
+		} else if outputFlag == "json" {
+			return jsonError("section_not_found", fmt.Sprintf("No section matching slug %q", slug))
+		}
+	}
+
+	// Output mode selection
+	isTTY := term.IsTerminal(int(os.Stdout.Fd()))
+
+	if outputFlag == "json" {
+		return outputJSON(content, meta, args)
+	}
+	if outputFlag == "raw" {
+		fmt.Print(content)
+		return nil
+	}
+	if !isTTY {
+		return outputJSON(content, meta, args)
+	}
+
+	// --it opens the interactive TUI, otherwise render to stdout
+	if !interactiveFlag {
+		return renderToStdout(content)
+	}
+
+	// Interactive TUI
 	m, err := initialModel(content)
 	if err != nil {
 		return err
 	}
 
-	// Set up AI chat if configured
 	aiCfg := loadAIConfig()
 	if aiCfg != nil {
 		client, clientErr := llm.NewClient(*aiCfg)
@@ -113,7 +186,6 @@ func run(cmd *cobra.Command, args []string) error {
 			m.chat = newChatModel(client, aiCfg.SystemPrompt, content, meta)
 			m.chatEnabled = true
 		}
-		// Silently skip AI if client creation fails (e.g., no API key)
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -121,6 +193,93 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	return nil
+}
+
+// renderToStdout renders markdown with glamour and prints to stdout.
+func renderToStdout(content string) error {
+	r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(80))
+	if err != nil {
+		fmt.Print(content)
+		return nil
+	}
+	out, err := r.Render(content)
+	if err != nil {
+		fmt.Print(content)
+		return nil
+	}
+	fmt.Print(out)
+	return nil
+}
+
+// sectionJSON is the structured output for --output json.
+type sectionJSON struct {
+	Content  string        `json:"content"`
+	Sections []sectionMeta `json:"sections"`
+	File     string        `json:"file"`
+	Section  string        `json:"section,omitempty"`
+}
+
+type sectionMeta struct {
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+	Level int    `json:"level"`
+}
+
+func outputJSON(content string, meta DocMeta, args []string) error {
+	headers := extractHeaders(content)
+	sections := make([]sectionMeta, len(headers))
+	for i, h := range headers {
+		sections[i] = sectionMeta{Slug: h.slug, Title: h.title, Level: h.level}
+	}
+
+	out := sectionJSON{
+		Content:  content,
+		Sections: sections,
+		File:     resolveFilePath(fileFlag),
+	}
+	if len(args) > 0 {
+		out.Section = args[0]
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+func jsonError(code, message string) error {
+	out := map[string]string{"error": code, "message": message}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.Encode(out)
+	return fmt.Errorf("%s: %s", code, message)
+}
+
+// runSections lists all available sections.
+func runSections(cmd *cobra.Command, args []string) error {
+	path := resolveFilePath(fileFlag)
+	rawContent, err := readFileContent(path)
+	if err != nil {
+		return fmt.Errorf("reading file: %w", err)
+	}
+
+	_, content := parseFrontmatter(rawContent)
+	headers := extractHeaders(content)
+
+	if outputFlag == "json" {
+		sections := make([]sectionMeta, len(headers))
+		for i, h := range headers {
+			sections[i] = sectionMeta{Slug: h.slug, Title: h.title, Level: h.level}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(sections)
+	}
+
+	for _, h := range headers {
+		indent := strings.Repeat("  ", h.level-1)
+		fmt.Printf("%s%s  %s\n", indent, h.slug, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(h.title))
+	}
 	return nil
 }
 

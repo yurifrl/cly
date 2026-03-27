@@ -28,6 +28,8 @@ var (
 
 type header struct {
 	title string
+	slug  string
+	level int
 	line  int
 }
 
@@ -99,15 +101,76 @@ func extractHeaders(content string) []header {
 
 	for i, line := range lines {
 		if strings.HasPrefix(line, "#") {
-			title := strings.TrimLeft(line, "#")
-			title = strings.TrimSpace(title)
+			// Count the level (number of # chars)
+			level := 0
+			for _, ch := range line {
+				if ch == '#' {
+					level++
+				} else {
+					break
+				}
+			}
+			title := strings.TrimSpace(line[level:])
 			if title != "" {
-				headers = append(headers, header{title: title, line: i})
+				headers = append(headers, header{
+					title: title,
+					slug:  toSlug(title),
+					level: level,
+					line:  i,
+				})
 			}
 		}
 	}
 
 	return headers
+}
+
+// toSlug converts a header title to a URL-style slug.
+// "Fish Shell" → "fish-shell", "Zellij Session Switching (zswitch)" → "zellij-session-switching-zswitch"
+func toSlug(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	prevDash := false
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+			prevDash = false
+		} else if !prevDash && b.Len() > 0 {
+			b.WriteByte('-')
+			prevDash = true
+		}
+	}
+	result := b.String()
+	return strings.TrimRight(result, "-")
+}
+
+// extractSection returns the markdown content for a single section identified by slug.
+// It includes everything from the header line to just before the next header at the
+// same or higher level.
+func extractSection(content string, slug string) (string, bool) {
+	headers := extractHeaders(content)
+	lines := strings.Split(content, "\n")
+
+	for idx, h := range headers {
+		if h.slug != slug {
+			continue
+		}
+
+		startLine := h.line
+		// Find where this section ends: next header at same or higher (<=) level
+		endLine := len(lines)
+		for _, next := range headers[idx+1:] {
+			if next.level <= h.level {
+				endLine = next.line
+				break
+			}
+		}
+
+		section := strings.Join(lines[startLine:endLine], "\n")
+		return strings.TrimRight(section, "\n"), true
+	}
+
+	return "", false
 }
 
 func (m *model) Init() tea.Cmd {
