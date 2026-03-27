@@ -111,6 +111,9 @@ func TestUpsertCmdArgs(t *testing.T) {
 
 	metaFlag := cmd.Flags().Lookup("meta")
 	require.NotNil(t, metaFlag)
+
+	overrideFlag := cmd.Flags().Lookup("override")
+	require.NotNil(t, overrideFlag)
 }
 
 func TestRmCmdHasFlags(t *testing.T) {

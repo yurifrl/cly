@@ -15,6 +15,7 @@ func upsertCmd() *cobra.Command {
 	var flagDesc string
 	var flagSet []string
 	var flagMeta string
+	var flagOverride bool
 
 	cmd := &cobra.Command{
 		Use:     "upsert <id> [name] [description]",
@@ -86,7 +87,10 @@ func upsertCmd() *cobra.Command {
 				// Update existing
 				entry.ID = id
 				if name != "" {
-					entry.Name = name
+					// Only update name if entry has no name yet, or --override is set
+					if entry.Name == "" || flagOverride {
+						entry.Name = name
+					}
 				}
 				entry.Provider = provider.Name
 				entry.Path = cwd
@@ -120,6 +124,7 @@ func upsertCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&flagDesc, "description", "d", "", "Session description")
 	cmd.Flags().StringArrayVar(&flagSet, "set", nil, "Set metadata key=value (repeatable)")
 	cmd.Flags().StringVar(&flagMeta, "meta", "", `Set metadata as JSON object (e.g. '{"key":"value"}')`)
+	cmd.Flags().BoolVar(&flagOverride, "override", false, "Override existing name when --name is passed")
 
 	return cmd
 }

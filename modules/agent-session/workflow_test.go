@@ -301,3 +301,60 @@ func TestWorkflow_LsWithFilter(t *testing.T) {
 	assert.Contains(t, out, "deploy-staging")
 	assert.NotContains(t, out, "unrelated")
 }
+
+func TestWorkflow_UpsertNameNotOverriddenByDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	// Create entry with name "original"
+	_, err := runCmd(t, "as", "upsert", "id-1", "--name", "original")
+	require.NoError(t, err)
+
+	// Update same ID with a different name — should NOT change the name
+	out, err := runCmd(t, "as", "upsert", "id-1", "--name", "renamed")
+	require.NoError(t, err)
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "original", result.Name, "name should not change without --override")
+}
+
+func TestWorkflow_UpsertNameOverriddenWithFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	// Create entry with name "original"
+	_, err := runCmd(t, "as", "upsert", "id-1", "--name", "original")
+	require.NoError(t, err)
+
+	// Update same ID with --override — should change the name
+	out, err := runCmd(t, "as", "upsert", "id-1", "--name", "renamed", "--override")
+	require.NoError(t, err)
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "renamed", result.Name, "name should change with --override")
+}
+
+func TestWorkflow_UpsertNameSetWhenEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+	origFn := filePathFn
+	filePathFn = func() string { return filepath.Join(tmpDir, "sessions.json") }
+	t.Cleanup(func() { filePathFn = origFn })
+
+	// Create entry with NO name (ID only)
+	_, err := runCmd(t, "as", "upsert", "id-1")
+	require.NoError(t, err)
+
+	// Update same ID with --name — should set the name (no --override needed)
+	out, err := runCmd(t, "as", "upsert", "id-1", "--name", "now-named")
+	require.NoError(t, err)
+
+	var result Entry
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "now-named", result.Name, "name should be set when entry had no name")
+}
