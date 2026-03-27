@@ -20,7 +20,8 @@ const (
 )
 
 var (
-	remote bool
+	remote   bool
+	bumpFlag string
 )
 
 func Register(parent *cobra.Command) {
@@ -37,6 +38,12 @@ Use --remote to download the latest release from GitHub instead.`,
 	}
 
 	cmd.Flags().BoolVar(&remote, "remote", false, "Install from GitHub release instead of local source")
+	cmd.Flags().StringVarP(&bumpFlag, "bump", "b", "", "Bump version before building (patch, minor, major). Default: patch if flag given without value")
+	cmd.Flags().Lookup("bump").NoOptDefVal = "patch"
+
+	_ = cmd.RegisterFlagCompletionFunc("bump", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"patch\tBump patch version (1.0.5 → 1.0.6)", "minor\tBump minor version (1.0.5 → 1.1.0)", "major\tBump major version (1.0.5 → 2.0.0)"}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	parent.AddCommand(cmd)
 }
@@ -69,6 +76,22 @@ func installLocal(cmd *cobra.Command) error {
 
 	// Read VERSION file
 	version := readVersion(sourceDir)
+
+	// Bump version if requested
+	if bumpFlag != "" {
+		newVersion, err := bumpVersion(version, bumpFlag)
+		if err != nil {
+			return err
+		}
+		if err := writeVersion(sourceDir, newVersion); err != nil {
+			return err
+		}
+		fmt.Printf("%s Version bumped: %s → %s\n",
+			style.BlueStyle.Render("🏷️ "),
+			version,
+			newVersion)
+		version = newVersion
+	}
 
 	// Ensure install directory exists
 	if err := os.MkdirAll(installDir, 0755); err != nil {
@@ -194,6 +217,46 @@ func readVersion(sourceDir string) string {
 		return "dev"
 	}
 	return strings.TrimSpace(string(data))
+}
+
+func writeVersion(sourceDir, version string) error {
+	versionFile := filepath.Join(sourceDir, "VERSION")
+	return os.WriteFile(versionFile, []byte(version+"\n"), 0644)
+}
+
+func bumpVersion(current, level string) (string, error) {
+	v := strings.TrimPrefix(current, "v")
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid version format %q, expected X.Y.Z", current)
+	}
+
+	major, minor, patch := 0, 0, 0
+	if _, err := fmt.Sscanf(parts[0], "%d", &major); err != nil {
+		return "", fmt.Errorf("invalid major version: %s", parts[0])
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &minor); err != nil {
+		return "", fmt.Errorf("invalid minor version: %s", parts[1])
+	}
+	if _, err := fmt.Sscanf(parts[2], "%d", &patch); err != nil {
+		return "", fmt.Errorf("invalid patch version: %s", parts[2])
+	}
+
+	switch level {
+	case "major":
+		major++
+		minor = 0
+		patch = 0
+	case "minor":
+		minor++
+		patch = 0
+	case "patch":
+		patch++
+	default:
+		return "", fmt.Errorf("invalid bump level %q, use: patch, minor, or major", level)
+	}
+
+	return fmt.Sprintf("%d.%d.%d", major, minor, patch), nil
 }
 
 // installCompletions runs fish completion install
