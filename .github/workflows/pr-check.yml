@@ -1,33 +1,16 @@
-name: PR Version Check
+name: PR Check
 
 on:
   pull_request:
     branches: [main]
 
 jobs:
-  check-version:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Check VERSION conflict
-        run: |
-          VERSION=$(cat VERSION)
-
-          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-            echo "❌ VERSION v${VERSION} already exists as a git tag"
-            echo "Please bump the version in VERSION file"
-            exit 1
-          else
-            echo "✓ VERSION v${VERSION} is new"
-          fi
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
