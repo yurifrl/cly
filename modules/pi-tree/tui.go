@@ -70,12 +70,9 @@ type tuiModel struct {
 	histIdx     int
 	height      int
 	width       int
-	message     string
-	quit        bool
-	confirmCmds      []string // commands awaiting y/n confirmation
-	confirmWsName    string
-	confirmSessionID string
-	confirmFilePath  string
+	scrollOff   int // scroll offset for tree view
+	message string
+	quit    bool
 }
 
 func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64) tuiModel {
@@ -216,6 +213,57 @@ func (m *tuiModel) moveCursor(delta int) {
 	m.cur.sess = ps[idx].sess
 }
 
+// ensureVisible adjusts scrollOff so the cursor line is visible.
+func (m *tuiModel) ensureVisible() {
+	curLine := m.cursorLineIndex()
+	viewHeight := m.viewableHeight()
+	if viewHeight <= 0 {
+		return
+	}
+	if curLine < m.scrollOff {
+		m.scrollOff = curLine
+	}
+	if curLine >= m.scrollOff+viewHeight {
+		m.scrollOff = curLine - viewHeight + 1
+	}
+}
+
+// cursorLineIndex returns which line in treeLines the cursor is on.
+func (m tuiModel) cursorLineIndex() int {
+	line := 0
+	for wi, ws := range m.nodes {
+		if m.cur.ws == wi && m.cur.sess == -1 {
+			return line
+		}
+		line++ // workspace header
+		for si := range ws.Sessions {
+			if m.cur.ws == wi && m.cur.sess == si {
+				return line
+			}
+			line++ // session line
+		}
+		line++ // blank line after workspace
+	}
+	return 0
+}
+
+// viewableHeight returns how many tree lines fit on screen.
+func (m tuiModel) viewableHeight() int {
+	// Reserve lines for: title, search bar, since badge, message, help bar
+	reserved := 4
+	if m.filterMode == filterSearch || m.searchInput.Value() != "" {
+		reserved += 2
+	}
+	if m.sinceHours > 0 {
+		reserved += 2
+	}
+	h := m.height - reserved
+	if h < 3 {
+		h = 3
+	}
+	return h
+}
+
 // ── Hide ──────────────────────────────────────────────────────────────────────
 
 func (m *tuiModel) hideUnderCursor() {
@@ -251,13 +299,13 @@ func (m tuiModel) cursorSession() (WorkspaceNode, PiSession, bool) {
 	if m.cur.ws >= len(m.nodes) {
 		return WorkspaceNode{}, PiSession{}, false
 	}
-	ws := m.nodes[m.cur.ws]
-	idx := m.cur.sess
-	if idx == -1 && len(ws.Sessions) > 0 {
-		idx = 0
+	// Only return a session if cursor is on a session row, not workspace header
+	if m.cur.sess == -1 {
+		return WorkspaceNode{}, PiSession{}, false
 	}
-	if idx >= 0 && idx < len(ws.Sessions) {
-		return ws, ws.Sessions[idx], true
+	ws := m.nodes[m.cur.ws]
+	if m.cur.sess >= 0 && m.cur.sess < len(ws.Sessions) {
+		return ws, ws.Sessions[m.cur.sess], true
 	}
 	return WorkspaceNode{}, PiSession{}, false
 }
@@ -293,26 +341,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// Confirmation mode: y runs, anything else dismisses
-	if len(m.confirmCmds) > 0 {
-		if msg, ok := msg.(tea.KeyMsg); ok {
-			switch msg.String() {
-			case "y", "Y":
-				cmd, err := openSession(m.confirmWsName, m.confirmSessionID, m.confirmFilePath)
-				if err != nil {
-					m.message = fmt.Sprintf("error: %v", err)
-				} else {
-					m.message = fmt.Sprintf("✓ %s", cmd)
-				}
-				m.confirmCmds = nil
-			default:
-				m.message = "cancelled"
-				m.confirmCmds = nil
-			}
-		}
-		return m, nil
-	}
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.height = msg.Height
@@ -334,6 +362,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				m.moveCursor(-1)
+				m.ensureVisible()
 			}
 			m.message = ""
 
@@ -347,14 +376,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				m.moveCursor(1)
+				m.ensureVisible()
 			}
 			m.message = ""
 
 		case "enter", "o":
 			if m.showHist {
-				// Close history, keep viewing the selected snapshot
 				m.showHist = false
-				m.message = fmt.Sprintf("viewing snapshot v%d (press h to return to live)", m.snapshots[m.histIdx].Version)
+				m.message = fmt.Sprintf("viewing snapshot v%d", m.snapshots[m.histIdx].Version)
 				break
 			}
 			ws, sess, ok := m.cursorSession()
@@ -362,11 +391,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "nothing to open"
 				break
 			}
-			m.confirmCmds = []string{buildOpenCommand(ws.Name, sess.SessionID, sess.FilePath)}
-			m.confirmWsName = ws.Name
-			m.confirmSessionID = sess.SessionID
-			m.confirmFilePath = sess.FilePath
-			m.message = ""
+			// Remember where we are so we can focus back
+			callerWs, callerSurf := callerSurface()
+			m.message = "opening..."
+			cmd, err := openSession(ws.Name, sess.SessionID, sess.FilePath)
+			if err != nil {
+				m.message = fmt.Sprintf("error: %v", err)
+			} else {
+				// Focus back to pi-tree's workspace/surface
+				if callerWs != "" {
+					_, _ = runCommand("cmux", "select-workspace", "--workspace", callerWs)
+				}
+				if callerSurf != "" {
+					time.Sleep(200 * time.Millisecond)
+					_, _ = runCommand("cmux", "focus-panel", "--panel", callerSurf)
+				}
+				m.message = fmt.Sprintf("✓ %s", cmd)
+			}
 
 		case "x":
 			m.hideUnderCursor()
@@ -481,25 +522,20 @@ func (m tuiModel) View() string {
 				sidStr = sessionStyle.Render(s.SessionID)
 			}
 
-			surfStr := ""
-			if s.SurfaceRef != "" {
-				surfStr = dimStyle2.Render("  " + s.SurfaceRef)
+			// Working directory suffix
+			workDirStr := ""
+			if s.FilePath != "" {
+				workDir := sessionDirToWorkingDir(s.FilePath)
+				if workDir != "" {
+					workDirStr = dimStyle2.Render("  " + workDir)
+				}
 			}
 
 			line := fmt.Sprintf("%s%s%s  %s  %s%s",
-				sessPrefix, branchStr, sidStr, size, date, surfStr)
+				sessPrefix, branchStr, sidStr, size, date, workDirStr)
 
 			_ = hiddenStyle // keep import used
 			treeLines = append(treeLines, line)
-
-			// Show file path indented under the session
-			if s.FilePath != "" {
-				pathIndent := "       "
-				if si == len(ws.Sessions)-1 {
-					pathIndent = "       "
-				}
-				treeLines = append(treeLines, pathIndent+dimStyle2.Render(s.FilePath))
-			}
 		}
 		treeLines = append(treeLines, "")
 	}
@@ -509,7 +545,19 @@ func (m tuiModel) View() string {
 		treeLines = append(treeLines, "")
 	}
 
-	treeStr := strings.Join(treeLines, "\n")
+	treeStr := ""
+	if len(treeLines) > 0 {
+		viewH := m.viewableHeight()
+		end := m.scrollOff + viewH
+		if end > len(treeLines) {
+			end = len(treeLines)
+		}
+		start := m.scrollOff
+		if start > len(treeLines) {
+			start = len(treeLines)
+		}
+		treeStr = strings.Join(treeLines[start:end], "\n")
+	}
 
 	if m.showHist && len(m.snapshots) > 0 {
 		var hlines []string
@@ -535,14 +583,7 @@ func (m tuiModel) View() string {
 	}
 
 	b.WriteString("\n")
-	// Show confirm prompt or regular message
-	if len(m.confirmCmds) > 0 {
-		b.WriteString(msgStyle.Render("  Commands:") + "\n")
-		for _, c := range m.confirmCmds {
-			b.WriteString(dimStyle2.Render("    "+c) + "\n")
-		}
-		b.WriteString(msgStyle.Render("  Run? (y/N)") + "\n")
-	} else if m.message != "" {
+	if m.message != "" {
 		b.WriteString(msgStyle.Render("  "+m.message) + "\n")
 	}
 
@@ -613,37 +654,95 @@ func resolveWorkspaceRef(name string) string {
 	return ""
 }
 
-// openSession finds existing workspace by name or creates new, then opens pi session.
-func openSession(wsName, sessionID, filePath string) (string, error) {
-	workDir := sessionDirToWorkingDir(filePath)
-	piShell := fmt.Sprintf("pi --session %s", sessionID)
-	if workDir != "" {
-		piShell = fmt.Sprintf("cd %s && pi --session %s", workDir, sessionID)
+// callerSurface returns the surface ref where this process is running.
+func callerSurface() (wsRef string, surfRef string) {
+	out, err := runCommand("cmux", "identify")
+	if err != nil {
+		return "", ""
 	}
+	// Quick parse — look for caller workspace_ref and surface_ref
+	lines := strings.Split(string(out), "\n")
+	inCaller := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, `"caller"`) {
+			inCaller = true
+			continue
+		}
+		if inCaller {
+			if strings.Contains(trimmed, `"workspace_ref"`) {
+				wsRef = extractJSONString(trimmed)
+			}
+			if strings.Contains(trimmed, `"surface_ref"`) {
+				surfRef = extractJSONString(trimmed)
+			}
+			if strings.HasPrefix(trimmed, "}") {
+				break
+			}
+		}
+	}
+	return wsRef, surfRef
+}
 
-	// Check if workspace exists — select it if so
+func extractJSONString(line string) string {
+	// "surface_ref" : "surface:35",
+	idx := strings.Index(line, ": ")
+	if idx == -1 {
+		return ""
+	}
+	val := strings.TrimSpace(line[idx+2:])
+	val = strings.Trim(val, `",`)
+	return strings.TrimSpace(val)
+}
+
+// openSession opens a pi session in the matching workspace (or creates a new one).
+func openSession(wsName, sessionID, filePath string) (string, error) {
+	piCmd := fmt.Sprintf("pi --session %s", sessionID)
+	workDir := sessionDirToWorkingDir(filePath)
+
+	// Check if workspace already exists by name
 	wsRef := resolveWorkspaceRef(wsName)
 	if wsRef != "" {
+		// Switch to existing workspace, create new tab, send pi command
 		_, _ = runCommand("cmux", "select-workspace", "--workspace", wsRef)
+		time.Sleep(300 * time.Millisecond)
+
+		surfOut, err := runCommand("cmux", "new-surface", "--type", "terminal", "--workspace", wsRef)
+		if err != nil {
+			return "", fmt.Errorf("new-surface: %w", err)
+		}
+		var surfRef string
+		for _, f := range strings.Fields(string(surfOut)) {
+			if strings.HasPrefix(f, "surface:") {
+				surfRef = f
+				break
+			}
+		}
+		if surfRef == "" {
+			return "", fmt.Errorf("could not parse surface ref from: %s", string(surfOut))
+		}
+
+		time.Sleep(500 * time.Millisecond)
+		_, err = runCommand("cmux", "send-panel", "--panel", surfRef, "--workspace", wsRef, piCmd+"\n")
+		if err != nil {
+			return "", fmt.Errorf("send-panel: %w", err)
+		}
+
+		return fmt.Sprintf("opened in workspace %q (%s) → %s", wsName, wsRef, surfRef), nil
 	}
 
-	// Always create new workspace tab with the pi command
-	cmd := fmt.Sprintf("cmux new-workspace --command %q", piShell)
-	_, err := runCommand("cmux", "new-workspace", "--command", piShell)
+	// Workspace doesn't exist — create new one with working directory
+	args := []string{"new-workspace", "--command", piCmd}
+	cmd := fmt.Sprintf("cmux new-workspace --command %q", piCmd)
+	if workDir != "" {
+		args = append(args, "--working-directory", workDir)
+		cmd += fmt.Sprintf(" --working-directory %s", workDir)
+	}
+	_, err := runCommand("cmux", args...)
 	if err != nil {
 		return cmd, fmt.Errorf("new-workspace: %w", err)
 	}
 	return cmd, nil
-}
-
-// buildOpenCommand returns a preview of the command openSession would run.
-func buildOpenCommand(wsName, sessionID, filePath string) string {
-	workDir := sessionDirToWorkingDir(filePath)
-	piShell := fmt.Sprintf("pi --session %s", sessionID)
-	if workDir != "" {
-		piShell = fmt.Sprintf("cd %s && pi --session %s", workDir, sessionID)
-	}
-	return fmt.Sprintf("cmux new-workspace --command %q", piShell)
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

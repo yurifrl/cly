@@ -5,49 +5,50 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
 
 // workspaceSlugs maps workspace name → pi session dir slug.
-// Best-effort; unknown workspaces fall back to slug derivation.
+// Best-effort; unknown workspaces fall back to fuzzy name matching.
 var workspaceSlugs = map[string]string{
-	"pi":                                "pi-my-extensions",
-	"loadtests":                         "monorepo-loadtest",
-	"π - bff-graphql":                   "monorepo-loadtest",
+	"pi":                                  "pi-my-extensions",
+	"loadtests":                           "monorepo-loadtest",
+	"π - bff-graphql":                     "monorepo-loadtest",
 	"π - bff-graphql - monorepo-loadtest": "monorepo-loadtest",
-	"π - DotFiles":                      "DotFiles",
-	"incident-review":                   "tidbits-oncall-incident-review",
-	"deeb":                              "deeb",
-	"Obsidian":                          "Obsidian",
-	"argus":                             "argus",
-	"forge":                             "forge",
-	"portal":                            "resilience-portal",
-	"yarb":                              "yarb",
-	"bmm":                               "tidbits-oncall-projects-bmm-certification",
-	"π - consoly":                       "consoly",
-	"allrepo":                           "all-repos",
-	"slides":                            "aihub-slides_incident-review",
-	"cmux":                              "cmux",
+	"π - DotFiles":                        "DotFiles",
+	"incident-review":                     "tidbits-oncall-incident-review",
+	"deeb":                                "deeb",
+	"Obsidian":                            "Obsidian",
+	"argus":                               "argus",
+	"forge":                               "forge",
+	"portal":                              "resilience-portal",
+	"yarb":                                "yarb",
+	"bmm":                                 "tidbits-oncall-projects-bmm-certification",
+	"π - consoly":                         "consoly",
+	"allrepo":                             "all-repos",
+	"slides":                              "aihub-slides_incident-review",
+	"cmux":                                "cmux",
 }
 
-var sessionNameRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})`)
-
 func parseSessionName(stem string) string {
-	m := sessionNameRe.FindStringSubmatch(stem)
-	if m != nil {
-		return fmt.Sprintf("%s %s:%s", m[1], m[2], m[3])
+	parts := strings.SplitN(stem, "T", 2)
+	if len(parts) == 2 && len(parts[0]) == 10 {
+		timePart := strings.ReplaceAll(parts[1], "-", ":")
+		if len(timePart) >= 5 {
+			return parts[0] + " " + timePart[:5]
+		}
 	}
-	return stem[:16]
+	if len(stem) >= 16 {
+		return stem[:16]
+	}
+	return stem
 }
 
 // cmuxRun runs a cmux command and returns stdout.
 func cmuxRun(args ...string) ([]byte, error) {
-	// Use os/exec directly to avoid import cycles
-	out, err := runCommand("cmux", args...)
-	return out, err
+	return runCommand("cmux", args...)
 }
 
 // piSessionsDir returns the ~/.pi/agent/sessions base directory.
@@ -58,7 +59,6 @@ func piSessionsDir() string {
 
 // cwdSlugForWorkspace returns the session dir slug for a workspace name.
 func cwdSlugForWorkspace(name string) string {
-	// Direct lookup first
 	for wsName, slug := range workspaceSlugs {
 		if strings.EqualFold(wsName, name) {
 			return slug
@@ -79,7 +79,6 @@ func findSessionDir(slug string) string {
 		return ""
 	}
 	slug = strings.ToLower(slug)
-	// Prefer exact suffix match
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -89,13 +88,52 @@ func findSessionDir(slug string) string {
 			return filepath.Join(base, e.Name())
 		}
 	}
-	// Fallback: contains
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
 		if strings.Contains(strings.ToLower(e.Name()), slug) {
 			return filepath.Join(base, e.Name())
+		}
+	}
+	return ""
+}
+
+// listAllSessionDirs returns all directory names under ~/.pi/agent/sessions.
+func listAllSessionDirs() []string {
+	base := piSessionsDir()
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return nil
+	}
+	var dirs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	return dirs
+}
+
+// findSessionDirByName tries to match a workspace name to a session directory.
+// Session dirs look like "--Users-yuri-Workdir-Yuri-cly--"
+// We match if the dir name ends with the workspace name (case-insensitive).
+func findSessionDirByName(wsName string, allDirs []string) string {
+	base := piSessionsDir()
+	wsLower := strings.ToLower(wsName)
+
+	// Exact suffix: dir ends with -<name>--
+	for _, d := range allDirs {
+		lower := strings.ToLower(d)
+		lower = strings.TrimSuffix(lower, "--")
+		if strings.HasSuffix(lower, "-"+wsLower) || lower == wsLower {
+			return filepath.Join(base, d)
+		}
+	}
+	// Contains match
+	for _, d := range allDirs {
+		if strings.Contains(strings.ToLower(d), wsLower) {
+			return filepath.Join(base, d)
 		}
 	}
 	return ""
@@ -152,66 +190,6 @@ func topSessions(dir string, n int) []PiSession {
 	return result
 }
 
-// workspaceInfo holds parsed cmux workspace data.
-type workspaceInfo struct {
-	name      string
-	piCount   int
-}
-
-// parsePiSurfaces parses `cmux list-pane-surfaces` output.
-// Returns surface refs (e.g. "surface:65") whose title starts with "π", in order.
-func parsePiSurfaces(output []byte) []string {
-	var refs []string
-	for _, line := range bytes.Split(output, []byte("\n")) {
-		s := strings.TrimSpace(string(line))
-		s = strings.TrimLeft(s, "* ")
-		if strings.HasPrefix(s, "surface:") {
-			parts := strings.SplitN(s, "  ", 2)
-			if len(parts) == 2 {
-				title := strings.TrimSpace(parts[1])
-				title = strings.TrimSuffix(title, "  [selected]")
-				title = strings.TrimSpace(title)
-				if strings.HasPrefix(title, "π") {
-					refs = append(refs, strings.TrimSpace(parts[0]))
-				}
-			}
-		}
-	}
-	return refs
-}
-
-func countPiSurfaces(output []byte) int {
-	return len(parsePiSurfaces(output))
-}
-
-// parseWorkspaceNames parses `cmux list-workspaces` output.
-// Returns slice of workspace names (no refs).
-func parseWorkspaceNames(output []byte) []workspaceInfo {
-	var result []workspaceInfo
-	for _, line := range bytes.Split(output, []byte("\n")) {
-		s := strings.TrimSpace(string(line))
-		if s == "" {
-			continue
-		}
-		// lines: "  workspace:5  pi" or "* workspace:18  cmux  [selected]"
-		s = strings.TrimLeft(s, "* ")
-		// split on double-space
-		parts := strings.SplitN(s, "  ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		ref := strings.TrimSpace(parts[0])   // "workspace:5"
-		rest := strings.TrimSpace(parts[1])  // "pi" or "cmux  [selected]"
-		rest = strings.TrimSuffix(rest, "  [selected]")
-		rest = strings.TrimSpace(rest)
-		if !strings.HasPrefix(ref, "workspace:") {
-			continue
-		}
-		result = append(result, workspaceInfo{name: rest})
-	}
-	return result
-}
-
 // ScanTree queries cmux and reads pi session files to build the current tree.
 func ScanTree() ([]WorkspaceNode, error) {
 	wsOut, err := cmuxRun("list-workspaces")
@@ -219,13 +197,6 @@ func ScanTree() ([]WorkspaceNode, error) {
 		return nil, fmt.Errorf("cmux list-workspaces: %w", err)
 	}
 
-	workspaces := parseWorkspaceNames(wsOut)
-	if len(workspaces) == 0 {
-		return nil, fmt.Errorf("no workspaces found")
-	}
-
-	// Get workspace refs so we can query surfaces
-	// Re-parse to get ref→name mapping
 	type wsRef struct {
 		ref  string
 		name string
@@ -250,39 +221,35 @@ func ScanTree() ([]WorkspaceNode, error) {
 		}
 	}
 
-	// Deduplicate by name (some workspaces share same cwd slug)
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("no workspaces found")
+	}
+
+	// Build list of all session dirs for fuzzy matching
+	allSessionDirs := listAllSessionDirs()
+
 	seen := map[string]bool{}
 	var nodes []WorkspaceNode
 	for _, r := range refs {
-		surfOut, err := cmuxRun("list-pane-surfaces", "--workspace", r.ref)
-		if err != nil {
-			continue
+		// Try slug map first, then fuzzy match by workspace name
+		dir := ""
+		slug := cwdSlugForWorkspace(r.name)
+		if slug != "" {
+			dir = findSessionDir(slug)
 		}
-		surfRefs := parsePiSurfaces(surfOut)
-		if len(surfRefs) == 0 {
-			continue
+		if dir == "" {
+			dir = findSessionDirByName(r.name, allSessionDirs)
 		}
 
-		slug := cwdSlugForWorkspace(r.name)
-		dir := findSessionDir(slug)
-		sessions := topSessions(dir, len(surfRefs))
+		sessions := topSessions(dir, 5)
 		if len(sessions) == 0 {
 			continue
 		}
 
-		// Attach surface refs to sessions (best-effort by index)
-		for i := range sessions {
-			if i < len(surfRefs) {
-				sessions[i].SurfaceRef = surfRefs[i]
-			}
-		}
-
-		// Deduplicate nodes with same name (e.g. π - bff-graphql shares monorepo slug)
-		key := r.name + ":" + slug
-		if seen[key] {
+		if seen[r.name] {
 			continue
 		}
-		seen[key] = true
+		seen[r.name] = true
 
 		nodes = append(nodes, WorkspaceNode{
 			Name:         r.name,
@@ -304,5 +271,3 @@ func ScanTree() ([]WorkspaceNode, error) {
 
 	return nodes, nil
 }
-
-
