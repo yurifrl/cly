@@ -5,7 +5,7 @@ includes:
 
 vars:
   VERSION:
-    sh: cat VERSION
+    sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "dev"
   BUILD_TIME:
     sh: date -u +%Y%m%d%H%M%S
   BINARY_NAME: cly
@@ -80,7 +80,7 @@ tasks:
   version:
     desc: Show current version
     cmds:
-      - echo "v{{.VERSION}}"
+      - git describe --tags --abbrev=0
 
   worktree:
     desc: Create git worktree in .worktrees/<name>

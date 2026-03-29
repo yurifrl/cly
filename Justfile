@@ -1,7 +1,7 @@
 # Justfile for cly project
 
 # Variables
-version := `cat VERSION`
+version := `git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo dev`
 build_time := `date -u +%Y%m%d%H%M%S`
 binary_name := "cly"
 build_dir := "dist"
@@ -49,29 +49,29 @@ run-mcp *args:
 
 # Version management
 version-show:
-    @echo "v{{version}}"
+    @git describe --tags --abbrev=0
 
 # Bump version tasks
 bump-patch:
     #!/usr/bin/env bash
-    current=$(cat VERSION)
+    current=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
     new=$(echo $current | awk -F. '{printf "%d.%d.%d\n", $1, $2, $3+1}')
-    echo $new > VERSION
-    echo "Version bumped to $new"
+    git tag -a "v$new" -m "Release v$new"
+    echo "Version bumped to v$new"
 
 bump-minor:
     #!/usr/bin/env bash
-    current=$(cat VERSION)
+    current=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
     new=$(echo $current | awk -F. '{printf "%d.%d.%d\n", $1, $2+1, 0}')
-    echo $new > VERSION
-    echo "Version bumped to $new"
+    git tag -a "v$new" -m "Release v$new"
+    echo "Version bumped to v$new"
 
 bump-major:
     #!/usr/bin/env bash
-    current=$(cat VERSION)
+    current=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
     new=$(echo $current | awk -F. '{printf "%d.%d.%d\n", $1+1, 0, 0}')
-    echo $new > VERSION
-    echo "Version bumped to $new"
+    git tag -a "v$new" -m "Release v$new"
+    echo "Version bumped to v$new"
 
 # Git worktree management
 worktree name:
