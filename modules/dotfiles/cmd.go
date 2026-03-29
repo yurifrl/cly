@@ -28,7 +28,17 @@ func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "dotfiles",
 		Short: "Manage dotfile symlinks",
-		Long:  "Create and manage symlinks from a declarative config file",
+		Long: `Create and manage symlinks from a declarative config file.
+
+Config syntax (dotfiles.conf):
+  ./src -> ~/dst                        symlink (dirs need trailing /)
+  !cmd                                  run shell command (-i flag)
+  @once name -- cmd                     run once ever (-f to rerun)
+  @startup name -- cmd                  run every time (-j flag)
+  @startup name keepalive -- cmd        run and keep alive
+  @interval name every=1h -- cmd        run if interval elapsed
+  @op account=x ./s.op -> ~/d           1Password inject (-o flag)
+  .jsonc -> .json                       comments stripped automatically`,
 		RunE:  runSync,
 	}
 
