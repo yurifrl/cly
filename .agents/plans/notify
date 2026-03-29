@@ -1,0 +1,69 @@
+# Plan: pkg/cmux — cmux integration package
+
+## Context
+
+The user wants a reusable `pkg/cmux` package that wraps the cmux CLI (exec-based, `CMUX_WORKSPACE_ID` detection) so any module in the app can call `cmux.Notify(ctx, title, body)` after finishing work — the same way `pkg/notify` is used today but focused purely on cmux. The existing `pkg/notify` / `modules/notify` stay untouched; this is a new lightweight peer package.
+
+Use-case anchor: `modules/dotfiles` — when `runSync` finishes, it calls `cmux.Notify(ctx, "Dotfiles", "Sync complete")` if cmux is available.
+
+## Approach
+
+1. Add `pkg/cmux/` — a thin client package with an `Available()` check and typed methods that exec the `cmux` CLI.
+2. Wire one concrete usage into `modules/dotfiles` as the reference example.
+3. No new CLI command, no changes to `modules/notify`, no config required.
+
+The package surface:
+
+```go
+// Available returns true when CMUX_WORKSPACE_ID is set
+func Available() bool
+
+// Notify sends a desktop notification via `cmux notify --title … --body …`
+func Notify(ctx context.Context, title, body string) error
+
+// SetStatus sets a sidebar status key via `cmux set-status <key> <value> [--icon …] [--color …]`
+func SetStatus(ctx context.Context, key, value string, opts ...StatusOpt) error
+
+// ClearStatus clears a sidebar status key
+func ClearStatus(ctx context.Context, key string) error
+```
+
+`StatusOpt` options: `WithIcon(name string)`, `WithColor(hex string)`.
+
+Only the functions actually needed by dotfiles (and future callers) are added — start with `Available()` and `Notify()`.
+
+## Files to modify / create
+
+| File | Action |
+|---|---|
+| `pkg/cmux/cmux.go` | **Create** — package with `Available()`, `Notify()`, `SetStatus()`, `ClearStatus()` |
+| `modules/dotfiles/cmd.go` | **Edit** — call `cmux.Notify` at the end of `runSync` |
+
+No changes to:
+- `pkg/notify/` (keep as-is for Claude hooks)
+- `modules/notify/` (keep as-is)
+- `go.mod` (no new deps — pure stdlib `os/exec`)
+
+## Reuse
+
+- Detection pattern from `pkg/notify/zellij.go`: `os.Getenv("ZELLIJ")` → same pattern with `CMUX_WORKSPACE_ID`
+- Exec pattern from `pkg/notify/zellij.go`: `exec.CommandContext(ctx, "cmux", args...).Run()`
+- cmux CLI spec from `daemon/remote/cmd/cmuxd-remote/cli.go`: `notify` uses `--title` and `--body` flags
+
+## Steps
+
+- [ ] Create `pkg/cmux/cmux.go` with `Available()` and `Notify(ctx, title, body)` (and stub `SetStatus`/`ClearStatus` if useful)
+- [ ] Add import and `cmux.Notify` call to `modules/dotfiles/cmd.go` `runSync` — guarded by `cmux.Available()`
+- [ ] Run `task build` to confirm it compiles
+
+## Verification
+
+```bash
+task build
+
+# Outside cmux (Available() = false, no-op):
+dist/cly dotfiles
+
+# Inside cmux (Available() = true):
+dist/cly dotfiles   # → desktop notification "Dotfiles — Sync complete"
+```

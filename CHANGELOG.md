@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-03-27 cmux Integration Package
+
+- Session ID: c3c7de12-52fa-42d4-a8bf-e4134644345a
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-03-27T03-52-19-359Z_c3c7de12-52fa-42d4-a8bf-e4134644345a.jsonl
+- Session Name: 2026-03-27-1601-dotfiles-lock-cmux
+- Context Name: 2026-03-27-1601-dotfiles-lock-cmux
+
+### Added
+- `pkg/cmux` — reusable cmux terminal multiplexer integration package with `Available()`, `Notify(ctx, title, body)`, `SetStatus(ctx, key, value, ...opts)`, `ClearStatus(ctx, key)`; all methods no-op when `CMUX_WORKSPACE_ID` is unset
+- `cmux.Notify` call at end of `modules/dotfiles` `runSync` as reference usage — sends "Sync complete" notification when inside cmux
+
+## 2026-03-27 Dotfiles Lock File for Stale Artifact Cleanup
+- Session ID: 676b1c93-f202-4e02-ad7e-f0930a52789f
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-03-27T12-52-24-946Z_676b1c93-f202-4e02-ad7e-f0930a52789f.jsonl
+- Session Name: 2026-03-27-1601-dotfiles-lock-mux
+- Context Name: 2026-03-27-1601-dotfiles-lock-mux
+
+### Added
+- `modules/dotfiles/lock.go` — lock file system at `~/.local/share/cly/dotfiles/dotfiles.lock` tracking all applied artifacts (symlinks, jsonc copies, jobs, install commands, op mappings) across runs
+- `modules/dotfiles/lock_test.go` — 9 tests for lock build, diff detection, and JSON round-trip
+- `RemoveJobByName(name string)` in `jobs.go` — removes a single launchd job by name (plist + script + once-state)
+- `RemoveJsoncCopy(m Mapping) bool` in `jsonc.go` — deletes generated JSON destination file
+- `RemoveOpMapping(m OpMapping) bool` in `op.go` — deletes injected 1Password destination file
+- `--no-it` flag on `cly dotfiles` — skips interactive prompts for non-interactive use
+
+### Changed
+- `cly dotfiles` now diffs lock on every run: auto-removes stale symlinks, jsonc copies, jobs, and op mapping files when their entries are deleted from `dotfiles.conf`
+- Removed install commands trigger a prominent red interactive banner requiring Enter to continue (user must manually undo; bypassable with `--no-it`)
+
 ## 2026-03-12
 
 ### Added

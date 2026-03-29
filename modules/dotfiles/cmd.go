@@ -1,6 +1,7 @@
 package dotfiles
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/cmux"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -19,6 +21,7 @@ var (
 	allFlag     bool
 	forceFlag   bool
 	configFlag  string
+	noItFlag    bool
 )
 
 func Register(parent *cobra.Command) {
@@ -35,6 +38,7 @@ func Register(parent *cobra.Command) {
 	cmd.Flags().BoolVarP(&allFlag, "all", "a", false, "Run everything (install, jobs, 1Password)")
 	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions (rerun @once jobs)")
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
+	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
 
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -82,6 +86,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Load previous lock before applying anything.
+	lockFile, _ := lockFilePath()
+	oldLock, _ := loadLock(lockFile)
 
 	for _, e := range cfg.Errors {
 		fmt.Printf("⚠️  %s\n", e)
@@ -135,7 +143,61 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Build new lock and diff against previous.
+	newLock := buildLock(cfg)
+	diff := diffLocks(oldLock, newLock)
+	applyDiff(diff)
+
+	// Save updated lock.
+	_ = saveLock(lockFile, newLock)
+
+	cmux.Notify(cmd.Context(), "Dotfiles", "Sync complete")
 	return nil
+}
+
+// applyDiff cleans up artifacts that were removed from dotfiles.conf since the last run.
+func applyDiff(diff LockDiff) {
+	for _, e := range diff.RemovedSymlinks {
+		m := Mapping{Source: e.Source, Destination: e.Destination}
+		if RemoveSymlink(m) {
+			fmt.Printf("%s %s\n", style.YellowStyle.Render("🗑️  Removed symlink:"), shortenPath(e.Destination))
+		}
+	}
+
+	for _, e := range diff.RemovedJsoncCopies {
+		m := Mapping{Source: e.Source, Destination: e.Destination}
+		if RemoveJsoncCopy(m) {
+			fmt.Printf("%s %s\n", style.YellowStyle.Render("🗑️  Removed jsonc copy:"), shortenPath(e.Destination))
+		}
+	}
+
+	for _, name := range diff.RemovedJobs {
+		if err := RemoveJobByName(name); err == nil {
+			fmt.Printf("%s %s\n", style.YellowStyle.Render("🗑️  Removed job:"), name)
+		}
+	}
+
+	for _, e := range diff.RemovedOpMappings {
+		m := OpMapping{Source: e.Source, Destination: e.Destination}
+		if RemoveOpMapping(m) {
+			fmt.Printf("%s %s\n", style.YellowStyle.Render("🗑️  Removed op file:"), shortenPath(e.Destination))
+		}
+	}
+
+	if len(diff.RemovedInstallCommands) > 0 && !noItFlag {
+		fmt.Printf("\n%s\n", style.RedStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+		fmt.Printf("%s\n", style.RedStyle.Render("  ⛔  REMOVED INSTALL COMMANDS — manual cleanup required"))
+		fmt.Printf("%s\n", style.RedStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+		for _, cmdStr := range diff.RemovedInstallCommands {
+			fmt.Printf("  %s  %s\n", style.RedStyle.Render("▶"), cmdStr)
+		}
+		fmt.Printf("%s\n\n", style.RedStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+		fmt.Printf("These commands were previously executed and cannot be auto-undone.\n")
+		fmt.Printf("Review the list above and undo manually if needed.\n\n")
+		fmt.Printf("Press Enter to continue...")
+		reader := bufio.NewReader(os.Stdin)
+		_, _ = reader.ReadString('\n')
+	}
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
