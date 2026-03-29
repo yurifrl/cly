@@ -19,7 +19,6 @@ import (
 	"github.com/yurifrl/cly/modules/dotfiles"
 	gitcommits "github.com/yurifrl/cly/modules/git-commits"
 	"github.com/yurifrl/cly/modules/helpy"
-	"github.com/yurifrl/cly/modules/install"
 	llmchat "github.com/yurifrl/cly/modules/llm-chat"
 	"github.com/yurifrl/cly/modules/mcp"
 	"github.com/yurifrl/cly/modules/notify"
@@ -81,7 +80,6 @@ func init() {
 	dotfiles.Register(RootCmd)
 	gitcommits.Register(RootCmd)
 	helpy.Register(RootCmd)
-	install.Register(RootCmd)
 	llmchat.Register(RootCmd)
 	mcp.Register(RootCmd)
 	bundle.Register(RootCmd)
