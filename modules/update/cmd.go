@@ -1,166 +1,281 @@
 package update
 
 import (
-	"bufio"
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/creativeprojects/go-selfupdate"
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
+const (
+	defaultSourceDir  = "/Users/yuri/Workdir/Yuri/cly"
+	defaultInstallDir = "/usr/local/bin"
+	binaryName        = "cly"
+	githubRepo        = "yurifrl/cly"
+)
+
 var (
-	checkOnly   bool
-	forceUpdate bool
-	skipConfirm bool
-	targetVer   string
+	remote   bool
+	bumpFlag string
 )
 
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use:   "update",
-		Short: "Update cly to the latest version",
-		Long: `Check for and install the latest version of cly from GitHub releases.
+		Use:     "update",
+		Aliases: []string{"u"},
+		Short: "Build and install cly from source",
+		Long: `Update cly by building from local source or downloading from GitHub.
 
-By default, this command will:
-  1. Check for the latest version
-  2. Prompt for confirmation
-  3. Download and install if a newer version is available
+By default, builds from local source directory (configurable via
+modules.update.source_dir in config) and installs to /usr/local/bin/cly.
 
-The binary is safely replaced with automatic backup and rollback on failure.`,
+Use --remote to download the latest release from GitHub instead.`,
 		RunE: run,
 	}
 
-	cmd.Flags().BoolVar(&checkOnly, "check", false, "Only check for updates without installing")
-	cmd.Flags().BoolVar(&forceUpdate, "force", false, "Force reinstall even if on latest version")
-	cmd.Flags().BoolVarP(&skipConfirm, "yes", "y", false, "Skip confirmation prompt")
-	cmd.Flags().StringVar(&targetVer, "version", "", "Install specific version (e.g., v0.2.5)")
+	cmd.Flags().BoolVar(&remote, "remote", false, "Install from GitHub release instead of local source")
+	cmd.Flags().StringVarP(&bumpFlag, "bump", "b", "", "Bump version before building (patch, minor, major). Default: patch if flag given without value")
+	cmd.Flags().Lookup("bump").NoOptDefVal = "patch"
+
+	_ = cmd.RegisterFlagCompletionFunc("bump", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"patch\tBump patch version (1.0.5 → 1.0.6)", "minor\tBump minor version (1.0.5 → 1.1.0)", "major\tBump major version (1.0.5 → 2.0.0)"}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	parent.AddCommand(cmd)
 }
 
-func run(cobraCmd *cobra.Command, args []string) error {
-	// Get version from root command
-	currentVersion := cobraCmd.Root().Version
-	updater := New(currentVersion)
-
-	// Show current version
-	fmt.Printf("%s Current version: %s\n",
-		style.GreenStyle.Render("✓"),
-		updater.currentVer.Raw)
-
-	// Check for updates
-	fmt.Printf("%s Checking for updates...\n",
-		style.BlueStyle.Render("⚡"))
-
-	release, err := updater.CheckLatest()
-	if err != nil {
-		return fmt.Errorf("failed to check for updates: %w\n%s",
-			err,
-			style.SubtleStyle.Render("Check your internet connection or try again later"))
+func run(cmd *cobra.Command, args []string) error {
+	if remote {
+		return updateRemote(cmd)
 	}
-
-	// Parse latest version
-	latestVer, err := ParseVersion(release.Version)
-	if err != nil {
-		return fmt.Errorf("failed to parse latest version: %w", err)
-	}
-
-	// Compare versions
-	needsUpdate := updater.currentVer.IsOlderThan(latestVer)
-
-	if !needsUpdate && !forceUpdate {
-		fmt.Printf("%s Already on latest version\n",
-			style.GreenStyle.Render("✅"))
-		return nil
-	}
-
-	if checkOnly {
-		if needsUpdate {
-			fmt.Printf("%s New version available: %s\n",
-				style.BlueStyle.Render("🎉"),
-				release.Version)
-			fmt.Printf("\n%s\n",
-				style.SubtleStyle.Render("Run 'cly update' to install"))
-		} else {
-			fmt.Printf("%s Already on latest version\n",
-				style.GreenStyle.Render("✅"))
+	// Auto-detect: use local source if available, fall back to remote
+	sourceDir := getSourceDir()
+	if _, err := os.Stat(filepath.Join(sourceDir, "go.mod")); err == nil {
+		// Default to patch bump when building locally
+		if bumpFlag == "" {
+			bumpFlag = "patch"
 		}
-		return nil
+		return updateLocal(cmd)
+	}
+	fmt.Printf("%s Source not found at %s, falling back to remote\n",
+		style.YellowStyle.Render("⚠️"), sourceDir)
+	return updateRemote(cmd)
+}
+
+func updateLocal(cmd *cobra.Command) error {
+	sourceDir := getSourceDir()
+	installDir := expandPath(defaultInstallDir)
+	destPath := filepath.Join(installDir, binaryName)
+
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return fmt.Errorf("source directory not found: %s\n%s",
+			sourceDir,
+			style.SubtleStyle.Render("Configure via modules.update.source_dir in config"))
 	}
 
-	// Show update info
-	if forceUpdate {
-		fmt.Printf("%s Reinstalling version: %s\n",
-			style.YellowStyle.Render("🔄"),
-			release.Version)
-	} else {
-		fmt.Printf("%s New version available: %s\n",
-			style.BlueStyle.Render("🎉"),
-			release.Version)
+	// Check if caller passed an explicit output path (e.g. bootstrap from task)
+	if out := os.Getenv("CLY_INSTALL_DEST"); out != "" {
+		destPath = expandPath(out)
+		installDir = filepath.Dir(destPath)
 	}
 
-	// Confirm update
-	if !skipConfirm && !confirmUpdate(release.Version) {
-		fmt.Println(style.SubtleStyle.Render("Update cancelled"))
-		return nil
+	goMod := filepath.Join(sourceDir, "go.mod")
+	if _, err := os.Stat(goMod); os.IsNotExist(err) {
+		return fmt.Errorf("no go.mod found in %s — not a Go project", sourceDir)
 	}
 
-	// Find asset for current platform
-	osName, arch := DetectPlatform()
-	asset, found := release.FindAssetForPlatform(osName, arch)
-	if !found {
-		return fmt.Errorf("no binary available for %s-%s", osName, arch)
+	version := readVersion(sourceDir)
+
+	if bumpFlag != "" {
+		newVersion, err := bumpVersion(version, bumpFlag)
+		if err != nil {
+			return err
+		}
+		if err := writeVersion(sourceDir, newVersion); err != nil {
+			return err
+		}
+		fmt.Printf("%s Version bumped: %s → %s\n",
+			style.BlueStyle.Render("🏷️ "),
+			version,
+			newVersion)
+		version = newVersion
 	}
 
-	// Create temp file
-	tmpFile, err := os.CreateTemp("", "cly-update-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(tmpPath)
-
-	// Download
-	fmt.Printf("%s Downloading %s...\n",
-		style.BlueStyle.Render("⬇️ "),
-		asset.Name)
-
-	if err := updater.Download(asset, tmpPath); err != nil {
-		return fmt.Errorf("download failed: %w", err)
+	if err := os.MkdirAll(installDir, 0755); err != nil {
+		return fmt.Errorf("failed to create install directory: %w", err)
 	}
 
-	// Install
-	fmt.Printf("%s Installing update...\n",
-		style.BlueStyle.Render("🔄"))
+	ldflags := fmt.Sprintf("-s -w -X github.com/yurifrl/cly/cmd.Version=%s", version)
 
-	currentBinary, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get current binary path: %w", err)
+	fmt.Printf("%s Building cly %s from %s\n",
+		style.BlueStyle.Render("⚡"),
+		version,
+		sourceDir)
+
+	buildCmd := exec.Command("go", "build",
+		fmt.Sprintf("-ldflags=%s", ldflags),
+		"-o", destPath,
+		".",
+	)
+	buildCmd.Dir = sourceDir
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+
+	if err := buildCmd.Run(); err != nil {
+		return fmt.Errorf("build failed: %w", err)
 	}
 
-	if err := updater.Install(tmpPath, currentBinary); err != nil {
-		return fmt.Errorf("installation failed: %w", err)
-	}
-
-	fmt.Printf("%s Successfully updated to %s!\n",
+	fmt.Printf("%s Installed to %s\n",
 		style.GreenStyle.Render("✅"),
-		release.Version)
+		destPath)
+
+	installCompletions(destPath)
 
 	return nil
 }
 
-func confirmUpdate(version string) bool {
-	fmt.Printf("\n? Update to %s? (y/N) ", version)
+func updateRemote(cmd *cobra.Command) error {
+	currentVersion := cmd.Root().Version
 
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
+	fmt.Printf("%s Checking latest release...\n",
+		style.BlueStyle.Render("⚡"))
+
+	ctx := context.Background()
+	release, found, err := selfupdate.DetectLatest(ctx, selfupdate.NewRepositorySlug("yurifrl", "cly"))
 	if err != nil {
-		return false
+		return fmt.Errorf("failed to check releases: %w\n%s",
+			err,
+			style.SubtleStyle.Render("Check your internet connection or try again later"))
+	}
+	if !found {
+		fmt.Printf("%s Already up to date (%s)\n", style.GreenStyle.Render("✅"), currentVersion)
+		return nil
+	}
+	if !release.GreaterThan(currentVersion) {
+		fmt.Printf("%s Already up to date (%s)\n", style.GreenStyle.Render("✅"), currentVersion)
+		return nil
 	}
 
-	response = strings.TrimSpace(strings.ToLower(response))
-	return response == "y" || response == "yes"
+	fmt.Printf("%s Updating %s → %s...\n",
+		style.BlueStyle.Render("⬇️ "),
+		currentVersion,
+		release.Version())
+
+	exe, err := selfupdate.ExecutablePath()
+	if err != nil {
+		return fmt.Errorf("could not locate executable: %w", err)
+	}
+
+	if err := selfupdate.DefaultUpdater().UpdateTo(ctx, release, exe); err != nil {
+		return fmt.Errorf("update failed: %w", err)
+	}
+
+	fmt.Printf("%s Updated to %s\n", style.GreenStyle.Render("✅"), release.Version())
+
+	installCompletions(exe)
+
+	return nil
+}
+
+func getSourceDir() string {
+	dir := config.GetString("modules.update.source_dir")
+	if dir != "" {
+		return expandPath(dir)
+	}
+	// fall back to old key for backwards compat
+	dir = config.GetString("modules.install.source_dir")
+	if dir != "" {
+		return expandPath(dir)
+	}
+	return defaultSourceDir
+}
+
+func readVersion(sourceDir string) string {
+	versionFile := filepath.Join(sourceDir, "VERSION")
+	data, err := os.ReadFile(versionFile)
+	if err != nil {
+		return "dev"
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func writeVersion(sourceDir, version string) error {
+	versionFile := filepath.Join(sourceDir, "VERSION")
+	return os.WriteFile(versionFile, []byte(version+"\n"), 0644)
+}
+
+func bumpVersion(current, level string) (string, error) {
+	v := strings.TrimPrefix(current, "v")
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid version format %q, expected X.Y.Z", current)
+	}
+
+	major, minor, patch := 0, 0, 0
+	if _, err := fmt.Sscanf(parts[0], "%d", &major); err != nil {
+		return "", fmt.Errorf("invalid major version: %s", parts[0])
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &minor); err != nil {
+		return "", fmt.Errorf("invalid minor version: %s", parts[1])
+	}
+	if _, err := fmt.Sscanf(parts[2], "%d", &patch); err != nil {
+		return "", fmt.Errorf("invalid patch version: %s", parts[2])
+	}
+
+	switch level {
+	case "major":
+		major++
+		minor = 0
+		patch = 0
+	case "minor":
+		minor++
+		patch = 0
+	case "patch":
+		patch++
+	default:
+		return "", fmt.Errorf("invalid bump level %q, use: patch, minor, or major", level)
+	}
+
+	return fmt.Sprintf("%d.%d.%d", major, minor, patch), nil
+}
+
+func installCompletions(clyPath string) {
+	if clyPath == "" {
+		var err error
+		clyPath, err = exec.LookPath(binaryName)
+		if err != nil {
+			return
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	compCmd := exec.CommandContext(ctx, clyPath, "completion", "fish", "install")
+	compCmd.Stdout = os.Stdout
+	compCmd.Stderr = os.Stderr
+	if err := compCmd.Run(); err != nil {
+		fmt.Printf("%s Fish completions failed (non-fatal): %v\n",
+			style.YellowStyle.Render("⚠️"),
+			err)
+	}
+}
+
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
 }
