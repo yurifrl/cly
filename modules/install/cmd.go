@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultSourceDir  = "/Users/yuri/Workdir/Yuri/cly"
-	defaultInstallDir = "~/.local/bin"
+	defaultInstallDir = "/usr/local/bin"
 	binaryName        = "cly"
 )
 
@@ -26,12 +26,13 @@ var (
 
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use:   "install",
-		Short: "Build and install cly from source",
+		Use:     "install",
+		Aliases: []string{"i"},
+		Short:   "Build and install cly from source",
 		Long: `Install cly by building from local source or downloading from GitHub.
 
 By default, builds from local source directory (configurable via
-modules.install.source_dir in config) and installs to ~/.local/bin/cly.
+modules.install.source_dir in config) and installs to /usr/local/bin/cly.
 
 Use --remote to download the latest release from GitHub instead.`,
 		RunE: run,

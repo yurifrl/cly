@@ -78,7 +78,7 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	}
 
 	// Step 1: Analyze changeset
-	fmt.Println(style.BlueStyle.Render("⏳ Analyzing changes..."))
+	fmt.Printf("⏳ Analyzing changes... (AI: %s)\n", activeLLMSummary())
 	cs, err := GetChangeset(opts.All)
 	if err != nil {
 		return err
@@ -210,9 +210,9 @@ execute:
 
 // resolveLLMConfig builds LLM config from cly config or env defaults.
 func resolveLLMConfig(cfg *config.Config) llm.Config {
-	// Default: try Anthropic first
+	// Default: OpenAI (override via modules.git-commits.ai.provider in config)
 	llmCfg := llm.Config{
-		Provider: llm.ProviderAnthropic,
+		Provider: llm.ProviderOpenAI,
 	}
 
 	if cfg != nil {
