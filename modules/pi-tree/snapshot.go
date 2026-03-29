@@ -12,15 +12,18 @@ import (
 
 // PiSession represents one open π session.
 type PiSession struct {
-	SessionID string `json:"session_id"`
-	StartedAt string `json:"started_at"`
-	SizeBytes int64  `json:"size_bytes"`
+	SessionID  string `json:"session_id"`
+	StartedAt  string `json:"started_at"`
+	SizeBytes  int64  `json:"size_bytes"`
+	SurfaceRef string `json:"surface_ref,omitempty"` // e.g. "surface:65"
+	FilePath   string `json:"file_path,omitempty"`   // full path to the .jsonl file
 }
 
 // WorkspaceNode represents one cmux workspace with its π sessions.
 type WorkspaceNode struct {
-	Name     string      `json:"name"`
-	Sessions []PiSession `json:"sessions"`
+	Name         string      `json:"name"`
+	WorkspaceRef string      `json:"workspace_ref,omitempty"` // e.g. "workspace:18"
+	Sessions     []PiSession `json:"sessions"`
 }
 
 // Snapshot is one versioned capture of the full tree.
