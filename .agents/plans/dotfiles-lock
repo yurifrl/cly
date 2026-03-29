@@ -1,0 +1,100 @@
+# Dotfiles Lock File
+
+## Context
+
+When `cly dotfiles` runs, it applies the current state of `dotfiles.conf`: creates symlinks, copies jsonc→json, runs install commands, jobs, 1Password templates. But there's no memory of what was previously applied.
+
+**Problem:** If you remove a symlink mapping, a job, or an install command from `dotfiles.conf`, the old artifact (symlink, launch agent, copied file) silently lingers. There's no automated cleanup of stale entries.
+
+**Goal:** A lock file that records what was applied last run, so on the next run cly can:
+1. Detect what was removed from the config
+2. Auto-clean reversible artifacts (symlinks, jobs, jsonc copies)
+3. Prominently warn about non-reversible artifacts (install commands) that need manual cleanup
+
+## Approach
+
+Store a lock file at `~/.local/share/cly/dotfiles/dotfiles.lock` (JSON). On each `cly dotfiles` run:
+1. Load previous lock (if exists)
+2. Apply current config as today
+3. Diff: items in old lock but not in current config = removed
+4. For removed items:
+   - **Symlinks**: auto-remove (`RemoveSymlink`)
+   - **JSONC copies**: auto-remove destination file (`os.Remove`)
+   - **Jobs**: auto-remove launch agent (`RemoveJobByName`)
+   - **Op mappings**: auto-remove destination file (`os.Remove`)
+   - **Install commands**: pause and print a prominent message, require Enter to continue (skip with `--no-it`)
+5. Save new lock reflecting current state
+
+The lock file tracks:
+- `symlinks`: list of `{source, destination}` that were linked
+- `jsonc_copies`: list of `{source, destination}` that were copied
+- `jobs`: list of job names that were registered
+- `install_commands`: list of commands that were executed
+- `op_mappings`: list of `{source, destination}` that were injected
+
+## Files to Modify
+
+- `modules/dotfiles/cmd.go` — add `--no-it` flag; call lock load/save/diff in `runSync`; interactive pause for removed install commands
+- `modules/dotfiles/symlink.go` — already has `RemoveSymlink()`, reuse it
+- `modules/dotfiles/jobs.go` — add `RemoveJobByName(name string, paths jobPaths)` helper
+- `modules/dotfiles/jsonc.go` — add `RemoveJsoncCopy(m Mapping) bool` helper
+- `modules/dotfiles/op.go` — add `RemoveOpMapping(m OpMapping) bool` helper
+- `modules/dotfiles/lock.go` — **new file**: lock struct, load/save/diff/apply logic
+
+## Reuse
+
+- `loadJobPaths()` in `modules/dotfiles/jobs.go:454` — returns `dataDir`; use same path for lock: `filepath.Join(dataDir, "dotfiles/dotfiles.lock")`
+- `RemoveSymlink(m Mapping)` in `modules/dotfiles/symlink.go` — already removes a managed symlink
+- `RemoveJobs(cfg *Config)` in `modules/dotfiles/jobs.go` — reference for single-job variant
+- `writeFileIfChanged()` in `modules/dotfiles/jobs.go` — reuse for writing lock JSON atomically
+- `expandTilde()` in `modules/dotfiles/config.go` — reuse for path resolution
+- `bufio.NewReader(os.Stdin)` / `ReadString('\n')` pattern from `modules/update/cmd.go:158` — for interactive pause
+- `style.RedStyle`, `style.YellowStyle` from `pkg/style` — for prominent removed-command output
+
+## Steps
+
+- [ ] Create `modules/dotfiles/lock.go` with:
+  - `LockEntry` struct `{Source, Destination string}`
+  - `DotfilesLock` struct `{Symlinks []LockEntry, JsoncCopies []LockEntry, Jobs []string, InstallCommands []string, OpMappings []LockEntry}`
+  - `lockPath() (string, error)` — derives path from `loadJobPaths()` dataDir
+  - `loadLock(path string) (*DotfilesLock, error)` — returns empty lock if file doesn't exist
+  - `saveLock(path string, lock *DotfilesLock) error`
+  - `buildLock(cfg *Config) *DotfilesLock` — snapshot current config into a lock
+  - `LockDiff` struct `{RemovedSymlinks []LockEntry, RemovedJsoncCopies []LockEntry, RemovedJobs []string, RemovedInstallCommands []string, RemovedOpMappings []LockEntry}`
+  - `diffLocks(old, new *DotfilesLock) LockDiff` — set-subtract new from old per category
+- [ ] Add `RemoveJobByName(name string, paths jobPaths) error` in `modules/dotfiles/jobs.go` (extract from existing `cleanupStaleManagedJobs` logic)
+- [ ] Add `RemoveJsoncCopy(m Mapping) bool` in `modules/dotfiles/jsonc.go` — `os.Remove(m.Destination)`
+- [ ] Add `RemoveOpMapping(m OpMapping) bool` in `modules/dotfiles/op.go` — `os.Remove(m.Destination)`
+- [ ] In `modules/dotfiles/cmd.go` `runSync`:
+  - Add `--no-it` bool flag (default false)
+  - Before applying: `path, _ := lockPath(); old, _ := loadLock(path)`
+  - After applying: `new := buildLock(cfg); diff := diffLocks(old, new)`
+  - Apply diff removals: call remove helpers, print what was removed
+  - If `diff.RemovedInstallCommands` non-empty and `--no-it` not set: print each removed command prominently, then pause with `"Press Enter to continue..."` using `bufio.NewReader(os.Stdin).ReadString('\n')`
+  - `saveLock(path, new)`
+- [ ] Add `lock_test.go`: test `diffLocks` detects removals correctly; test `buildLock` captures all categories
+
+## Verification
+
+```bash
+# 1. Apply with a symlink, job, and install command in dotfiles.conf
+cly dotfiles -a
+# → lock file created at ~/.local/share/cly/dotfiles/dotfiles.lock
+
+# 2. Remove the symlink entry from dotfiles.conf, re-run
+cly dotfiles
+# → symlink auto-removed, prominent warning about install command if one was removed
+
+# 3. Run status — removed symlink no longer tracked
+cly dotfiles status
+
+# 4. Run tests
+go test ./modules/dotfiles/... -v
+```
+
+## Decisions (from user)
+
+1. **Lock location**: system data dir — `~/.local/share/cly/dotfiles/dotfiles.lock`
+2. **Op mappings**: auto-delete the destination file when entry is removed
+3. **Install commands**: no warning on remove — only prompt user interactively at the moment of detection
+4. **Interactive prompt**: when removed install commands are detected, pause and require the user to press Enter to continue. Bypassable with `--no-it` flag. Uses same `bufio.NewReader(os.Stdin)` pattern as `modules/update/cmd.go:158`.

@@ -9,6 +9,15 @@ import (
 	"strings"
 )
 
+// RemoveJsoncCopy deletes the generated JSON destination file for a JSONC mapping.
+// Returns true if the file was removed, false if it didn't exist or couldn't be removed.
+func RemoveJsoncCopy(m Mapping) bool {
+	if err := os.Remove(m.Destination); err != nil {
+		return false
+	}
+	return true
+}
+
 // IsJsoncToJson returns true if the mapping is a JSONC source to JSON destination.
 func IsJsoncToJson(m Mapping) bool {
 	return strings.HasSuffix(m.Source, ".jsonc") && strings.HasSuffix(m.Destination, ".json")

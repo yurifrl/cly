@@ -20,6 +20,15 @@ var opInjectRun = func(account, source, destination string) error {
 	return cmd.Run()
 }
 
+// RemoveOpMapping deletes the generated destination file for an op mapping.
+// Returns true if the file was removed, false otherwise.
+func RemoveOpMapping(m OpMapping) bool {
+	if err := os.Remove(m.Destination); err != nil {
+		return false
+	}
+	return true
+}
+
 func ApplyOpMappings(cfg *Config) error {
 	if len(cfg.OpMappings) == 0 {
 		return nil

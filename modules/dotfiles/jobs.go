@@ -149,6 +149,27 @@ func RemoveJobs(cfg *Config) error {
 	return saveOnceState(paths.StateFile, state)
 }
 
+// RemoveJobByName removes a single managed job by name (script + plist + once-state entry).
+func RemoveJobByName(name string) error {
+	paths, err := loadJobPaths()
+	if err != nil {
+		return err
+	}
+
+	state, err := loadOnceState(paths.StateFile)
+	if err != nil {
+		return err
+	}
+
+	delete(state.Jobs, name)
+	_ = os.Remove(jobScriptPath(paths, name))
+	plistPath := jobPlistPath(paths, name)
+	unloadJob(paths, name, plistPath)
+	_ = os.Remove(plistPath)
+
+	return saveOnceState(paths.StateFile, state)
+}
+
 func StatusJobs(cfg *Config) ([]JobStatus, error) {
 	paths, err := loadJobPaths()
 	if err != nil {
