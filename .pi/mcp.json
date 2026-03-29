@@ -1,0 +1,79 @@
+{
+  "mcpServers": {
+    "bubbles_docs": {
+      "args": [
+        "mcp-remote",
+        "https://gitmcp.io/charmbracelet/bubbles"
+      ],
+      "command": "npx"
+    },
+    "bubbletea_docs": {
+      "args": [
+        "mcp-remote",
+        "https://gitmcp.io/charmbracelet/bubbletea"
+      ],
+      "command": "npx"
+    },
+    "cobra_docs": {
+      "args": [
+        "mcp-remote",
+        "https://gitmcp.io/spf13/cobra"
+      ],
+      "command": "npx"
+    },
+    "filesystem": {
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--mount",
+        "type=bind,src=/Users/yuri/Workdir,dst=/projects/workspace",
+        "mcp/filesystem",
+        "/projects"
+      ],
+      "command": "container",
+      "type": "stdio"
+    },
+    "github": {
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e",
+        "GITHUB_TOOLSETS",
+        "-e",
+        "GITHUB_READ_ONLY=1",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "command": "container",
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${MCP_GITHUB_TOKEN}",
+        "GITHUB_TOOLSETS": "repos,issues,pull_requests"
+      },
+      "type": "stdio"
+    },
+    "huh_docs": {
+      "args": [
+        "mcp-remote",
+        "https://gitmcp.io/charmbracelet/huh"
+      ],
+      "command": "npx"
+    },
+    "lipgloss_docs": {
+      "args": [
+        "mcp-remote",
+        "https://gitmcp.io/charmbracelet/lipgloss"
+      ],
+      "command": "npx"
+    },
+    "viper_docs": {
+      "args": [
+        "mcp-remote",
+        "https://gitmcp.io/spf13/viper"
+      ],
+      "command": "npx"
+    }
+  }
+}
