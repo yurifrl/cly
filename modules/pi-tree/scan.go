@@ -146,6 +146,7 @@ func topSessions(dir string, n int) []PiSession {
 			SessionID: sid,
 			StartedAt: started,
 			SizeBytes: f.size,
+			FilePath:  filepath.Join(dir, f.name),
 		})
 	}
 	return result
@@ -157,27 +158,30 @@ type workspaceInfo struct {
 	piCount   int
 }
 
-// parseSurfaces parses `cmux list-pane-surfaces --workspace <ws>` output.
-// Returns number of surfaces whose title starts with "π".
-func countPiSurfaces(output []byte) int {
-	count := 0
+// parsePiSurfaces parses `cmux list-pane-surfaces` output.
+// Returns surface refs (e.g. "surface:65") whose title starts with "π", in order.
+func parsePiSurfaces(output []byte) []string {
+	var refs []string
 	for _, line := range bytes.Split(output, []byte("\n")) {
 		s := strings.TrimSpace(string(line))
-		// lines look like: "* surface:65  π · cmux  [selected]"
-		// strip leading "* " or "  "
 		s = strings.TrimLeft(s, "* ")
 		if strings.HasPrefix(s, "surface:") {
-			// find title after the ref
 			parts := strings.SplitN(s, "  ", 2)
 			if len(parts) == 2 {
 				title := strings.TrimSpace(parts[1])
+				title = strings.TrimSuffix(title, "  [selected]")
+				title = strings.TrimSpace(title)
 				if strings.HasPrefix(title, "π") {
-					count++
+					refs = append(refs, strings.TrimSpace(parts[0]))
 				}
 			}
 		}
 	}
-	return count
+	return refs
+}
+
+func countPiSurfaces(output []byte) int {
+	return len(parsePiSurfaces(output))
 }
 
 // parseWorkspaceNames parses `cmux list-workspaces` output.
@@ -254,16 +258,23 @@ func ScanTree() ([]WorkspaceNode, error) {
 		if err != nil {
 			continue
 		}
-		n := countPiSurfaces(surfOut)
-		if n == 0 {
+		surfRefs := parsePiSurfaces(surfOut)
+		if len(surfRefs) == 0 {
 			continue
 		}
 
 		slug := cwdSlugForWorkspace(r.name)
 		dir := findSessionDir(slug)
-		sessions := topSessions(dir, n)
+		sessions := topSessions(dir, len(surfRefs))
 		if len(sessions) == 0 {
 			continue
+		}
+
+		// Attach surface refs to sessions (best-effort by index)
+		for i := range sessions {
+			if i < len(surfRefs) {
+				sessions[i].SurfaceRef = surfRefs[i]
+			}
 		}
 
 		// Deduplicate nodes with same name (e.g. π - bff-graphql shares monorepo slug)
@@ -274,8 +285,9 @@ func ScanTree() ([]WorkspaceNode, error) {
 		seen[key] = true
 
 		nodes = append(nodes, WorkspaceNode{
-			Name:     r.name,
-			Sessions: sessions,
+			Name:         r.name,
+			WorkspaceRef: r.ref,
+			Sessions:     sessions,
 		})
 	}
 

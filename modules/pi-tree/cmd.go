@@ -11,36 +11,40 @@ import (
 func Register(parent *cobra.Command) {
 	var flagJSON  bool
 	var flagSave  bool
+	var flagSince float64
 
 	cmd := &cobra.Command{
 		Use:     "pi-tree",
 		Aliases: []string{"pt", "pitree"},
 		Short:   "Show open cmux workspaces and their π sessions as a tree",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTUI2(cmd, flagJSON, flagSave)
+			return runTUI2(cmd, flagJSON, flagSave, flagSince)
 		},
 	}
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "Output current tree as JSON")
 	cmd.Flags().BoolVar(&flagSave, "save", false, "Force save a new snapshot version")
+	cmd.Flags().Float64Var(&flagSince, "since", 0, "Only show sessions started within the last N hours (e.g. 24, 0.5)")
 
 	cmd.AddCommand(historyCmd())
 
 	parent.AddCommand(cmd)
 }
 
-func runTUI2(cmd *cobra.Command, jsonOut bool, forceSave bool) error {
+func runTUI2(cmd *cobra.Command, jsonOut bool, forceSave bool, sinceHours float64) error {
 	nodes, err := ScanTree()
 	if err != nil {
-		return fmt.Errorf("scan: %w", err)
+		// Non-fatal — we may have snapshots to show
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: scan: %v\n", err)
 	}
 
-	// Persist / dedup
-	_, isNew, err := Upsert(nodes, forceSave)
-	if err != nil {
-		// Non-fatal — just warn
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not save snapshot: %v\n", err)
-	} else if isNew && !jsonOut {
-		fmt.Fprintln(cmd.OutOrStdout(), "📸 new snapshot saved")
+	// Only save snapshot if we got live data
+	if len(nodes) > 0 {
+		_, isNew, err := Upsert(nodes, forceSave)
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not save snapshot: %v\n", err)
+		} else if isNew && !jsonOut {
+			fmt.Fprintln(cmd.OutOrStdout(), "📸 new snapshot saved")
+		}
 	}
 
 	if jsonOut {
@@ -53,7 +57,7 @@ func runTUI2(cmd *cobra.Command, jsonOut bool, forceSave bool) error {
 	}
 
 	snapshots, _ := LoadSnapshots()
-	return RunTUI(nodes, snapshots)
+	return RunTUI(nodes, snapshots, sinceHours)
 }
 
 func historyCmd() *cobra.Command {
