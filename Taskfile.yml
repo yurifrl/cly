@@ -44,8 +44,8 @@ tasks:
     desc: Install CLI to /usr/local/bin
     aliases: [i]
     cmds:
-      - cly install
-
+      - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}} update"
   install:mcp:
     desc: Install mcp to /usr/local/bin
     cmds:

@@ -23,8 +23,8 @@ build-all: build build-mcp
 alias i := install
 
 install:
-    go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{version}} -X github.com/yurifrl/cly/cmd.BuildTime={{build_time}}" -o ~/.local/bin/{{binary_name}} .
-    cly completion fish install
+    go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{version}} -X github.com/yurifrl/cly/cmd.BuildTime={{build_time}}" -o /tmp/cly-bootstrap .
+    /tmp/cly-bootstrap update
 
 install-mcp: _ensure_build_dir
     go build -ldflags="-s -w -X main.version={{version}}" -o {{build_dir}}/mcp ./cmd/mcp
