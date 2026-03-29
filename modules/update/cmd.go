@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,7 @@ import (
 
 const (
 	defaultSourceDir  = "/Users/yuri/Workdir/Yuri/cly"
-	defaultInstallDir = "/usr/local/bin"
+	defaultInstallDir = "~/.local/bin"
 	binaryName        = "cly"
 	githubRepo        = "yurifrl/cly"
 )
@@ -120,9 +121,17 @@ func updateLocal(cmd *cobra.Command) error {
 		version,
 		sourceDir)
 
+	// Build to a temp file, sign it, then atomically move into place
+	tmpFile, err := os.CreateTemp("", "cly-build-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	os.Remove(tmpPath) // go build creates it fresh
 	buildCmd := exec.Command("go", "build",
 		fmt.Sprintf("-ldflags=%s", ldflags),
-		"-o", destPath,
+		"-o", tmpPath,
 		".",
 	)
 	buildCmd.Dir = sourceDir
@@ -130,8 +139,21 @@ func updateLocal(cmd *cobra.Command) error {
 	buildCmd.Stderr = os.Stderr
 
 	if err := buildCmd.Run(); err != nil {
+		os.Remove(tmpPath)
 		return fmt.Errorf("build failed: %w", err)
 	}
+
+	// Re-sign before moving so macOS allows spawning child processes
+	if out, err := exec.Command("codesign", "--force", "--sign", "-", tmpPath).CombinedOutput(); err != nil {
+		fmt.Printf("%s codesign failed (non-fatal): %v — %s\n",
+			style.YellowStyle.Render("⚠️"), err, strings.TrimSpace(string(out)))
+	}
+
+	if err := copyFileExec(tmpPath, destPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to install binary: %w", err)
+	}
+	os.Remove(tmpPath)
 
 	fmt.Printf("%s Installed to %s\n",
 		style.GreenStyle.Render("✅"),
@@ -198,18 +220,29 @@ func getSourceDir() string {
 	return defaultSourceDir
 }
 
+// readVersion returns the latest git tag in the source directory (e.g. "1.0.8").
+// Strips leading "v" for use in ldflags.
 func readVersion(sourceDir string) string {
-	versionFile := filepath.Join(sourceDir, "VERSION")
-	data, err := os.ReadFile(versionFile)
-	if err != nil {
+	out, err := gitOutputIn(sourceDir, "describe", "--tags", "--abbrev=0")
+	if err != nil || out == "" {
 		return "dev"
 	}
-	return strings.TrimSpace(string(data))
+	return strings.TrimPrefix(strings.TrimSpace(out), "v")
 }
 
+// writeVersion creates an annotated git tag for the new version.
 func writeVersion(sourceDir, version string) error {
-	versionFile := filepath.Join(sourceDir, "VERSION")
-	return os.WriteFile(versionFile, []byte(version+"\n"), 0644)
+	tag := "v" + version
+	_, err := gitOutputIn(sourceDir, "tag", "-a", tag, "-m", "Release "+tag)
+	return err
+}
+
+// gitOutputIn runs a git command in dir and returns stdout.
+func gitOutputIn(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
 }
 
 func bumpVersion(current, level string) (string, error) {
@@ -278,4 +311,38 @@ func expandPath(path string) string {
 		return filepath.Join(home, path[2:])
 	}
 	return path
+}
+
+// copyFileExec copies src to dst preserving executable permissions.
+// Uses sudo cp if a direct write fails due to permissions.
+func copyFileExec(src, dst string) error {
+	// Try a direct atomic rename within the same directory first
+	dir := filepath.Dir(dst)
+	tmp, err := os.CreateTemp(dir, ".cly-install-*")
+	if err == nil {
+		tmpPath := tmp.Name()
+		in, err2 := os.Open(src)
+		if err2 == nil {
+			_, err2 = io.Copy(tmp, in)
+			in.Close()
+		}
+		tmp.Close()
+		if err2 == nil {
+			if err2 = os.Chmod(tmpPath, 0755); err2 == nil {
+				if err2 = os.Rename(tmpPath, dst); err2 == nil {
+					return nil
+				}
+			}
+		}
+		os.Remove(tmpPath)
+	}
+
+	// Fall back to sudo cp
+	if out, err := exec.Command("sudo", "cp", src, dst).CombinedOutput(); err != nil {
+		return fmt.Errorf("sudo cp failed: %w — %s", err, strings.TrimSpace(string(out)))
+	}
+	if out, err := exec.Command("sudo", "chmod", "755", dst).CombinedOutput(); err != nil {
+		return fmt.Errorf("sudo chmod failed: %w — %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
