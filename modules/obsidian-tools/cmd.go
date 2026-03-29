@@ -1,4 +1,4 @@
-package obsidian
+package obsidiantools
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:                "obsidian",
+	Use:                "obsidian-tools",
 	Short:              "Obsidian CLI passthrough",
 	DisableFlagParsing: true,
 	RunE:               run,

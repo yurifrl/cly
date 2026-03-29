@@ -1,4 +1,4 @@
-package obsidian
+package obsidiantools
 
 import (
 	"fmt"
