@@ -41,7 +41,7 @@ tasks:
     deps: [build, build:mcp]
 
   install:
-    desc: Install CLI to ~/.local/bin
+    desc: Install CLI to /usr/local/bin
     aliases: [i]
     cmds:
       - cly install

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	agentsession "github.com/yurifrl/cly/modules/agent-session"
+	pitree "github.com/yurifrl/cly/modules/pi-tree"
 	"github.com/yurifrl/cly/modules/agents"
 	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
@@ -22,7 +23,7 @@ import (
 	llmchat "github.com/yurifrl/cly/modules/llm-chat"
 	"github.com/yurifrl/cly/modules/mcp"
 	"github.com/yurifrl/cly/modules/notify"
-	"github.com/yurifrl/cly/modules/obsidian"
+	"github.com/yurifrl/cly/modules/obsidian-tools"
 	"github.com/yurifrl/cly/modules/scraper/cmd"
 	"github.com/yurifrl/cly/modules/statusline"
 	"github.com/yurifrl/cly/modules/update"
@@ -72,6 +73,7 @@ func init() {
 	backup.Register(RootCmd)
 	claude.Register(RootCmd)
 	agentsession.Register(RootCmd)
+	pitree.Register(RootCmd)
 	claudetasks.Register(RootCmd)
 	uuid.Register(RootCmd)
 	demo.Register(RootCmd)
@@ -84,7 +86,7 @@ func init() {
 	mcp.Register(RootCmd)
 	bundle.Register(RootCmd)
 	notify.Register(RootCmd)
-	obsidian.Register(RootCmd)
+	obsidiantools.Register(RootCmd)
 	statusline.Register(RootCmd)
 	update.Register(RootCmd)
 	zl.Register(RootCmd)

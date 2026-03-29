@@ -10,6 +10,7 @@ import (
 var skipCommands = map[string]bool{
 	"help":       true,
 	"completion": true,
+	"i":          true, // too short, would pollute shell namespace
 }
 
 type AliasEntry struct {
@@ -39,6 +40,9 @@ func GenerateAliases(root *cobra.Command, lookPath func(string) (string, error))
 
 		// Cobra aliases always get created (they're short/unique names like "c", "bkp")
 		for _, a := range cmd.Aliases {
+			if skipCommands[a] {
+				continue
+			}
 			entries = append(entries, AliasEntry{
 				Alias:   a,
 				Command: fmt.Sprintf("cly %s", name),

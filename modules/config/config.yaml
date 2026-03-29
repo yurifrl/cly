@@ -36,6 +36,12 @@ modules:
         sound: "Blow"
         zellij_status: "✅ Task completed"
         zellij_event: "stop"
+  git-commits:
+    ai:
+      provider: openai         # Options: openai | anthropic
+      model: gpt-4o            # Leave empty for provider default
+      # api_key: ""            # Or set OPENAI_API_KEY / ANTHROPIC_API_KEY env var
+      # api_key_env: ""        # Custom env var name for API key
   uuid:
     default_version: v4 # Options: v4 | v7
   demo:
