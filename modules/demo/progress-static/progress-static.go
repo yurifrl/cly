@@ -1,12 +1,28 @@
 package progressstatic
 
+// A simple example that shows how to render a progress bar in a "pure"
+// fashion. In this example we bump the progress by 25% every second,
+// maintaining the progress state on our top level model using the progress bar
+// model's ViewAs method only for rendering.
+//
+// The signature for ViewAs is:
+//
+//     func (m Model) ViewAs(percent float64) string
+//
+// So it takes a float between 0 and 1, and renders the progress bar
+// accordingly. When using the progress bar in this "pure" fashion and there's
+// no need to call an Update method.
+//
+// The progress bar is also able to animate itself, however. For details see
+// the progress-animated example.
+
 import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/progress"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/progress"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 const (
@@ -14,7 +30,11 @@ const (
 	maxWidth = 80
 )
 
-var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render
+var (
+	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render
+	yellow    = lipgloss.Color("#FDFF8C")
+	pink      = lipgloss.Color("#FF7CCB")
+)
 
 type tickMsg time.Time
 
@@ -23,26 +43,19 @@ type model struct {
 	progress progress.Model
 }
 
-func initialModel() model {
-	prog := progress.New(progress.WithScaledGradient("#FF7CCB", "#FDFF8C"))
-	return model{
-		progress: prog,
-	}
-}
-
 func (m model) Init() tea.Cmd {
 	return tickCmd()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m, tea.Quit
 
 	case tea.WindowSizeMsg:
-		m.progress.Width = msg.Width - padding*2 - 4
-		if m.progress.Width > maxWidth {
-			m.progress.Width = maxWidth
+		m.progress.SetWidth(msg.Width - padding*2 - 4)
+		if m.progress.Width() > maxWidth {
+			m.progress.SetWidth(maxWidth)
 		}
 		return m, nil
 
@@ -59,15 +72,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	pad := strings.Repeat(" ", padding)
-	return "\n" +
+	return tea.NewView("\n" +
 		pad + m.progress.ViewAs(m.percent) + "\n\n" +
-		pad + helpStyle("Press any key to quit")
+		pad + helpStyle("Press any key to quit"))
 }
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
+}
+
+func initialModel() model {
+	return model{progress: progress.New(progress.WithScaled(true), progress.WithColors(pink, yellow))}
 }
