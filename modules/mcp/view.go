@@ -5,7 +5,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+
+	"charm.land/lipgloss/v2"
 )
 
 // stripAnsi removes ANSI escape codes from a string
@@ -58,30 +60,40 @@ var (
 )
 
 // View renders the TUI (Bubble Tea MVU pattern)
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	v := tea.View{}
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+
 	if m.quitting {
 		if m.statusMessage != "" {
-			return m.statusMessage + "\n"
+			v.SetContent(m.statusMessage + "\n")
+			return v
 		}
-		return "Goodbye!\n"
+		v.SetContent("Goodbye!\n")
+		return v
 	}
 
 	// Show help overlay if active
 	if m.showHelp {
-		return m.renderHelp()
+		v.SetContent(m.renderHelp())
+		return v
 	}
 
 	// Show context switcher if active
 	if m.showContextSwitcher {
-		return m.renderContextSwitcher()
+		v.SetContent(m.renderContextSwitcher())
+		return v
 	}
 
 	// Render base UI, then overlay extra params modal if open
 	base := m.renderBaseView()
 	if m.showExtraModal {
-		return m.renderWithModalOverlay(base)
+		v.SetContent(m.renderWithModalOverlay(base))
+		return v
 	}
-	return base
+	v.SetContent(base)
+	return v
 }
 
 // renderBaseView renders the main list UI (without modal).
@@ -339,9 +351,9 @@ func (m Model) renderWithModalOverlay(base string) string {
 	}
 
 	modal := m.extraModal.View()
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modal,
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modal.Content,
 		lipgloss.WithWhitespaceChars("·"),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("236")),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("236"))),
 	)
 }
 

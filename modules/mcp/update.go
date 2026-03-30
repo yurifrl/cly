@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 func (m Model) Init() tea.Cmd {
@@ -76,7 +76,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Delegate to extra params modal when it's open
 	if m.showExtraModal {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			updated, closed, applied := m.extraModal.Update(keyMsg.String())
 			m.extraModal = updated
 			if applied {
@@ -109,24 +109,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ensureCursorVisible()
 		return m, nil
 
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		if m.showHelp {
-			if msg.Action != tea.MouseActionPress {
-				return m, nil
-			}
-			switch msg.Button {
-			case tea.MouseButtonWheelUp:
+			if msg.Button == tea.MouseWheelUp {
 				if m.helpScrollOffset > 0 {
 					m.helpScrollOffset--
 				}
-			case tea.MouseButtonWheelDown:
+			} else if msg.Button == tea.MouseWheelDown {
 				m.helpScrollOffset++
 			}
 			return m, nil
 		}
 
 		if m.showContextSwitcher {
-			if msg.Button == tea.MouseButtonLeft {
+			return m, nil
+		}
+
+		if msg.Button == tea.MouseWheelUp {
+			if m.cursor > 0 {
+				m.cursor--
+				m.ensureCursorVisible()
+			}
+		} else if msg.Button == tea.MouseWheelDown {
+			if m.cursor < len(m.filteredItems)-1 {
+				m.cursor++
+				m.ensureCursorVisible()
+			}
+		}
+		return m, nil
+
+	case tea.MouseClickMsg:
+		if m.showHelp {
+			return m, nil
+		}
+
+		if m.showContextSwitcher {
+			if msg.Button == tea.MouseLeft {
 				// Box has border + padding; options start a few rows below the top.
 				row := msg.Y - 4
 				if row >= 0 {
@@ -141,24 +159,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			if msg.Action != tea.MouseActionPress {
-				return m, nil
-			}
-			if m.cursor > 0 {
-				m.cursor--
-				m.ensureCursorVisible()
-			}
-		case tea.MouseButtonWheelDown:
-			if msg.Action != tea.MouseActionPress {
-				return m, nil
-			}
-			if m.cursor < len(m.filteredItems)-1 {
-				m.cursor++
-				m.ensureCursorVisible()
-			}
-		case tea.MouseButtonLeft:
+		if msg.Button == tea.MouseLeft {
 			idx := m.indexAtMouseY(msg.Y)
 			if idx >= 0 && idx < len(m.filteredItems) {
 				m.cursor = idx
@@ -215,7 +216,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.showContextSwitcher {
 			switch msg.String() {
 			case "esc":
@@ -240,22 +241,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.showHelp {
-			switch msg.Type {
-			case tea.KeyUp:
+			switch msg.String() {
+			case "up":
 				if m.helpScrollOffset > 0 {
 					m.helpScrollOffset--
 				}
 				return m, nil
-			case tea.KeyDown:
+			case "down":
 				m.helpScrollOffset++
 				return m, nil
-			case tea.KeyHome:
+			case "home":
 				m.helpScrollOffset = 0
 				return m, nil
-			case tea.KeyEnd:
+			case "end":
 				m.helpScrollOffset = 999
 				return m, nil
-			case tea.KeyEsc:
+			case "esc":
 				m.showHelp = false
 				m.helpScrollOffset = 0
 				return m, nil
@@ -346,7 +347,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				return m, nil
-			case " ":
+			case " ", "space":
 				if m.cursor < len(m.filteredItems) {
 					item := m.filteredItems[m.cursor]
 					switch item.Type {
@@ -387,7 +388,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 
-		case " ":
+		case " ", "space":
 			if m.cursor < len(m.filteredItems) {
 				item := m.filteredItems[m.cursor]
 				switch item.Type {

@@ -2,13 +2,16 @@ package pitree
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -16,9 +19,14 @@ import (
 var (
 	wsStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 	curWsStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("215"))
+	closedWsStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	sessionStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	curSessStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("215")).Bold(true)
-	hiddenStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Strikethrough(true)
+	closedSessStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	closedSizeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	closedDateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	nameStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("183")).Italic(true)
+	closedNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Italic(true)
 	dimStyle2      = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	sizeStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 	dateStyle2     = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
@@ -50,8 +58,6 @@ const (
 
 // ── Hide key ──────────────────────────────────────────────────────────────────
 
-type hideKey struct{ ws, sess int }
-
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 type tuiModel struct {
@@ -60,8 +66,9 @@ type tuiModel struct {
 	nodes     []WorkspaceNode // current view (after filters)
 	snapshots []Snapshot
 	cur       cursor
-	hidden    map[hideKey]bool // hidden sessions (sess=-1 hides whole workspace)
 
+	openWS      map[string]bool   // workspace names currently open in cmux
+	openSess    map[string]bool   // session IDs currently active (most recent per workspace)
 	filterMode  filterMode
 	searchInput textinput.Model
 	sinceHours  float64 // 0 = no filter; set from --since flag
@@ -71,8 +78,9 @@ type tuiModel struct {
 	height      int
 	width       int
 	scrollOff   int // scroll offset for tree view
-	message string
-	quit    bool
+	message     string
+	quit        bool
+	pendingExec string // command to exec after TUI exits (replaces process)
 }
 
 func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64) tuiModel {
@@ -80,25 +88,62 @@ func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64
 	ti.Placeholder = "search workspace or session…"
 	ti.CharLimit = 80
 
+	histIdx := len(snapshots) - 1
+
+	// Restore last viewed history version if available
+	if lastVer := LoadLastHistIdx(); lastVer > 0 && len(snapshots) > 0 {
+		for i, s := range snapshots {
+			if s.Version == lastVer {
+				histIdx = i
+				break
+			}
+		}
+	}
+	// Clamp to valid range
+	if histIdx < 0 {
+		histIdx = 0
+	}
+	if histIdx >= len(snapshots) && len(snapshots) > 0 {
+		histIdx = len(snapshots) - 1
+	}
+
+	// Build open sets from live nodes
+	openWS := make(map[string]bool)
+	openSess := make(map[string]bool)
+	for _, ws := range nodes {
+		openWS[ws.Name] = true
+		// Most recent session per workspace is the active one
+		if len(ws.Sessions) > 0 {
+			openSess[ws.Sessions[0].SessionID] = true
+		}
+	}
+
+	// If user previously selected a non-latest snapshot, show that version's tree
+	displayNodes := nodes
+	if len(snapshots) > 0 && histIdx < len(snapshots)-1 {
+		displayNodes = snapshots[histIdx].Tree
+	}
+
 	m := tuiModel{
 		liveNodes:   nodes,
-		allNodes:    nodes,
-		nodes:       nodes,
+		allNodes:    displayNodes,
+		nodes:       displayNodes,
 		snapshots:   snapshots,
-		histIdx:     len(snapshots) - 1,
-		cur:         cursor{ws: 0, sess: -1},
-		hidden:      make(map[hideKey]bool),
+		histIdx:     histIdx,
+		cur:         cursor{ws: 0, sess: 0},
+		openWS:      openWS,
+		openSess:    openSess,
 		searchInput: ti,
 		sinceHours:  sinceHours,
 	}
 
 	// If current tree is empty, fall back to last snapshot
 	if len(nodes) == 0 && len(snapshots) > 0 {
-		last := snapshots[len(snapshots)-1]
-		m.allNodes = last.Tree
-		m.liveNodes = last.Tree
+		snap := snapshots[histIdx]
+		m.allNodes = snap.Tree
+		m.liveNodes = snap.Tree
 		m.showHist = true
-		m.message = fmt.Sprintf("no live sessions -- showing snapshot v%d", last.Version)
+		m.message = fmt.Sprintf("no live sessions -- showing snapshot v%d", snap.Version)
 	}
 
 	m.applyFilters()
@@ -123,12 +168,6 @@ func (m *tuiModel) applyFilters() {
 					continue
 				}
 			}
-			// session-level hide
-			si := sessionIndex(ws, s.SessionID)
-			wi := workspaceIndex(m.allNodes, ws.Name)
-			if m.hidden[hideKey{wi, si}] {
-				continue
-			}
 			// search
 			if query != "" && !wsMatch {
 				if !strings.Contains(strings.ToLower(s.SessionID), query) &&
@@ -138,11 +177,6 @@ func (m *tuiModel) applyFilters() {
 			}
 			sessions = append(sessions, s)
 		}
-		// workspace-level hide
-		wi := workspaceIndex(m.allNodes, ws.Name)
-		if m.hidden[hideKey{wi, -1}] {
-			continue
-		}
 		if len(sessions) > 0 {
 			wsCopy := ws
 			wsCopy.Sessions = sessions
@@ -151,7 +185,7 @@ func (m *tuiModel) applyFilters() {
 	}
 	m.nodes = out
 	if m.cur.ws >= len(m.nodes) {
-		m.cur = cursor{ws: 0, sess: -1}
+		m.cur = cursor{ws: 0, sess: 0}
 	}
 }
 
@@ -180,7 +214,6 @@ type pos struct{ ws, sess int }
 func (m tuiModel) positions() []pos {
 	var out []pos
 	for wi, ws := range m.nodes {
-		out = append(out, pos{wi, -1})
 		for si := range ws.Sessions {
 			out = append(out, pos{wi, si})
 		}
@@ -266,32 +299,7 @@ func (m tuiModel) viewableHeight() int {
 
 // ── Hide ──────────────────────────────────────────────────────────────────────
 
-func (m *tuiModel) hideUnderCursor() {
-	if m.cur.ws >= len(m.nodes) {
-		return
-	}
-	ws := m.nodes[m.cur.ws]
-	wi := workspaceIndex(m.allNodes, ws.Name)
-	if wi < 0 {
-		return
-	}
-	if m.cur.sess == -1 {
-		m.hidden[hideKey{wi, -1}] = true
-	} else {
-		si := sessionIndex(m.allNodes[wi], ws.Sessions[m.cur.sess].SessionID)
-		if si >= 0 {
-			m.hidden[hideKey{wi, si}] = true
-		}
-	}
-	m.applyFilters()
-	m.message = "hidden (U to unhide all)"
-}
 
-func (m *tuiModel) unhideAll() {
-	m.hidden = make(map[hideKey]bool)
-	m.applyFilters()
-	m.message = "all unhidden"
-}
 
 // ── Cursor session for open ───────────────────────────────────────────────────
 
@@ -316,7 +324,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Search mode: route keys to text input
 	if m.filterMode == filterSearch {
 		switch msg := msg.(type) {
-		case tea.KeyMsg:
+		case tea.KeyPressMsg:
 			switch msg.String() {
 			case "esc":
 				m.filterMode = filterNone
@@ -346,7 +354,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.width = msg.Width
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quit = true
@@ -357,8 +365,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.histIdx > 0 {
 					m.histIdx--
 					m.allNodes = m.snapshots[m.histIdx].Tree
-					m.cur = cursor{ws: 0, sess: -1}
+					m.cur = cursor{ws: 0, sess: 0}
 					m.applyFilters()
+					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
 				}
 			} else {
 				m.moveCursor(-1)
@@ -371,8 +380,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.histIdx < len(m.snapshots)-1 {
 					m.histIdx++
 					m.allNodes = m.snapshots[m.histIdx].Tree
-					m.cur = cursor{ws: 0, sess: -1}
+					m.cur = cursor{ws: 0, sess: 0}
 					m.applyFilters()
+					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
 				}
 			} else {
 				m.moveCursor(1)
@@ -380,10 +390,43 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.message = ""
 
-		case "enter", "o":
+		case "enter":
 			if m.showHist {
+				if m.histIdx < 0 || m.histIdx >= len(m.snapshots) {
+					m.message = "no snapshot selected"
+					break
+				}
+				// Load selected snapshot's tree and exit history view
+				snap := m.snapshots[m.histIdx]
+				m.allNodes = snap.Tree
 				m.showHist = false
-				m.message = fmt.Sprintf("viewing snapshot v%d", m.snapshots[m.histIdx].Version)
+				m.cur = cursor{ws: 0, sess: 0}
+				m.applyFilters()
+				SaveLastHistIdx(snap.Version)
+				m.message = fmt.Sprintf("viewing snapshot v%d (%d sessions)", snap.Version, countSessions(snap.Tree))
+				break
+			}
+
+		case "d":
+			if m.showHist && len(m.snapshots) > 1 {
+				ver := m.snapshots[m.histIdx].Version
+				if err := DeleteSnapshot(ver); err != nil {
+					m.message = fmt.Sprintf("delete error: %v", err)
+					break
+				}
+				all, _ := LoadSnapshots(); m.snapshots = ActiveSnapshots(all)
+				if m.histIdx >= len(m.snapshots) {
+					m.histIdx = len(m.snapshots) - 1
+				}
+				if len(m.snapshots) > 0 {
+					m.allNodes = m.snapshots[m.histIdx].Tree
+					m.applyFilters()
+					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
+				}
+				m.message = fmt.Sprintf("deleted v%d", ver)
+				break
+			} else if m.showHist {
+				m.message = "can't delete last snapshot"
 				break
 			}
 			ws, sess, ok := m.cursorSession()
@@ -391,29 +434,64 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "nothing to open"
 				break
 			}
-			// Remember where we are so we can focus back
-			callerWs, callerSurf := callerSurface()
+			// Check if we're already in the session's working directory
+			workDir := sessionDirToWorkingDir(sess.FilePath)
+			cwd, _ := os.Getwd()
+			if workDir != "" && cwd != "" && strings.EqualFold(cwd, workDir) {
+				// Same dir — just exec pi locally and quit TUI
+				m.pendingExec = fmt.Sprintf("pi --session %s", sess.SessionID)
+				m.quit = true
+				return m, tea.Quit
+			}
+			// Different dir — open in target workspace and stay there
 			m.message = "opening..."
 			cmd, err := openSession(ws.Name, sess.SessionID, sess.FilePath)
 			if err != nil {
 				m.message = fmt.Sprintf("error: %v", err)
 			} else {
-				// Focus back to pi-tree's workspace/surface
-				if callerWs != "" {
-					_, _ = runCommand("cmux", "select-workspace", "--workspace", callerWs)
-				}
-				if callerSurf != "" {
-					time.Sleep(200 * time.Millisecond)
-					_, _ = runCommand("cmux", "focus-panel", "--panel", callerSurf)
-				}
+				m.quit = true
 				m.message = fmt.Sprintf("✓ %s", cmd)
+				return m, tea.Quit
 			}
 
-		case "x":
-			m.hideUnderCursor()
+		case "o":
+			if m.showHist {
+				break
+			}
+			ws, sess, ok := m.cursorSession()
+			if !ok {
+				m.message = "nothing to open"
+				break
+			}
+			// Open in target workspace and stay there (no comeback)
+			m.message = "opening..."
+			cmd, err := openSession(ws.Name, sess.SessionID, sess.FilePath)
+			if err != nil {
+				m.message = fmt.Sprintf("error: %v", err)
+			} else {
+				m.quit = true
+				m.message = fmt.Sprintf("✓ %s", cmd)
+				return m, tea.Quit
+			}
 
-		case "U":
-			m.unhideAll()
+
+		case "s":
+			// Save current view as a new snapshot version
+			if len(m.allNodes) == 0 {
+				m.message = "nothing to save"
+				break
+			}
+			snap, isNew, err := Upsert(m.allNodes, true)
+			if err != nil {
+				m.message = fmt.Sprintf("save error: %v", err)
+			} else if isNew {
+				all, _ := LoadSnapshots(); m.snapshots = ActiveSnapshots(all)
+				m.histIdx = len(m.snapshots) - 1
+				SaveLastHistIdx(snap.Version)
+				m.message = fmt.Sprintf("📸 saved v%d (%d sessions)", snap.Version, countSessions(m.allNodes))
+			} else {
+				m.message = "no changes to save"
+			}
 
 		case "/":
 			m.filterMode = filterSearch
@@ -430,10 +508,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "h":
 			m.showHist = !m.showHist
-			if !m.showHist {
-				// Restore live tree when closing history
-				m.allNodes = m.liveNodes
-				m.cur = cursor{ws: 0, sess: -1}
+			if m.showHist {
+				// Keep current histIdx (restored from last session or current position)
+			} else {
+				// Keep the selected snapshot's tree (don't reset to live)
+				if m.histIdx >= 0 && m.histIdx < len(m.snapshots) {
+					m.allNodes = m.snapshots[m.histIdx].Tree
+					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
+				}
+				m.cur = cursor{ws: 0, sess: 0}
 				m.applyFilters()
 			}
 			m.message = ""
@@ -445,20 +528,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
-func (m tuiModel) View() string {
+func (m tuiModel) View() tea.View {
+	v := tea.View{}
+	v.AltScreen = true
 	if m.quit {
-		return ""
+		return v
 	}
-
-	hiddenCount := len(m.hidden)
 
 	var b strings.Builder
 
 	// Title row
 	title := "π session tree"
-	if hiddenCount > 0 {
-		title += dimStyle2.Render(fmt.Sprintf("  [%d hidden]", hiddenCount))
-	}
 	b.WriteString(titleStyle.Render(title))
 	b.WriteString("\n")
 
@@ -498,6 +578,7 @@ func (m tuiModel) View() string {
 
 		for si, s := range ws.Sessions {
 			isCur := m.cur.ws == wi && m.cur.sess == si
+			sessOpen := m.openSess[s.SessionID]
 
 			branch := "├── "
 			if si == len(ws.Sessions)-1 {
@@ -512,14 +593,29 @@ func (m tuiModel) View() string {
 			}
 
 			branchStr := dimStyle2.Render(branch)
-			size := sizeStyle.Render(fmt.Sprintf("%7s", formatSize(s.SizeBytes)))
-			date := dateStyle2.Render(s.StartedAt)
 
-			var sidStr string
+			var sidStr, size, date, sessName string
 			if isCur {
 				sidStr = curSessStyle.Render(s.SessionID)
-			} else {
+				size = sizeStyle.Render(fmt.Sprintf("%7s", formatSize(s.SizeBytes)))
+				date = dateStyle2.Render(s.StartedAt)
+				if s.SessionName != "" {
+					sessName = "  " + nameStyle.Render(s.SessionName)
+				}
+			} else if sessOpen {
 				sidStr = sessionStyle.Render(s.SessionID)
+				size = sizeStyle.Render(fmt.Sprintf("%7s", formatSize(s.SizeBytes)))
+				date = dateStyle2.Render(s.StartedAt)
+				if s.SessionName != "" {
+					sessName = "  " + nameStyle.Render(s.SessionName)
+				}
+			} else {
+				sidStr = closedSessStyle.Render(s.SessionID)
+				size = closedSizeStyle.Render(fmt.Sprintf("%7s", formatSize(s.SizeBytes)))
+				date = closedDateStyle.Render(s.StartedAt)
+				if s.SessionName != "" {
+					sessName = "  " + closedNameStyle.Render(s.SessionName)
+				}
 			}
 
 			// Working directory suffix
@@ -531,10 +627,9 @@ func (m tuiModel) View() string {
 				}
 			}
 
-			line := fmt.Sprintf("%s%s%s  %s  %s%s",
-				sessPrefix, branchStr, sidStr, size, date, workDirStr)
+			line := fmt.Sprintf("%s%s%s  %s  %s%s%s",
+				sessPrefix, branchStr, sidStr, size, date, sessName, workDirStr)
 
-			_ = hiddenStyle // keep import used
 			treeLines = append(treeLines, line)
 		}
 		treeLines = append(treeLines, "")
@@ -556,8 +651,54 @@ func (m tuiModel) View() string {
 		if start > len(treeLines) {
 			start = len(treeLines)
 		}
-		treeStr = strings.Join(treeLines[start:end], "\n")
+		visible := treeLines[start:end]
+		// Pad to fill the full viewable area so overlay composites correctly
+		for len(visible) < viewH {
+			visible = append(visible, "")
+		}
+		treeStr = strings.Join(visible, "\n")
 	}
+
+	// Build the complete page content (tree + message + help)
+	b.WriteString(treeStr)
+	b.WriteString("\n")
+	if m.message != "" {
+		b.WriteString(msgStyle.Render("  "+m.message) + "\n")
+	}
+
+	// Help bar
+	var helpParts []string
+	if m.filterMode == filterSearch {
+		helpParts = []string{"enter/esc: done", "ctrl+c: quit"}
+	} else {
+		helpParts = []string{
+			"↑/↓: move",
+			"enter: open",
+			"o: open & stay",
+			"/: search",
+			"s: save",
+		}
+		helpParts = append(helpParts, "h: history")
+		if m.showHist {
+			helpParts = append(helpParts, "↑/↓: revision")
+			helpParts = append(helpParts, "d: delete")
+		}
+		helpParts = append(helpParts, "q: quit")
+	}
+	b.WriteString(helpStyle.Render("  " + strings.Join(helpParts, "  •  ")))
+
+	pageContent := b.String()
+
+	// Fill the full screen as background
+	w := m.width
+	h := m.height
+	if w < 80 {
+		w = 80
+	}
+	if h < 24 {
+		h = 24
+	}
+	bg := lipgloss.Place(w, h, lipgloss.Top, lipgloss.Left, pageContent)
 
 	if m.showHist && len(m.snapshots) > 0 {
 		var hlines []string
@@ -577,41 +718,29 @@ func (m tuiModel) View() string {
 			))
 		}
 		histPanel := histPanelStyle.Render("History\n\n" + strings.Join(hlines, "\n"))
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, treeStr, "  ", histPanel))
+
+		// Center the panel on screen
+		panelW := lipgloss.Width(histPanel)
+		panelH := lipgloss.Height(histPanel)
+		px := (w - panelW) / 2
+		py := (h - panelH) / 2
+		if px < 0 {
+			px = 0
+		}
+		if py < 0 {
+			py = 0
+		}
+
+		root := lipgloss.NewLayer(bg)
+		modal := lipgloss.NewLayer(histPanel).X(px).Y(py).Z(1)
+		comp := lipgloss.NewCompositor(root, modal)
+		v.SetContent(comp.Render())
 	} else {
-		b.WriteString(treeStr)
+		v.SetContent(bg)
 	}
 
-	b.WriteString("\n")
-	if m.message != "" {
-		b.WriteString(msgStyle.Render("  "+m.message) + "\n")
-	}
-
-	// Help bar
-	var helpParts []string
-	if m.filterMode == filterSearch {
-		helpParts = []string{"enter/esc: done", "ctrl+c: quit"}
-	} else {
-		helpParts = []string{
-			"↑/↓: move",
-			"enter: open",
-			"/: search",
-			"x: hide",
-		}
-		if hiddenCount > 0 {
-			helpParts = append(helpParts, "U: unhide all")
-		}
-		helpParts = append(helpParts, "h: history")
-		if m.showHist {
-			helpParts = append(helpParts, "↑/↓: revision")
-		}
-		helpParts = append(helpParts, "q: quit")
-	}
-	b.WriteString(helpStyle.Render("  " + strings.Join(helpParts, "  •  ")))
-
-	return b.String()
+	return v
 }
-
 // ── Open actions ──────────────────────────────────────────────────────────────
 
 // sessionDirToWorkingDir converts a pi session directory name to the original working directory.
@@ -747,9 +876,22 @@ func openSession(wsName, sessionID, filePath string) (string, error) {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
+// stripAnsi removes ANSI escape sequences from a string.
 func RunTUI(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64) error {
 	m := newTUIModel(nodes, snapshots, sinceHours)
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	_, err := p.Run()
-	return err
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+	// If a local exec was requested, replace this process with pi
+	if fm, ok := result.(tuiModel); ok && fm.pendingExec != "" {
+		binary, err := exec.LookPath("pi")
+		if err != nil {
+			return fmt.Errorf("pi not found: %w", err)
+		}
+		args := strings.Fields(fm.pendingExec)
+		return syscall.Exec(binary, args, os.Environ())
+	}
+	return nil
 }
