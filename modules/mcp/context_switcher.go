@@ -3,7 +3,7 @@ package mcp
 import (
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 type contextOption struct {

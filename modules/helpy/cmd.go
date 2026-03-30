@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/llm"
@@ -188,7 +188,7 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 // renderToStdout renders markdown with glamour and prints to stdout.
 func renderToStdout(content string) error {
-	r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(80))
+	r, err := glamour.NewTermRenderer(glamour.WithEnvironmentConfig(), glamour.WithWordWrap(80))
 	if err != nil {
 		fmt.Print(content)
 		return nil
@@ -408,7 +408,7 @@ func runChat() error {
 	}
 
 	chat := newStandaloneChatModel(client, aiCfg.SystemPrompt, docContent, meta)
-	p := tea.NewProgram(chat, tea.WithAltScreen())
+	p := tea.NewProgram(chat)
 	if _, err := p.Run(); err != nil {
 		return err
 	}
@@ -434,7 +434,7 @@ func runDocsPicker() error {
 	}
 
 	m := newPickerModel(docs)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		return err
 	}

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 )
 
 var (
@@ -60,25 +60,25 @@ func initialModel(content string) (*model, error) {
 	ti := textinput.New()
 	ti.Placeholder = "search..."
 	ti.CharLimit = 100
-	ti.Width = 30
+	ti.SetWidth(30)
 
 	pi := textinput.New()
 	pi.Placeholder = "type to filter..."
 	pi.CharLimit = 50
-	pi.Width = 46
+	pi.SetWidth(46)
 
 	headers := extractHeaders(content)
 
 	// Pre-render with default width to avoid "Loading..." delay
 	rendered := content
-	if r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(76)); err == nil {
+	if r, err := glamour.NewTermRenderer(glamour.WithEnvironmentConfig(), glamour.WithWordWrap(76)); err == nil {
 		if out, err := r.Render(content); err == nil {
 			rendered = out
 		}
 	}
 
 	// Create viewport with default size
-	vp := viewport.New(80, 24)
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(24))
 	vp.Style = lipgloss.NewStyle().PaddingLeft(2).PaddingRight(2)
 	vp.SetContent(rendered)
 
@@ -196,7 +196,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, chatCmd)
 			return m, tea.Batch(cmds...)
 
-		case tea.KeyMsg:
+		case tea.KeyPressMsg:
 			if msg.String() == "esc" && !m.chat.loading {
 				m.chatOpen = false
 				m.resizeForDoc()
@@ -217,11 +217,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 2
+		m.viewport.SetWidth(msg.Width)
+		m.viewport.SetHeight(msg.Height - 2)
 		m.setContent(m.content, msg.Width)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.paletteOpen {
 			switch msg.String() {
 			case "enter":
@@ -317,13 +317,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *model) View() string {
+func (m *model) View() tea.View {
+	v := tea.View{}
+	v.AltScreen = true
 	if !m.ready {
-		return "Loading..."
+		v.SetContent("Loading...")
+		return v
 	}
 
 	if m.paletteOpen {
-		return m.paletteView()
+		return tea.NewView(m.paletteView())
 	}
 
 	var footer string
@@ -340,10 +343,12 @@ func (m *model) View() string {
 	}
 
 	if m.chatOpen {
-		return m.viewport.View() + "\n" + m.chat.View()
+		v.SetContent(m.viewport.View() + "\n" + m.chat.View().Content)
+		return v
 	}
 
-	return m.viewport.View() + footer
+	v.SetContent(m.viewport.View() + footer)
+	return v
 }
 
 func (m *model) paletteView() string {
@@ -434,7 +439,7 @@ func (m *model) setContent(content string, width int) {
 	m.lastWidth = width
 
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithEnvironmentConfig(),
 		glamour.WithWordWrap(width-4),
 	)
 	if err != nil {
@@ -518,21 +523,21 @@ func (m *model) chatHeight() int {
 // resizeForChat shrinks the doc viewport and sizes the chat panel.
 func (m *model) resizeForChat() {
 	chatH := m.chatHeight()
-	m.viewport.Height = m.height - chatH - 1
-	m.viewport.Width = m.width
+	m.viewport.SetHeight(m.height - chatH - 1)
+	m.viewport.SetWidth(m.width)
 	m.setContent(m.content, m.width)
 
 	m.chat.width = m.width
 	m.chat.height = chatH
-	m.chat.viewport.Width = m.width
+	m.chat.viewport.SetWidth(m.width)
 	m.chat.textarea.SetWidth(m.width)
-	m.chat.viewport.Height = chatH - m.chat.textarea.Height() - 3
+	m.chat.viewport.SetHeight(chatH - m.chat.textarea.Height() - 3)
 	m.chat.refreshViewport()
 }
 
 // resizeForDoc restores the doc viewport to full height.
 func (m *model) resizeForDoc() {
-	m.viewport.Height = m.height - 2
-	m.viewport.Width = m.width
+	m.viewport.SetHeight(m.height - 2)
+	m.viewport.SetWidth(m.width)
 	m.setContent(m.content, m.width)
 }

@@ -6,9 +6,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 var (
@@ -49,7 +49,7 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		m.quitting = true
 		return m, tea.Quit
 	case spinner.TickMsg:
@@ -67,7 +67,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	s := "\n" +
 		m.spinner.View() + " Doing some work...\n\n"
 
@@ -85,7 +85,7 @@ func (m model) View() string {
 		s += "\n"
 	}
 
-	return mainStyle.Render(s)
+	return tea.NewView(mainStyle.Render(s))
 }
 
 // processFinishedMsg is sent when a pretend process completes.

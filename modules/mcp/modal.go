@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // ExtraParamsModal is a self-contained overlay for toggling extra params on a single MCP.
@@ -44,7 +45,7 @@ func (m ExtraParamsModal) Update(key string) (ExtraParamsModal, bool, bool) {
 		if m.cursor < len(m.params)-1 {
 			m.cursor++
 		}
-	case " ":
+	case " ", "space":
 		if len(m.params) > 0 {
 			k := m.params[m.cursor].Key
 			m.active[k] = !m.active[k]
@@ -69,7 +70,7 @@ func (m ExtraParamsModal) ActiveParams() map[string]interface{} {
 }
 
 // View renders the modal as a bordered lipgloss box ready to be overlaid.
-func (m ExtraParamsModal) View() string {
+func (m ExtraParamsModal) View() tea.View {
 	modalBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("135")).
@@ -128,5 +129,5 @@ func (m ExtraParamsModal) View() string {
 	sb.WriteString("\n")
 	sb.WriteString(hintStyle.Render("j/k: move  space: toggle  enter: apply  esc: cancel"))
 
-	return modalBorder.Render(sb.String())
+	return tea.NewView(modalBorder.Render(sb.String()))
 }

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/yurifrl/cly/pkg/llm"
 )
 
@@ -64,11 +64,11 @@ func newChatModel(client llm.Client, systemPrompt, docContent string, meta DocMe
 	ta.CharLimit = 1000
 	ta.SetWidth(40)
 	ta.SetHeight(3)
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	// ta.FocusedStyle removed in v2
 	ta.ShowLineNumbers = false
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
-	vp := viewport.New(40, 5)
+	vp := viewport.New(viewport.WithWidth(40), viewport.WithHeight(5))
 	vp.SetContent(chatDimStyle.Render("  💬 AI Chat — ask questions about this doc\n  Press Enter to send, Esc to close"))
 
 	s := spinner.New()
@@ -97,9 +97,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.viewport.Width = msg.Width
+		m.viewport.SetWidth(msg.Width)
 		m.textarea.SetWidth(msg.Width)
-		m.viewport.Height = msg.Height - m.textarea.Height() - 3
+		m.viewport.SetHeight(msg.Height - m.textarea.Height() - 3)
 		m.refreshViewport()
 
 	case streamChunkMsg:
@@ -138,7 +138,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.loading {
 			// While loading, only allow cancel
 			if msg.String() == "esc" {
@@ -153,8 +153,8 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
-		switch msg.Type {
-		case tea.KeyEnter:
+		switch msg.String() {
+		case "enter":
 			text := strings.TrimSpace(m.textarea.Value())
 			if text == "" {
 				return m, tea.Batch(cmds...)
@@ -314,7 +314,7 @@ func (m *chatModel) renderMarkdown(text string) string {
 		width = 40
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithEnvironmentConfig(),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
@@ -327,9 +327,9 @@ func (m *chatModel) renderMarkdown(text string) string {
 	return strings.TrimSpace(rendered)
 }
 
-func (m chatModel) View() string {
+func (m chatModel) View() tea.View {
 	border := chatBorderStyle.Width(m.width).Render("")
-	return fmt.Sprintf("%s\n%s\n%s", border, m.viewport.View(), m.textarea.View())
+	return tea.NewView(fmt.Sprintf("%s\n%s\n%s", border, m.viewport.View(), m.textarea.View()))
 }
 
 // standaloneChatModel wraps chatModel as a top-level tea.Model for `helpy --chat`.
@@ -355,13 +355,13 @@ func (m standaloneChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.chat.width = msg.Width
 		m.chat.height = msg.Height
-		m.chat.viewport.Width = msg.Width
+		m.chat.viewport.SetWidth(msg.Width)
 		m.chat.textarea.SetWidth(msg.Width)
-		m.chat.viewport.Height = msg.Height - m.chat.textarea.Height() - 4 // border + header
+		m.chat.viewport.SetHeight(msg.Height - m.chat.textarea.Height() - 4) // border + header
 		m.chat.refreshViewport()
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -375,7 +375,7 @@ func (m standaloneChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m standaloneChatModel) View() string {
+func (m standaloneChatModel) View() tea.View {
 	// Header with doc info
 	var header string
 	if m.docMeta.Name != "" {
@@ -385,5 +385,5 @@ func (m standaloneChatModel) View() string {
 	}
 	header += chatDimStyle.Render("  (esc/ctrl+c to quit)")
 
-	return header + "\n" + m.chat.viewport.View() + "\n" + m.chat.textarea.View()
+	return tea.NewView(header + "\n" + m.chat.viewport.View() + "\n" + m.chat.textarea.View())
 }

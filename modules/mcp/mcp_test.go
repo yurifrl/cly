@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -19,43 +18,43 @@ var update = flag.Bool("update", false, "update golden files")
 func TestUpdate_CursorMovement(t *testing.T) {
 	tests := []struct {
 		name       string
-		key        tea.KeyMsg
+		key        tea.KeyPressMsg
 		wantCursor int
 		wantScroll int
 	}{
 		{
 			name:       "move down with j",
-			key:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")},
+			key:        tea.KeyPressMsg{Code: 'j', Text: "j"},
 			wantCursor: 1,
 			wantScroll: 0,
 		},
 		{
 			name:       "move down with arrow",
-			key:        tea.KeyMsg{Type: tea.KeyDown},
+			key:        tea.KeyPressMsg{Code: tea.KeyDown},
 			wantCursor: 1,
 			wantScroll: 0,
 		},
 		{
 			name:       "move up with k",
-			key:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")},
+			key:        tea.KeyPressMsg{Code: 'k', Text: "k"},
 			wantCursor: 0,
 			wantScroll: 0,
 		},
 		{
 			name:       "move up with arrow",
-			key:        tea.KeyMsg{Type: tea.KeyUp},
+			key:        tea.KeyPressMsg{Code: tea.KeyUp},
 			wantCursor: 0,
 			wantScroll: 0,
 		},
 		{
 			name:       "home key",
-			key:        tea.KeyMsg{Type: tea.KeyHome},
+			key:        tea.KeyPressMsg{Code: tea.KeyHome},
 			wantCursor: 0,
 			wantScroll: 0,
 		},
 		{
 			name:       "end key",
-			key:        tea.KeyMsg{Type: tea.KeyEnd},
+			key:        tea.KeyPressMsg{Code: tea.KeyEnd},
 			wantCursor: 2, // Last item
 			wantScroll: 0,
 		},
@@ -86,7 +85,7 @@ func TestUpdate_ExpandCollapse(t *testing.T) {
 	model.cursor = 0
 
 	// Test expand with right arrow
-	updatedModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updatedModel, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m := updatedModel.(Model)
 
 	if !m.expandedPresets["webdev"] {
@@ -94,7 +93,7 @@ func TestUpdate_ExpandCollapse(t *testing.T) {
 	}
 
 	// Test collapse with left arrow
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = updatedModel.(Model)
 
 	if m.expandedPresets["webdev"] {
@@ -102,7 +101,7 @@ func TestUpdate_ExpandCollapse(t *testing.T) {
 	}
 
 	// Test expand with 'l' key
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
 	m = updatedModel.(Model)
 
 	if !m.expandedPresets["webdev"] {
@@ -110,7 +109,7 @@ func TestUpdate_ExpandCollapse(t *testing.T) {
 	}
 
 	// Test collapse with 'h' key
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
 	m = updatedModel.(Model)
 
 	if m.expandedPresets["webdev"] {
@@ -123,7 +122,7 @@ func TestUpdate_SpaceToggle(t *testing.T) {
 	model.cursor = 0
 	model.checkedMCPs["github"] = false
 
-	updatedModel, _ := model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updatedModel, _ := model.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	m := updatedModel.(Model)
 
 	if !m.checkedMCPs["github"] {
@@ -131,7 +130,7 @@ func TestUpdate_SpaceToggle(t *testing.T) {
 	}
 
 	// Toggle again
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	m = updatedModel.(Model)
 
 	if m.checkedMCPs["github"] {
@@ -143,7 +142,7 @@ func TestUpdate_SearchMode(t *testing.T) {
 	model := createTestModel()
 
 	// Enter search mode with '/'
-	updatedModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	updatedModel, _ := model.Update(tea.KeyPressMsg{Code: '/'  , Text: "/"})
 	m := updatedModel.(Model)
 
 	if !m.searchFocused {
@@ -151,7 +150,7 @@ func TestUpdate_SearchMode(t *testing.T) {
 	}
 
 	// Exit search with ESC
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updatedModel.(Model)
 
 	if m.searchFocused {
@@ -163,7 +162,7 @@ func TestUpdate_HelpToggle(t *testing.T) {
 	model := createTestModel()
 
 	// Toggle help with '?'
-	updatedModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	updatedModel, _ := model.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	m := updatedModel.(Model)
 
 	if !m.showHelp {
@@ -171,7 +170,7 @@ func TestUpdate_HelpToggle(t *testing.T) {
 	}
 
 	// Navigate in help with arrows
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = updatedModel.(Model)
 
 	if m.helpScrollOffset != 1 {
@@ -179,7 +178,7 @@ func TestUpdate_HelpToggle(t *testing.T) {
 	}
 
 	// Close help with ESC
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updatedModel.(Model)
 
 	if m.showHelp {
@@ -486,25 +485,23 @@ func TestValidation_ValidMCP(t *testing.T) {
 // ========== RENDERER TESTS (GOLDEN FILES) ==========
 
 func TestView_BasicRender(t *testing.T) {
-	lipgloss.SetColorProfile(0)
 
 	model := createTestModel()
 	output := model.View()
-	output = stripAnsiCodes(output)
+	outputStr := stripAnsiCodes(output.Content)
 
-	compareWithGolden(t, output, "view_basic.golden")
+	compareWithGolden(t, outputStr, "view_basic.golden")
 }
 
 func TestView_WithCursor(t *testing.T) {
-	lipgloss.SetColorProfile(0)
 
 	model := createTestModel()
 	model.cursor = 1
 
 	output := model.View()
-	output = stripAnsiCodes(output)
+	outputStr := stripAnsiCodes(output.Content)
 
-	compareWithGolden(t, output, "view_cursor.golden")
+	compareWithGolden(t, outputStr, "view_cursor.golden")
 }
 
 // ========== HELPER FUNCTIONS ==========

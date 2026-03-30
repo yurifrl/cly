@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/fogleman/ease"
 	"github.com/lucasb-eyer/go-colorful"
 )
@@ -68,7 +68,7 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if msg, ok := msg.(tea.KeyMsg); ok {
+	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		k := msg.String()
 		if k == "q" || k == "esc" || k == "ctrl+c" {
 			m.Quitting = true
@@ -82,22 +82,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return updateChosen(msg, m)
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	var s string
 	if m.Quitting {
-		return "\n  See you later!\n\n"
+		return tea.NewView("\n  See you later!\n\n")
 	}
 	if !m.Chosen {
 		s = choicesView(m)
 	} else {
 		s = chosenView(m)
 	}
-	return mainStyle.Render("\n" + s + "\n\n")
+	return tea.NewView(mainStyle.Render("\n" + s + "\n\n"))
 }
 
 func updateChoices(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "j", "down":
 			m.Choice++

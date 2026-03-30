@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/modules/completion"
 )
@@ -223,7 +223,7 @@ func launchTUI(ai, scope string) error {
 	}
 
 	model := NewModel(catalog, globalCfg, ctx, contextSource, adapter)
-	p := tea.NewProgram(model, tea.WithMouseCellMotion())
+	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("running TUI: %w", err)
 	}

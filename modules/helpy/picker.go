@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/yurifrl/cly/pkg/llm"
 )
 
@@ -100,7 +100,7 @@ func newPickerModel(docs []docEntry) pickerModel {
 	ti := textinput.New()
 	ti.Placeholder = "type to filter docs..."
 	ti.CharLimit = 100
-	ti.Width = 50
+	ti.SetWidth(50)
 	ti.Focus()
 
 	return pickerModel{
@@ -124,7 +124,7 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m pickerModel) updateViewer(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc":
 			// Back to picker
@@ -152,7 +152,7 @@ func (m pickerModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
@@ -253,8 +253,8 @@ func (m pickerModel) openDoc(doc docEntry) (tea.Model, tea.Cmd) {
 	if m.width > 0 && m.height > 0 {
 		viewer.width = m.width
 		viewer.height = m.height
-		viewer.viewport.Width = m.width
-		viewer.viewport.Height = m.height - 2
+		viewer.viewport.SetWidth(m.width)
+		viewer.viewport.SetHeight(m.height - 2)
 		viewer.setContent(content, m.width)
 	}
 
@@ -271,10 +271,10 @@ func (m pickerModel) openDoc(doc docEntry) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m pickerModel) View() string {
+func (m pickerModel) View() tea.View {
 	if m.viewing && m.viewer != nil {
 		docInfo := pickerDimStyle.Render(fmt.Sprintf("  📄 %s  (esc: back to picker)", m.viewerDoc))
-		return docInfo + "\n" + m.viewer.View()
+		return tea.NewView(docInfo + "\n" + m.viewer.View().Content)
 	}
 
 	var b strings.Builder
@@ -354,5 +354,5 @@ func (m pickerModel) View() string {
 				return "Quit"
 			}(), count)))
 
-	return b.String()
+	return tea.NewView(b.String())
 }

@@ -3,20 +3,13 @@ package timer
 import (
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/timer"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/timer"
+	tea "charm.land/bubbletea/v2"
 )
 
 const timeout = time.Second * 5
-
-type keymap struct {
-	start key.Binding
-	stop  key.Binding
-	reset key.Binding
-	quit  key.Binding
-}
 
 type model struct {
 	timer    timer.Model
@@ -25,29 +18,11 @@ type model struct {
 	quitting bool
 }
 
-func initialModel() model {
-	return model{
-		timer: timer.NewWithInterval(timeout, time.Millisecond),
-		keymap: keymap{
-			start: key.NewBinding(
-				key.WithKeys("s"),
-				key.WithHelp("s", "start"),
-			),
-			stop: key.NewBinding(
-				key.WithKeys("s"),
-				key.WithHelp("s", "stop"),
-			),
-			reset: key.NewBinding(
-				key.WithKeys("r"),
-				key.WithHelp("r", "reset"),
-			),
-			quit: key.NewBinding(
-				key.WithKeys("q", "ctrl+c"),
-				key.WithHelp("q", "quit"),
-			),
-		},
-		help: help.New(),
-	}
+type keymap struct {
+	start key.Binding
+	stop  key.Binding
+	reset key.Binding
+	quit  key.Binding
 }
 
 func (m model) Init() tea.Cmd {
@@ -72,7 +47,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keymap.quit):
 			m.quitting = true
@@ -96,7 +71,10 @@ func (m model) helpView() string {
 	})
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
+	// For a more detailed timer view you could read m.timer.Timeout to get
+	// the remaining time as a time.Duration and skip calling m.timer.View()
+	// entirely.
 	s := m.timer.View()
 
 	if m.timer.Timedout() {
@@ -107,5 +85,20 @@ func (m model) View() string {
 		s = "Exiting in " + s
 		s += m.helpView()
 	}
-	return s
+	return tea.NewView(s)
+}
+
+func initialModel() model {
+	m := model{
+		timer: timer.New(timeout, timer.WithInterval(time.Millisecond)),
+		keymap: keymap{
+			start: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "start")),
+			stop:  key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "stop")),
+			reset: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reset")),
+			quit:  key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		},
+		help: help.New(),
+	}
+	m.keymap.start.SetEnabled(false)
+	return m
 }
