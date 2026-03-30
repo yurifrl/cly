@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 const debounceDuration = time.Second
@@ -25,7 +25,7 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Increment the tag on the model...
 		m.tag++
 		return m, tea.Tick(debounceDuration, func(_ time.Time) tea.Msg {
@@ -46,7 +46,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) View() string {
-	return fmt.Sprintf("Key presses: %d", m.tag) +
-		"\nTo exit press any key, then wait for one second without pressing anything."
+func (m model) View() tea.View {
+	return tea.NewView(fmt.Sprintf("Key presses: %d", m.tag) +
+		"\nTo exit press any key, then wait for one second without pressing anything.")
 }

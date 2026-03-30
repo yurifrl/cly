@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type (
@@ -20,7 +20,7 @@ const (
 	cvv
 )
 
-const (
+var (
 	hotPink  = lipgloss.Color("#FF06B7")
 	darkGray = lipgloss.Color("#767676")
 )
@@ -92,21 +92,21 @@ func initialModel() model {
 	inputs[ccn].Placeholder = "4505 **** **** 1234"
 	inputs[ccn].Focus()
 	inputs[ccn].CharLimit = 20
-	inputs[ccn].Width = 30
+	inputs[ccn].SetWidth(30)
 	inputs[ccn].Prompt = ""
 	inputs[ccn].Validate = ccnValidator
 
 	inputs[exp] = textinput.New()
 	inputs[exp].Placeholder = "MM/YY "
 	inputs[exp].CharLimit = 5
-	inputs[exp].Width = 5
+	inputs[exp].SetWidth(5)
 	inputs[exp].Prompt = ""
 	inputs[exp].Validate = expValidator
 
 	inputs[cvv] = textinput.New()
 	inputs[cvv].Placeholder = "XXX"
 	inputs[cvv].CharLimit = 3
-	inputs[cvv].Width = 5
+	inputs[cvv].SetWidth(5)
 	inputs[cvv].Prompt = ""
 	inputs[cvv].Validate = cvvValidator
 
@@ -125,18 +125,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd = make([]tea.Cmd, len(m.inputs))
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "enter":
 			if m.focused == len(m.inputs)-1 {
 				return m, tea.Quit
 			}
 			m.nextInput()
-		case tea.KeyCtrlC, tea.KeyEsc:
+		case "ctrl+c", "esc":
 			return m, tea.Quit
-		case tea.KeyShiftTab, tea.KeyCtrlP:
+		case "shift+tab", "ctrl+p":
 			m.prevInput()
-		case tea.KeyTab, tea.KeyCtrlN:
+		case "tab", "ctrl+n":
 			m.nextInput()
 		}
 		for i := range m.inputs {
@@ -156,8 +156,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) View() string {
-	return fmt.Sprintf(
+func (m model) View() tea.View {
+	return tea.NewView(fmt.Sprintf(
 		` Total: $21.50:
 
  %s
@@ -175,7 +175,7 @@ func (m model) View() string {
 		m.inputs[exp].View(),
 		m.inputs[cvv].View(),
 		continueStyle.Render("Continue ->"),
-	) + "\n"
+	) + "\n")
 }
 
 // nextInput focuses the next input field

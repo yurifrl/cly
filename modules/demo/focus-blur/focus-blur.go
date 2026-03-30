@@ -1,20 +1,14 @@
 package focusblur
 
+// A simple program that handled losing and acquiring focus.
+
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type model struct {
 	focused   bool
 	reporting bool
-}
-
-func initialModel() model {
-	return model{
-		// assume we start focused...
-		focused:   true,
-		reporting: true,
-	}
 }
 
 func (m model) Init() tea.Cmd {
@@ -27,7 +21,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = true
 	case tea.BlurMsg:
 		m.focused = false
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "t":
 			m.reporting = !m.reporting
@@ -39,7 +33,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	s := "Hi. Focus report is currently "
 	if m.reporting {
 		s += "enabled"
@@ -55,5 +49,9 @@ func (m model) View() string {
 			s += "This program is currently blurred!"
 		}
 	}
-	return s + "\n\nTo quit sooner press ctrl-c, or t to toggle focus reporting...\n"
+	v := tea.NewView(s + "\n\nTo quit sooner press ctrl-c, or t to toggle focus reporting...\n")
+	v.ReportFocus = m.reporting
+	return v
 }
+
+func initialModel() model { return model{focused: true, reporting: true} }

@@ -1,14 +1,15 @@
 package glamour
 
 import (
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/glamour/v2/styles"
+	"charm.land/lipgloss/v2"
 )
 
 const content = `
-# Today's Menu
+# Today’s Menu
 
 ## Appetizers
 
@@ -17,7 +18,7 @@ const content = `
 | Tsukemono   | $2    | Just an appetizer               |
 | Tomato Soup | $4    | Made with San Marzano tomatoes  |
 | Okonomiyaki | $4    | Takes a few minutes to make     |
-| Curry       | $3    | We can add squash if you'd like |
+| Curry       | $3    | We can add squash if you’d like |
 
 ## Seasonal Dishes
 
@@ -35,8 +36,7 @@ const content = `
 | Banana Split | $5    | A classic             |
 | Cream Puff   | $3    | Pretty creamy!        |
 
-All our dishes are made in-house by Karen, our chef. Most of our ingredients
-are from our garden or the fish market down the street.
+All our dishes are made in-house by Karen, our chef. Most of our ingredients are from our garden or the fish market down the street.
 
 Some famous people that have eaten here lately:
 
@@ -49,14 +49,19 @@ Bon appétit!
 
 var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render
 
-type model struct {
+type example struct {
 	viewport viewport.Model
 }
 
-func initialModel() (*model, error) {
-	const width = 78
+func newExample(isDark bool) (*example, error) {
+	const (
+		width  = 78
+		height = 20
+	)
 
-	vp := viewport.New(width, 20)
+	vp := viewport.New()
+	vp.SetWidth(width)
+	vp.SetHeight(height)
 	vp.Style = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62")).
@@ -70,11 +75,15 @@ func initialModel() (*model, error) {
 	//  * The viewport margins
 	//  * The gutter glamour applies to the left side of the content
 	//
-	const glamourGutter = 2
+	const glamourGutter = 3
 	glamourRenderWidth := width - vp.Style.GetHorizontalFrameSize() - glamourGutter
 
+	style := styles.DarkStyleConfig
+	if !isDark {
+		style = styles.LightStyleConfig
+	}
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStyles(style),
 		glamour.WithWordWrap(glamourRenderWidth),
 	)
 	if err != nil {
@@ -88,35 +97,37 @@ func initialModel() (*model, error) {
 
 	vp.SetContent(str)
 
-	return &model{
+	return &example{
 		viewport: vp,
 	}, nil
 }
 
-func (m *model) Init() tea.Cmd {
+func (e example) Init() tea.Cmd {
 	return nil
 }
 
-func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (e example) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
-			return m, tea.Quit
+			return e, tea.Quit
 		default:
 			var cmd tea.Cmd
-			m.viewport, cmd = m.viewport.Update(msg)
-			return m, cmd
+			e.viewport, cmd = e.viewport.Update(msg)
+			return e, cmd
 		}
 	default:
-		return m, nil
+		return e, nil
 	}
 }
 
-func (m *model) View() string {
-	return m.viewport.View() + m.helpView()
+func (e example) View() tea.View {
+	return tea.NewView(e.viewport.View() + e.helpView())
 }
 
-func (m *model) helpView() string {
+func (e example) helpView() string {
 	return helpStyle("\n  ↑/↓: Navigate • q: Quit\n")
 }
+
+func initialModel() (*example, error) { return newExample(true) }
