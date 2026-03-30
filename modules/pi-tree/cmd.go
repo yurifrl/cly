@@ -37,16 +37,6 @@ func runTUI2(cmd *cobra.Command, jsonOut bool, forceSave bool, sinceHours float6
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: scan: %v\n", err)
 	}
 
-	// Only save snapshot if we got live data
-	if len(nodes) > 0 {
-		_, isNew, err := Upsert(nodes, forceSave)
-		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not save snapshot: %v\n", err)
-		} else if isNew && !jsonOut {
-			fmt.Fprintln(cmd.OutOrStdout(), "📸 new snapshot saved")
-		}
-	}
-
 	if jsonOut {
 		data, err := MarshalJSON(nodes)
 		if err != nil {
@@ -56,7 +46,17 @@ func runTUI2(cmd *cobra.Command, jsonOut bool, forceSave bool, sinceHours float6
 		return nil
 	}
 
-	snapshots, _ := LoadSnapshots()
+	// Always update latest snapshot in-place with current live data.
+	// Only --save creates a NEW version.
+	if len(nodes) > 0 {
+		_, _, err := Upsert(nodes, forceSave)
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not save snapshot: %v\n", err)
+		}
+	}
+
+	all, _ := LoadSnapshots()
+	snapshots := ActiveSnapshots(all)
 	return RunTUI(nodes, snapshots, sinceHours)
 }
 
@@ -66,10 +66,11 @@ func historyCmd() *cobra.Command {
 		Use:   "history",
 		Short: "List saved pi-tree snapshots",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			snapshots, err := LoadSnapshots()
+			all, err := LoadSnapshots()
 			if err != nil {
 				return err
 			}
+			snapshots := ActiveSnapshots(all)
 			if len(snapshots) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No snapshots yet. Run `cly pi-tree` first.")
 				return nil
