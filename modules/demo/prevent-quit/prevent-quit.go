@@ -3,11 +3,11 @@ package preventquit
 import (
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 var (
@@ -68,7 +68,7 @@ func (m model) updateTextView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		m.saveText = ""
 		switch {
 		case key.Matches(msg, m.keymap.save):
@@ -77,7 +77,7 @@ func (m model) updateTextView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keymap.quit):
 			m.quitting = true
 			return m, tea.Quit
-		case msg.Type == tea.KeyRunes:
+		case msg.String() == "runes":
 			m.saveText = ""
 			m.hasChanges = true
 			fallthrough
@@ -95,7 +95,7 @@ func (m model) updateTextView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) updatePromptView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// For simplicity's sake, we'll treat any key besides "y" as "no"
 		if key.Matches(msg, m.keymap.quit) || msg.String() == "y" {
 			m.hasChanges = false
@@ -107,13 +107,13 @@ func (m model) updatePromptView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	if m.quitting {
 		if m.hasChanges {
 			text := lipgloss.JoinHorizontal(lipgloss.Top, "You have unsaved changes. Quit without saving?", choiceStyle.Render("[yn]"))
-			return quitViewStyle.Render(text)
+			return tea.NewView(quitViewStyle.Render(text))
 		}
-		return "Very important, thank you\n"
+		return tea.NewView("Very important, thank you\n")
 	}
 
 	helpView := m.help.ShortHelpView([]key.Binding{
@@ -121,10 +121,10 @@ func (m model) View() string {
 		m.keymap.quit,
 	})
 
-	return fmt.Sprintf(
+	return tea.NewView(fmt.Sprintf(
 		"\nType some important things.\n\n%s\n\n %s\n %s",
 		m.textarea.View(),
 		saveTextStyle.Render(m.saveText),
 		helpView,
-	) + "\n\n"
+	) + "\n\n")
 }
