@@ -406,6 +406,31 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = fmt.Sprintf("viewing snapshot v%d (%d sessions)", snap.Version, countSessions(snap.Tree))
 				break
 			}
+			// Open session in existing or new workspace
+			ws, sess, ok := m.cursorSession()
+			if !ok {
+				m.message = "nothing to open"
+				break
+			}
+			// Check if we're already in the session's working directory
+			workDir := sessionDirToWorkingDir(sess.FilePath)
+			cwd, _ := os.Getwd()
+			if workDir != "" && cwd != "" && strings.EqualFold(cwd, workDir) {
+				// Same dir — just exec pi locally and quit TUI
+				m.pendingExec = fmt.Sprintf("pi --session %s", sess.SessionID)
+				m.quit = true
+				return m, tea.Quit
+			}
+			// Different dir — open in target workspace
+			m.message = "opening..."
+			cmd, err := openSession(ws.Name, sess.SessionID, sess.FilePath)
+			if err != nil {
+				m.message = fmt.Sprintf("error: %v", err)
+			} else {
+				m.quit = true
+				m.message = fmt.Sprintf("✓ %s", cmd)
+				return m, tea.Quit
+			}
 
 		case "d":
 			if m.showHist && len(m.snapshots) > 1 {
