@@ -1,7 +1,7 @@
 package lg_color_dialog
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // renderDialog creates a banana-themed dialog box with a purple rounded border,
