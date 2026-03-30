@@ -3,8 +3,8 @@ package textarea
 import (
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type model struct {
@@ -32,13 +32,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEsc:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc":
 			if m.textarea.Focused() {
 				m.textarea.Blur()
 			}
-		case tea.KeyCtrlC:
+		case "ctrl+c":
 			return m, tea.Quit
 		default:
 			if !m.textarea.Focused() {
@@ -53,10 +53,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) View() string {
-	return fmt.Sprintf(
+func (m model) View() tea.View {
+	return tea.NewView(fmt.Sprintf(
 		"Tell me a story.\n\n%s\n\n%s",
 		m.textarea.View(),
 		"(ctrl+c to quit)",
-	) + "\n\n"
+	) + "\n\n")
 }
