@@ -1,7 +1,7 @@
 package cellbuffer
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +19,7 @@ func Register(parent *cobra.Command) {
 func run(cmd *cobra.Command, args []string) error {
 	m := initialModel()
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		return err
 	}

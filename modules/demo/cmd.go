@@ -4,10 +4,21 @@ import (
 	altscreentoggle "github.com/yurifrl/cly/modules/demo/altscreen-toggle"
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/modules/demo/autocomplete"
+	"github.com/yurifrl/cly/modules/demo/canvas"
+	"github.com/yurifrl/cly/modules/demo/capability"
 	"github.com/yurifrl/cly/modules/demo/cellbuffer"
 	"github.com/yurifrl/cly/modules/demo/chat"
+	"github.com/yurifrl/cly/modules/demo/clickable"
+	colorprofilemod "github.com/yurifrl/cly/modules/demo/colorprofile"
 	composableviews "github.com/yurifrl/cly/modules/demo/composable-views"
+	cursorstyle "github.com/yurifrl/cly/modules/demo/cursor-style"
+	lgblend1d "github.com/yurifrl/cly/modules/demo/lg-blend-1d"
+	lgblend2d "github.com/yurifrl/cly/modules/demo/lg-blend-2d"
+	lgblendrotation "github.com/yurifrl/cly/modules/demo/lg-blend-rotation"
+	lgbrightness "github.com/yurifrl/cly/modules/demo/lg-brightness"
+	lgcolor "github.com/yurifrl/cly/modules/demo/lg-color"
 	lgcolordialog "github.com/yurifrl/cly/modules/demo/lg-color-dialog"
+	lgcompat "github.com/yurifrl/cly/modules/demo/lg-compat"
 	lglayout "github.com/yurifrl/cly/modules/demo/lg-layout"
 	lglistduckduckgoose "github.com/yurifrl/cly/modules/demo/lg-list-duckduckgoose"
 	lglistglow "github.com/yurifrl/cly/modules/demo/lg-list-glow"
@@ -27,6 +38,8 @@ import (
 	lgtreetoggle "github.com/yurifrl/cly/modules/demo/lg-tree-toggle"
 	creditcardform "github.com/yurifrl/cly/modules/demo/credit-card-form"
 	"github.com/yurifrl/cly/modules/demo/debounce"
+	doomfire "github.com/yurifrl/cly/modules/demo/doom-fire"
+	dynamictextarea "github.com/yurifrl/cly/modules/demo/dynamic-textarea"
 	"github.com/yurifrl/cly/modules/demo/exec"
 	"github.com/yurifrl/cly/modules/demo/eyes"
 	filepicker "github.com/yurifrl/cly/modules/demo/file-picker"
@@ -35,6 +48,8 @@ import (
 	"github.com/yurifrl/cly/modules/demo/glamour"
 	"github.com/yurifrl/cly/modules/demo/help"
 	"github.com/yurifrl/cly/modules/demo/http"
+	isbnform "github.com/yurifrl/cly/modules/demo/isbn-form"
+	keyboardenhancements "github.com/yurifrl/cly/modules/demo/keyboard-enhancements"
 	listdefault "github.com/yurifrl/cly/modules/demo/list-default"
 	listfancy "github.com/yurifrl/cly/modules/demo/list-fancy"
 	listsimple "github.com/yurifrl/cly/modules/demo/list-simple"
@@ -44,15 +59,21 @@ import (
 	"github.com/yurifrl/cly/modules/demo/paginator"
 	"github.com/yurifrl/cly/modules/demo/pipe"
 	preventquit "github.com/yurifrl/cly/modules/demo/prevent-quit"
+	printkey "github.com/yurifrl/cly/modules/demo/print-key"
 	progressanimated "github.com/yurifrl/cly/modules/demo/progress-animated"
 	progressdownload "github.com/yurifrl/cly/modules/demo/progress-download"
+	progressbar "github.com/yurifrl/cly/modules/demo/progress-bar"
 	progressstatic "github.com/yurifrl/cly/modules/demo/progress-static"
+	queryterm "github.com/yurifrl/cly/modules/demo/query-term"
 	"github.com/yurifrl/cly/modules/demo/realtime"
 	"github.com/yurifrl/cly/modules/demo/result"
 	sendmsg "github.com/yurifrl/cly/modules/demo/send-msg"
 	"github.com/yurifrl/cly/modules/demo/sequence"
+	setterminalcolor "github.com/yurifrl/cly/modules/demo/set-terminal-color"
 	setwindowtitle "github.com/yurifrl/cly/modules/demo/set-window-title"
 	"github.com/yurifrl/cly/modules/demo/simple"
+	"github.com/yurifrl/cly/modules/demo/space"
+	"github.com/yurifrl/cly/modules/demo/splash"
 	packagemanager "github.com/yurifrl/cly/modules/demo/package-manager"
 	spliteditors "github.com/yurifrl/cly/modules/demo/split-editors"
 	"github.com/yurifrl/cly/modules/demo/spinner"
@@ -67,6 +88,7 @@ import (
 	"github.com/yurifrl/cly/modules/demo/textinputs"
 	"github.com/yurifrl/cly/modules/demo/timer"
 	tuidaemoncombo "github.com/yurifrl/cly/modules/demo/tui-daemon-combo"
+	"github.com/yurifrl/cly/modules/demo/vanish"
 	"github.com/yurifrl/cly/modules/demo/views"
 	windowsize "github.com/yurifrl/cly/modules/demo/window-size"
 )
@@ -75,6 +97,9 @@ var DemoCmd = &cobra.Command{
 	Use:   "demo",
 	Short: "Component demonstrations",
 	Long:  "Interactive demonstrations of Bubbletea, Bubbles, Huh, and Lipgloss components",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runOverlay(cmd)
+	},
 }
 
 func init() {
@@ -145,6 +170,28 @@ func init() {
 	lgtablelanguages.Register(DemoCmd)
 	lgtablepokemon.Register(DemoCmd)
 	lgtablemindy.Register(DemoCmd)
+	lgblend1d.Register(DemoCmd)
+	lgblend2d.Register(DemoCmd)
+	lgblendrotation.Register(DemoCmd)
+	lgbrightness.Register(DemoCmd)
+	lgcolor.Register(DemoCmd)
+	lgcompat.Register(DemoCmd)
+	canvas.Register(DemoCmd)
+	capability.Register(DemoCmd)
+	clickable.Register(DemoCmd)
+	colorprofilemod.Register(DemoCmd)
+	cursorstyle.Register(DemoCmd)
+	doomfire.Register(DemoCmd)
+	dynamictextarea.Register(DemoCmd)
+	isbnform.Register(DemoCmd)
+	keyboardenhancements.Register(DemoCmd)
+	printkey.Register(DemoCmd)
+	progressbar.Register(DemoCmd)
+	queryterm.Register(DemoCmd)
+	setterminalcolor.Register(DemoCmd)
+	space.Register(DemoCmd)
+	splash.Register(DemoCmd)
+	vanish.Register(DemoCmd)
 }
 
 func Register(parent *cobra.Command) {

@@ -1,10 +1,14 @@
 package cellbuffer
 
+// A simple example demonstrating how to draw and animate on a cellular grid.
+// Note that the cellbuffer implementation in this example does not support
+// double-width runes.
+
 import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/harmonica"
 )
 
@@ -15,7 +19,7 @@ const (
 	asterisk  = "*"
 )
 
-func drawEllipse(cb *cellBuffer, xc, yc, rx, ry float64) {
+func drawEllipse(cb *cellbuffer, xc, yc, rx, ry float64) {
 	var (
 		dx, dy, d1, d2 float64
 		x              float64
@@ -65,12 +69,12 @@ func drawEllipse(cb *cellBuffer, xc, yc, rx, ry float64) {
 	}
 }
 
-type cellBuffer struct {
+type cellbuffer struct {
 	cells  []string
 	stride int
 }
 
-func (c *cellBuffer) init(w, h int) {
+func (c *cellbuffer) init(w, h int) {
 	if w == 0 {
 		return
 	}
@@ -79,7 +83,7 @@ func (c *cellBuffer) init(w, h int) {
 	c.wipe()
 }
 
-func (c cellBuffer) set(x, y int) {
+func (c cellbuffer) set(x, y int) {
 	i := y*c.stride + x
 	if i > len(c.cells)-1 || x < 0 || y < 0 || x >= c.width() || y >= c.height() {
 		return
@@ -87,17 +91,17 @@ func (c cellBuffer) set(x, y int) {
 	c.cells[i] = asterisk
 }
 
-func (c *cellBuffer) wipe() {
+func (c *cellbuffer) wipe() {
 	for i := range c.cells {
 		c.cells[i] = " "
 	}
 }
 
-func (c cellBuffer) width() int {
+func (c cellbuffer) width() int {
 	return c.stride
 }
 
-func (c cellBuffer) height() int {
+func (c cellbuffer) height() int {
 	h := len(c.cells) / c.stride
 	if len(c.cells)%c.stride != 0 {
 		h++
@@ -105,13 +109,13 @@ func (c cellBuffer) height() int {
 	return h
 }
 
-func (c cellBuffer) ready() bool {
+func (c cellbuffer) ready() bool {
 	return len(c.cells) > 0
 }
 
-func (c cellBuffer) String() string {
+func (c cellbuffer) String() string {
 	var b strings.Builder
-	for i := 0; i < len(c.cells); i++ {
+	for i := range c.cells {
 		if i > 0 && i%c.stride == 0 && i < len(c.cells)-1 {
 			b.WriteRune('\n')
 		}
@@ -129,17 +133,11 @@ func animate() tea.Cmd {
 }
 
 type model struct {
-	cells                cellBuffer
+	cells                cellbuffer
 	spring               harmonica.Spring
 	targetX, targetY     float64
 	x, y                 float64
 	xVelocity, yVelocity float64
-}
-
-func initialModel() model {
-	return model{
-		spring: harmonica.NewSpring(harmonica.FPS(fps), frequency, damping),
-	}
 }
 
 func (m model) Init() tea.Cmd {
@@ -148,7 +146,7 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m, tea.Quit
 	case tea.WindowSizeMsg:
 		if !m.cells.ready() {
@@ -157,10 +155,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cells.init(msg.Width, msg.Height)
 		return m, nil
 	case tea.MouseMsg:
+		switch msg.(type) {
+		case tea.MouseClickMsg, tea.MouseMotionMsg:
+		default:
+			break
+		}
 		if !m.cells.ready() {
 			return m, nil
 		}
-		m.targetX, m.targetY = float64(msg.X), float64(msg.Y)
+		mouse := msg.Mouse()
+		m.targetX, m.targetY = float64(mouse.X), float64(mouse.Y)
 		return m, nil
 
 	case frameMsg:
@@ -178,6 +182,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m model) View() string {
-	return m.cells.String()
+func (m model) View() tea.View {
+	v := tea.NewView(m.cells.String())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+func initialModel() model {
+	return model{spring: harmonica.NewSpring(harmonica.FPS(fps), frequency, damping)}
 }
