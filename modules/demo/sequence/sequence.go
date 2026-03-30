@@ -3,7 +3,7 @@ package sequence
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type model struct{}
@@ -50,12 +50,12 @@ func SleepPrintln(s string, millisecond int) tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m, tea.Quit
 	}
 	return m, nil
 }
 
-func (m model) View() string {
-	return ""
+func (m model) View() tea.View {
+	return tea.View{}
 }
