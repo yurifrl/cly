@@ -9,9 +9,11 @@ import (
 
 // CommitResult represents the result of executing a single commit group.
 type CommitResult struct {
-	Title string
-	SHA   string
-	Files int
+	Title   string
+	SHA     string
+	Files   int
+	Skipped bool
+	Err     error
 }
 
 // Execute creates git commits according to the plan.
@@ -19,12 +21,6 @@ func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
 	// Precondition: at least one existing commit
 	if _, err := gitExec("rev-parse", "HEAD"); err != nil {
 		return nil, fmt.Errorf("no initial commit found — create one first")
-	}
-
-	// Record original HEAD for rollback
-	originalHead, err := gitOutput("rev-parse", "HEAD")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
 	// Save the full staged diff for recovery (--binary for binary files like .gif)
@@ -43,17 +39,23 @@ func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
 	}
 
 	var results []CommitResult
+	var firstErr error
 
 	for i, group := range plan.Groups {
 		err := executeGroup(group, noVerify)
 		if err != nil {
-			// Rollback
-			rollbackErr := rollback(originalHead, savedDiff)
-			if rollbackErr != nil {
-				return results, fmt.Errorf("commit %d failed: %w\nROLLBACK ALSO FAILED: %v\nManual recovery: git reset --soft %s",
-					i+1, err, rollbackErr, originalHead)
+			// Unstage any partially staged files for this group, then continue
+			gitExec("reset") //nolint:errcheck
+			results = append(results, CommitResult{
+				Title:   group.Title,
+				Files:   len(group.Files),
+				Skipped: true,
+				Err:     fmt.Errorf("commit %d failed: %w", i+1, err),
+			})
+			if firstErr == nil {
+				firstErr = fmt.Errorf("commit %d (%s) failed: %w", i+1, group.Title, err)
 			}
-			return results, fmt.Errorf("commit %d failed (rolled back): %w", i+1, err)
+			continue
 		}
 
 		sha, _ := gitOutput("rev-parse", "--short", "HEAD")
@@ -64,7 +66,7 @@ func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
 		})
 	}
 
-	return results, nil
+	return results, firstErr
 }
 
 func executeGroup(group CommitGroup, noVerify bool) error {
@@ -137,6 +139,7 @@ func rollback(originalHead, savedDiff string) error {
 	tmpFile.Close()
 
 	cmd := exec.Command("git", "apply", "--cached", tmpFile.Name())
+	cmd.Dir = repoRoot()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("apply --cached failed: %s: %w", out, err)
 	}
@@ -144,9 +147,10 @@ func rollback(originalHead, savedDiff string) error {
 	return nil
 }
 
-// gitOutput runs a git command and returns trimmed stdout only.
+// gitOutput runs a git command from the repo root and returns trimmed stdout only.
 func gitOutput(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
+	cmd.Dir = repoRoot()
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -154,10 +158,11 @@ func gitOutput(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// gitRawOutput runs a git command and returns raw stdout without trimming.
+// gitRawOutput runs a git command from the repo root and returns raw stdout without trimming.
 // Use for diff output where trailing newlines matter.
 func gitRawOutput(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
+	cmd.Dir = repoRoot()
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

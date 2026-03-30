@@ -279,9 +279,21 @@ func parseRange(s string, start, lines *int) {
 	}
 }
 
-// gitExec runs a git command and returns stdout.
+// repoRoot returns the absolute path of the git repository root.
+// Falls back to the current directory if git is unavailable.
+func repoRoot() string {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "."
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// gitExec runs a git command from the repo root and returns stdout+stderr.
 func gitExec(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
+	cmd.Dir = repoRoot()
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

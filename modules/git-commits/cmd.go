@@ -21,10 +21,11 @@ var (
 
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use:     "git-commits",
-		Aliases: []string{"gc"},
-		Short:   "AI-powered split commits",
-		RunE:    run,
+		Use:          "git-commits",
+		Aliases:      []string{"gc"},
+		Short:        "AI-powered split commits",
+		RunE:         run,
+		SilenceUsage: true,
 	}
 
 	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {

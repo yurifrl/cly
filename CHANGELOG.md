@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-03-30 Fix gc Git Commits Path Doubling and Continue-on-Error
+- Session ID: 1b0f6310-6e22-4b78-b38e-ef6b01d8d629
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-03-30T17-56-30-795Z_1b0f6310-6e22-4b78-b38e-ef6b01d8d629.jsonl
+- Session Name: 2026-03-30-1527-pi-tree-tui-tests
+- Context Name: 2026-03-30-1527-pi-tree-tui-tests
+
+### Fixed
+- `gc` (git-commits) failed with a doubled path prefix when run from a subdirectory of the repo. `gitExec`/`gitOutput`/`gitRawOutput` and `git apply` now set `cmd.Dir` to the repo root via a new `repoRoot()` helper (`git rev-parse --show-toplevel`) in `changeset.go`.
+
+### Changed
+- On commit failure, `Execute()` now skips the failing group (unstages partial staging) and continues with remaining commits instead of rolling back everything. `CommitResult` gains `Skipped` and `Err` fields.
+- `pipeline.go` prints `✗ SKIP` for failed groups and shows `Done! Created N/M commits.` summary. Error is returned only after all results are printed.
+- Added `SilenceUsage: true` to the `git-commits` cobra command so the usage block no longer prints on runtime errors.
+
+## 2026-03-30 Pi-Tree Enter Key Opens Sessions
+- Session ID: 49cd5a12-5947-4118-96f8-1d611b7af6fe
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-03-30T13-32-19-031Z_49cd5a12-5947-4118-96f8-1d611b7af6fe.jsonl
+- Session Name: 2026-03-30-1521-pi-tree-tui-tests
+- Context Name: 2026-03-30-1521-pi-tree-tui-tests
+
+### Fixed
+- `modules/pi-tree/tui.go`: Enter key now opens the selected session in an existing or new workspace. Previously the `enter` case only handled history view and did nothing in the normal tree view.
+
+## 2026-03-30 Dotfiles Eval Subcommand
+
+- Session ID: d75e5d8b-bb1c-4cee-b1f2-363e99c975a6
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-03-30T13-30-38-552Z_d75e5d8b-bb1c-4cee-b1f2-363e99c975a6.jsonl
+- Session Name: 2026-03-30-1521-pi-tree-tui-tests
+- Context Name: 2026-03-30-1521-pi-tree-tui-tests
+
+### Added
+- `cly dotfiles eval [src]` — re-applies a single mapping from `dotfiles.conf` by source path (arg or stdin); handles both `.jsonc -> .json` copies and regular symlinks; matches by full path or basename
+
 ## 2026-03-27 cmux Integration Package
 
 - Session ID: c3c7de12-52fa-42d4-a8bf-e4134644345a

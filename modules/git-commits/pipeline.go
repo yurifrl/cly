@@ -178,19 +178,27 @@ execute:
 	} else {
 		results, err = Execute(plan, opts.NoVerify)
 	}
-	if err != nil {
-		return err
-	}
+	// Don't return err yet — print results first, then report at the end
 
 	// Print results
 	fmt.Println()
+	successCount := 0
 	for _, r := range results {
-		fmt.Printf("%s %s (%d files)\n",
-			style.GreenStyle.Render("✓ "+r.SHA),
-			r.Title,
-			r.Files)
+		if r.Skipped {
+			fmt.Printf("%s %s (%d files): %v\n",
+				style.RedStyle.Render("✗ SKIP"),
+				r.Title,
+				r.Files,
+				r.Err)
+		} else {
+			fmt.Printf("%s %s (%d files)\n",
+				style.GreenStyle.Render("✓ "+r.SHA),
+				r.Title,
+				r.Files)
+			successCount++
+		}
 	}
-	fmt.Printf("\n%s\n", style.GreenStyle.Render(fmt.Sprintf("Done! Created %d commits.", len(results))))
+	fmt.Printf("\n%s\n", style.GreenStyle.Render(fmt.Sprintf("Done! Created %d/%d commits.", successCount, len(results))))
 
 	// Push if requested
 	if opts.Push {
@@ -205,7 +213,7 @@ execute:
 		fmt.Println(style.GreenStyle.Render("✓ Pushed!"))
 	}
 
-	return nil
+	return err
 }
 
 // resolveLLMConfig builds LLM config from cly config or env defaults.
