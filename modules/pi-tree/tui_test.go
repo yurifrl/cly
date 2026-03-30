@@ -398,11 +398,13 @@ func TestTUI_DeleteSnapshot_InHistory(t *testing.T) {
 	m = key(m, "d")
 	assert.Contains(t, m.message, "deleted v2")
 
-	// Verify only 2 snapshots remain
-	remaining, _ := LoadSnapshots()
-	assert.Len(t, remaining, 2)
-	assert.Equal(t, 1, remaining[0].Version)
-	assert.Equal(t, 3, remaining[1].Version)
+	// Verify v2 is soft-deleted
+	all, _ := LoadSnapshots()
+	assert.Len(t, all, 3, "all still in file")
+	active := ActiveSnapshots(all)
+	assert.Len(t, active, 2)
+	assert.Equal(t, 1, active[0].Version)
+	assert.Equal(t, 3, active[1].Version)
 }
 
 func TestTUI_DeleteSnapshot_LastOneBlocked(t *testing.T) {
