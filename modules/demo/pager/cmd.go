@@ -1,7 +1,7 @@
 package pager
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -17,11 +17,7 @@ func Register(parent *cobra.Command) {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	p := tea.NewProgram(
-		initialModel(),
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		return err
 	}
