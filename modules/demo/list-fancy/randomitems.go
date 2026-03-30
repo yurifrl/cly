@@ -94,7 +94,7 @@ func (r *randomItemGenerator) reset() {
 	r.descs = []string{
 		"A little weird",
 		"Bold flavor",
-		"Can't get enough",
+		"Can’t get enough",
 		"Delectable",
 		"Expensive",
 		"Expired",
