@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -111,13 +111,13 @@ func newEditModel(entry *Entry) editModel {
 	nameInput.SetValue(entry.Name)
 	nameInput.Focus()
 	nameInput.CharLimit = 64
-	nameInput.Width = 50
+	nameInput.SetWidth(50)
 
 	descInput := textinput.New()
 	descInput.Placeholder = "optional description"
 	descInput.SetValue(entry.Description)
 	descInput.CharLimit = 200
-	descInput.Width = 50
+	descInput.SetWidth(50)
 
 	return editModel{
 		inputs: [editFieldCount]textinput.Model{nameInput, descInput},
@@ -132,7 +132,7 @@ func (m editModel) Init() tea.Cmd {
 
 func (m editModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			m.cancel = true
@@ -175,7 +175,7 @@ func (m *editModel) updateInput(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-func (m editModel) View() string {
+func (m editModel) View() tea.View {
 	var b strings.Builder
 
 	b.WriteString("\n")
@@ -194,7 +194,7 @@ func (m editModel) View() string {
 	b.WriteString(editHelpStyle.Render("  tab/↑↓ navigate • enter confirm • esc cancel"))
 	b.WriteString("\n")
 
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 func runEditForm(entry *Entry) (*editResult, error) {

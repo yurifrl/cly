@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 var (
@@ -83,7 +83,7 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.list.SetWidth(msg.Width)
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.list.FilterState() == list.Filtering {
 			break
 		}
@@ -119,9 +119,9 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m pickerModel) View() string {
+func (m pickerModel) View() tea.View {
 	if m.chosen != nil || m.quit {
-		return ""
+		return tea.View{}
 	}
 
 	m.list.SetShowHelp(false)
@@ -148,7 +148,7 @@ func (m pickerModel) View() string {
 	pagination := m.list.Styles.PaginationStyle.Render(m.list.Paginator.View()) + "\n"
 	help := m.list.Styles.HelpStyle.Render(helpText)
 
-	return strings.TrimLeft(m.list.View(), "\n") + "\n" + footer + pagination + help
+	return tea.NewView(strings.TrimLeft(m.list.View(), "\n") + "\n" + footer + pagination + help)
 }
 
 func shortenPath(p string) string {
@@ -228,8 +228,8 @@ func runPicker(sessions Sessions, allowYolo bool) (*Entry, bool, error) {
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = lipgloss.NewStyle().MarginLeft(2)
-	l.Styles.PaginationStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
-	l.Styles.HelpStyle = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
+	l.Styles.PaginationStyle = list.DefaultStyles(false).PaginationStyle.PaddingLeft(4)
+	l.Styles.HelpStyle = list.DefaultStyles(false).HelpStyle.PaddingLeft(4).PaddingBottom(1)
 
 	p := tea.NewProgram(pickerModel{list: l, sessions: sessions, order: SortDateDesc, allowYolo: allowYolo})
 	m, err := p.Run()

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -26,11 +26,11 @@ func TestPickerYoloToggleWhenAllowed(t *testing.T) {
 	m := newTestPicker(sessions, true)
 	assert.False(t, m.yolo)
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m = updated.(pickerModel)
 	assert.True(t, m.yolo)
 
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m = updated.(pickerModel)
 	assert.False(t, m.yolo)
 }
@@ -42,7 +42,7 @@ func TestPickerYoloIgnoredWhenNotAllowed(t *testing.T) {
 	m := newTestPicker(sessions, false)
 	assert.False(t, m.yolo)
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m = updated.(pickerModel)
 	assert.False(t, m.yolo)
 }

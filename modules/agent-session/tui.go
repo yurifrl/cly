@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -100,7 +100,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.list.SetWidth(msg.Width)
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// In confirm-delete mode, only y/n/esc
 		if m.mode == tuiModeConfirmDelete {
 			switch msg.String() {
@@ -126,7 +126,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quit = true
 			return m, tea.Quit
 
-		case " ": // toggle select
+		case " ", "space": // toggle select
 			if i, ok := m.list.SelectedItem().(tuiItem); ok {
 				i.selected = !i.selected
 				m.list.SetItem(m.list.Index(), i)
@@ -262,9 +262,9 @@ func (m *tuiModel) refreshList() {
 	m.list.SetItems(items)
 }
 
-func (m tuiModel) View() string {
+func (m tuiModel) View() tea.View {
 	if m.chosen != nil || m.quit {
-		return ""
+		return tea.View{}
 	}
 
 	m.list.SetShowHelp(false)
@@ -329,7 +329,7 @@ func (m tuiModel) View() string {
 	helpParts = append(helpParts, "q: quit")
 	b.WriteString(tuiHelpBarStyle.Render(strings.Join(helpParts, "  •  ")))
 
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 func tuiCmd() *cobra.Command {
@@ -381,8 +381,8 @@ func runTUI(cmd *cobra.Command) error {
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = lipgloss.NewStyle().MarginLeft(2)
-	l.Styles.PaginationStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
-	l.Styles.HelpStyle = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
+	l.Styles.PaginationStyle = list.DefaultStyles(false).PaginationStyle.PaddingLeft(4)
+	l.Styles.HelpStyle = list.DefaultStyles(false).HelpStyle.PaddingLeft(4).PaddingBottom(1)
 
 	model := tuiModel{
 		list:      l,
