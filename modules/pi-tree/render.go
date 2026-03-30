@@ -31,3 +31,11 @@ func formatSize(bytes int64) string {
 	}
 	return fmt.Sprintf("%dKB", kb)
 }
+
+func countSessions(tree []WorkspaceNode) int {
+	n := 0
+	for _, ws := range tree {
+		n += len(ws.Sessions)
+	}
+	return n
+}

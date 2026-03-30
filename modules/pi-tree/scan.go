@@ -2,6 +2,7 @@ package pitree
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -139,15 +140,18 @@ func findSessionDirByName(wsName string, allDirs []string) string {
 	return ""
 }
 
-// topSessions returns the N most recently modified session files.
-func topSessions(dir string, n int) []PiSession {
-	if dir == "" || n == 0 {
+// activeSessions returns session files modified within the last maxAge duration.
+// These are the sessions with a running pi process (actively being written to).
+func activeSessions(dir string, maxAge time.Duration) []PiSession {
+	if dir == "" {
 		return nil
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
+
+	cutoff := time.Now().Add(-maxAge)
 
 	type fileInfo struct {
 		name  string
@@ -163,6 +167,10 @@ func topSessions(dir string, n int) []PiSession {
 		if err != nil {
 			continue
 		}
+		// Only include files modified recently (active pi sessions)
+		if info.ModTime().Before(cutoff) {
+			continue
+		}
 		files = append(files, fileInfo{name: e.Name(), mtime: info.ModTime(), size: info.Size()})
 	}
 	sort.Slice(files, func(i, j int) bool {
@@ -170,8 +178,7 @@ func topSessions(dir string, n int) []PiSession {
 	})
 
 	var result []PiSession
-	for i := 0; i < n && i < len(files); i++ {
-		f := files[i]
+	for _, f := range files {
 		stem := strings.TrimSuffix(f.name, ".jsonl")
 		parts := strings.SplitN(stem, "_", 2)
 		sid := stem
@@ -180,14 +187,38 @@ func topSessions(dir string, n int) []PiSession {
 			sid = parts[1]
 			started = parseSessionName(parts[0])
 		}
+		fullPath := filepath.Join(dir, f.name)
 		result = append(result, PiSession{
-			SessionID: sid,
-			StartedAt: started,
-			SizeBytes: f.size,
-			FilePath:  filepath.Join(dir, f.name),
+			SessionID:   sid,
+			SessionName: readSessionName(fullPath),
+			StartedAt:   started,
+			SizeBytes:   f.size,
+			FilePath:    fullPath,
 		})
 	}
 	return result
+}
+
+// readSessionName extracts the name from the last session_info entry in a JSONL file.
+func readSessionName(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	// Scan from the end for the last session_info line
+	name := ""
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if !bytes.Contains(line, []byte(`"type":"session_info"`)) {
+			continue
+		}
+		var entry struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(line, &entry) == nil && entry.Name != "" {
+			name = entry.Name
+		}
+	}
+	return name
 }
 
 // ScanTree queries cmux and reads pi session files to build the current tree.
@@ -241,7 +272,7 @@ func ScanTree() ([]WorkspaceNode, error) {
 			dir = findSessionDirByName(r.name, allSessionDirs)
 		}
 
-		sessions := topSessions(dir, 5)
+		sessions := activeSessions(dir, 10*time.Minute)
 		if len(sessions) == 0 {
 			continue
 		}

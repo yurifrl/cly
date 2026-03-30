@@ -7,16 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
 // PiSession represents one open π session.
 type PiSession struct {
-	SessionID  string `json:"session_id"`
-	StartedAt  string `json:"started_at"`
-	SizeBytes  int64  `json:"size_bytes"`
-	SurfaceRef string `json:"surface_ref,omitempty"` // e.g. "surface:65"
-	FilePath   string `json:"file_path,omitempty"`   // full path to the .jsonl file
+	SessionID   string `json:"session_id"`
+	SessionName string `json:"session_name,omitempty"` // from session_info in JSONL
+	StartedAt   string `json:"started_at"`
+	SizeBytes   int64  `json:"size_bytes"`
+	SurfaceRef  string `json:"surface_ref,omitempty"` // e.g. "surface:65"
+	FilePath    string `json:"file_path,omitempty"`   // full path to the .jsonl file
 }
 
 // WorkspaceNode represents one cmux workspace with its π sessions.
@@ -31,6 +33,7 @@ type Snapshot struct {
 	Version   int             `json:"version"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
+	Deleted   bool            `json:"deleted,omitempty"`
 	Tree      []WorkspaceNode `json:"tree"`
 }
 
@@ -38,11 +41,34 @@ type snapshotFile struct {
 	Snapshots []Snapshot `json:"snapshots"`
 }
 
-func snapshotsPath() string {
+var snapshotsPath = func() string {
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, ".local", "share", "cly", "pi-tree")
 	_ = os.MkdirAll(dir, 0o755)
 	return filepath.Join(dir, "snapshots.json")
+}
+
+var lastHistIdxPath = func() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "share", "cly", "pi-tree", "last-hist-idx")
+}
+
+// SaveLastHistIdx persists the last selected history version.
+func SaveLastHistIdx(version int) {
+	_ = os.WriteFile(lastHistIdxPath(), []byte(fmt.Sprintf("%d", version)), 0o644)
+}
+
+// LoadLastHistIdx reads the last selected history version.
+func LoadLastHistIdx() int {
+	data, err := os.ReadFile(lastHistIdxPath())
+	if err != nil {
+		return -1
+	}
+	var v int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &v); err != nil {
+		return -1
+	}
+	return v
 }
 
 // fingerprint returns a stable hash of the workspace+session-id pairs.
@@ -127,4 +153,37 @@ func Upsert(tree []WorkspaceNode, force bool) (Snapshot, bool, error) {
 		return snap, true, err
 	}
 	return snap, true, nil
+}
+
+// DeleteSnapshot removes a snapshot by version number.
+// DeleteSnapshot soft-deletes a snapshot by marking it as deleted.
+// The data is preserved and can be recovered.
+func DeleteSnapshot(version int) error {
+	snapshots, err := LoadSnapshots()
+	if err != nil {
+		return err
+	}
+	found := false
+	for i, s := range snapshots {
+		if s.Version == version {
+			snapshots[i].Deleted = true
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("version %d not found", version)
+	}
+	return saveSnapshots(snapshots)
+}
+
+// ActiveSnapshots returns only non-deleted snapshots.
+func ActiveSnapshots(snapshots []Snapshot) []Snapshot {
+	var active []Snapshot
+	for _, s := range snapshots {
+		if !s.Deleted {
+			active = append(active, s)
+		}
+	}
+	return active
 }
