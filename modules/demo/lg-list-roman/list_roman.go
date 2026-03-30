@@ -1,8 +1,8 @@
 package lg_list_roman
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/list"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/list"
 )
 
 // renderRomanList builds a Roman numeral enumerated list of makeup brands

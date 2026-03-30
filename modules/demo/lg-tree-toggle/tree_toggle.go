@@ -3,8 +3,8 @@ package lg_tree_toggle
 import (
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/tree"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/tree"
 )
 
 // Dir represents a directory node with open/closed state.

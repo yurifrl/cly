@@ -1,7 +1,7 @@
 package lg_tree_simple
 
 import (
-	"github.com/charmbracelet/lipgloss/tree"
+	"charm.land/lipgloss/v2/tree"
 )
 
 // renderTree creates a simple nested tree with OS families as children.

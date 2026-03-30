@@ -1,8 +1,8 @@
 package lg_tree_makeup
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/tree"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/tree"
 )
 
 // renderMakeupTree creates a tree of makeup brands and their products.

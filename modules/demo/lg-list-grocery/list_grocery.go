@@ -1,8 +1,8 @@
 package lg_list_grocery
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/list"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/list"
 )
 
 // groceryItem represents a single item in the grocery list.

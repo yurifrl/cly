@@ -1,8 +1,8 @@
 package lg_tree_background
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/tree"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/tree"
 )
 
 // renderBackgroundTree creates a dark background table of contents with pink items.

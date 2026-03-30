@@ -1,8 +1,8 @@
 package lg_tree_rounded
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/tree"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/tree"
 )
 
 // renderRoundedTree creates a grocery list tree with rounded enumerator and dim style.

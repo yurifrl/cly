@@ -1,8 +1,8 @@
 package lg_list_glow
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/list"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/list"
 )
 
 // glowItem represents a multi-line list entry with a title and description.

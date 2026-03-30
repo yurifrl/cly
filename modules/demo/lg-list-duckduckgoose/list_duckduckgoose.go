@@ -1,8 +1,8 @@
 package lg_list_duckduckgoose
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/list"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/list"
 )
 
 // renderDuckDuckGoose builds and returns a duck duck goose list with a custom

@@ -2,9 +2,10 @@ package lg_table_pokemon
 
 import (
 	"fmt"
+	"image/color"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 )
 
 // TypeColors maps Pokémon types to ANSI 256-color codes for rich terminal display.
@@ -107,7 +108,7 @@ func renderTable() string {
 
 			p := pokedex[row]
 			type1Color := lipgloss.Color(TypeColors[p.type1])
-			var type2Color lipgloss.Color
+			var type2Color color.Color
 			hasType2 := p.type2 != ""
 			if hasType2 {
 				type2Color = lipgloss.Color(TypeColors[p.type2])

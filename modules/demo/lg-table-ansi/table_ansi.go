@@ -1,8 +1,8 @@
 package lg_table_ansi
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 )
 
 // renderTable builds and returns a 3-row table with a dim second column.

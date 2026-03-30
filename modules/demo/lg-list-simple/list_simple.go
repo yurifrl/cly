@@ -1,7 +1,7 @@
 package lg_list_simple
 
 import (
-	"github.com/charmbracelet/lipgloss/list"
+	"charm.land/lipgloss/v2/list"
 )
 
 // renderList creates a simple nested list with a Roman numeral sub-enumerator.

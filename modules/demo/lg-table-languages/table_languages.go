@@ -1,8 +1,8 @@
 package lg_table_languages
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 )
 
 // renderTable builds and returns a table of language greetings.

@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"golang.org/x/term"
 )
 
@@ -18,9 +18,9 @@ var gradientColors = []string{
 
 // Color definitions.
 var (
-	subtle    = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
-	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
-	special   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
+	subtle    = lipgloss.Color("#383838")
+	highlight = lipgloss.Color("#7D56F4")
+	special   = lipgloss.Color("#73F59F")
 )
 
 // Tabs.
@@ -132,7 +132,7 @@ var (
 	listDone = func(s string) string {
 		return checkMark + lipgloss.NewStyle().
 			Strikethrough(true).
-			Foreground(lipgloss.AdaptiveColor{Light: "#969B86", Dark: "#696969"}).
+			Foreground(lipgloss.Color("#696969")).
 			Render(s)
 	}
 )
@@ -164,8 +164,8 @@ var (
 			Padding(0, 1)
 
 	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
-			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
+			Foreground(lipgloss.Color("#C1C6B2")).
+			Background(lipgloss.Color("#353533"))
 
 	statusStyle = lipgloss.NewStyle().
 			Inherit(statusBarStyle).

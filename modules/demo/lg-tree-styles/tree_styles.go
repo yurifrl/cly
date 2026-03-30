@@ -1,8 +1,8 @@
 package lg_tree_styles
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/tree"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/tree"
 )
 
 // renderStyledTree creates a tree with per-subtree styling.
