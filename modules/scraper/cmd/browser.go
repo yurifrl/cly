@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/modules/scraper/browser"
 )
@@ -44,7 +44,7 @@ func (m browserModel) Init() tea.Cmd {
 
 func (m browserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
 			return m, tea.Quit
 		}
@@ -58,16 +58,16 @@ func (m browserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m browserModel) View() string {
+func (m browserModel) View() tea.View {
 	if m.err != nil {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf("Error: %v\n", m.err))
+		return tea.NewView(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf("Error: %v\n", m.err)))
 	}
 
 	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("🌐 Browser Launcher")
 	status := lipgloss.NewStyle().Foreground(lipgloss.Color("33")).Render(m.status)
 
 	if !m.ready {
-		return fmt.Sprintf("%s\n\n%s", title, status)
+		return tea.NewView(fmt.Sprintf("%s\n\n%s", title, status))
 	}
 
 	instructions := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
@@ -80,7 +80,7 @@ func (m browserModel) View() string {
 
 	success := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Render("✓ " + m.status)
 
-	return fmt.Sprintf("%s\n\n%s\n\n%s", title, success, instructions)
+	return tea.NewView(fmt.Sprintf("%s\n\n%s\n\n%s", title, success, instructions))
 }
 
 func launchBrowser(ctrl *browser.Controller) tea.Cmd {

@@ -1,9 +1,9 @@
 package uuid
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/bubbles/v2/list"
+	"charm.land/lipgloss/v2"
 	"github.com/google/uuid"
 )
 
@@ -40,7 +40,7 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quitting = true
@@ -70,13 +70,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	if m.quitting && m.generated == "" {
-		return "Cancelled.\n"
+		return tea.NewView("Cancelled.\n")
 	}
 	if m.generated != "" {
 		style := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-		return style.Render(m.generated) + "\n"
+		return tea.NewView(style.Render(m.generated) + "\n")
 	}
-	return "\n" + m.list.View()
+	return tea.NewView("\n" + m.list.View())
 }

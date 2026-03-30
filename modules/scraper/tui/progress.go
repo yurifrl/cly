@@ -3,15 +3,16 @@ package tui
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/yurifrl/cly/modules/scraper/browser"
 )
 
@@ -181,14 +182,14 @@ func NewDashboardModel(productIDs []string, controlChan chan<- ControlMsg) Dashb
 		}
 	}
 
-	prog := progress.New(progress.WithDefaultGradient())
+	prog := progress.New(progress.WithDefaultBlend())
 
 	return DashboardModel{
 		products:      items,
 		current:       -1,
 		progress:      prog,
-		productList:   viewport.New(80, 10),
-		logView:       viewport.New(80, 5),
+		productList:   viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+		logView:       viewport.New(viewport.WithWidth(80), viewport.WithHeight(5)),
 		help:          help.New(),
 		keymap:        newKeymap(),
 		maxLogs:       10,
@@ -308,13 +309,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		productListHeight := m.height - headerHeight - statsHeight - footerHeight - logHeight - 4
 
-		m.productList.Width = m.width - 4
-		m.productList.Height = productListHeight
+		m.productList.SetWidth(m.width - 4)
+		m.productList.SetHeight(productListHeight)
 
-		m.logView.Width = m.width - 4
-		m.logView.Height = logHeight
+		m.logView.SetWidth(m.width - 4)
+		m.logView.SetHeight(logHeight)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keymap.quit):
 			m.done = true
@@ -398,10 +399,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, m.keymap.scrollUp):
-			m.productList.LineUp(1)
+			m.productList.ScrollUp(1)
 
 		case key.Matches(msg, m.keymap.scrollDown):
-			m.productList.LineDown(1)
+			m.productList.ScrollDown(1)
 		}
 
 	case TickMsg:
@@ -486,9 +487,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m DashboardModel) View() string {
+func (m DashboardModel) View() tea.View {
 	if m.width == 0 {
-		return "Loading..."
+		return tea.NewView("Loading...")
 	}
 
 	sections := []string{
@@ -499,7 +500,7 @@ func (m DashboardModel) View() string {
 		m.renderFooter(),
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, sections...))
 }
 
 func (m DashboardModel) renderHeader() string {
@@ -510,7 +511,7 @@ func (m DashboardModel) renderHeader() string {
 
 	var statusIcon string
 	var statusText string
-	var statusColor lipgloss.Color
+	var statusColor color.Color
 
 	switch m.browserState {
 	case BrowserNotStarted:
