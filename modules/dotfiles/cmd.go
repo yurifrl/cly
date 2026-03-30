@@ -62,9 +62,62 @@ Config syntax (dotfiles.conf):
 		RunE:  runUnlink,
 	}
 
-	cmd.AddCommand(statusCmd, unlinkCmd)
+	evalCmd := &cobra.Command{
+		Use:   "eval [src]",
+		Short: "Re-apply a specific mapping by source path",
+		Long: `Re-apply a single entry from dotfiles.conf by matching its source path.
+
+Example:
+  cly dotfiles eval ./home/.pi/agent/settings.jsonc
+  echo ./home/.pi/agent/settings.jsonc | cly dotfiles eval`,
+		RunE: runEval,
+	}
+
+	cmd.AddCommand(statusCmd, unlinkCmd, evalCmd)
 	registerJobsCommands(cmd)
 	parent.AddCommand(cmd)
+}
+
+func runEval(cmd *cobra.Command, args []string) error {
+	var src string
+	if len(args) > 0 {
+		src = strings.TrimSpace(args[0])
+	} else {
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			data, err := os.ReadFile("/dev/stdin")
+			if err != nil {
+				return fmt.Errorf("failed to read stdin: %w", err)
+			}
+			src = strings.TrimSpace(string(data))
+		} else {
+			return fmt.Errorf("provide a source path as argument or via stdin")
+		}
+	}
+
+	configPath, err := getConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg, err := ParseConfig(configPath)
+	if err != nil {
+		return err
+	}
+
+	for _, m := range cfg.Mappings {
+		if m.Source == src || filepath.Base(m.Source) == filepath.Base(src) {
+			if IsJsoncToJson(m) {
+				result := CopyJsoncToJson(m)
+				printJsoncResult(m, result)
+				return nil
+			}
+			result := CreateSymlink(m)
+			printResult(m, result)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("no mapping found for: %s", src)
 }
 
 func getConfigPath() (string, error) {
