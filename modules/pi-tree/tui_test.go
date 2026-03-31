@@ -87,7 +87,7 @@ func TestTUI_InitialState_ShowsLiveTree(t *testing.T) {
 	m := newTUIModel(testLiveNodes(), testSnapshots(), 0)
 
 	assert.False(t, m.showHist)
-	assert.Equal(t, len(testSnapshots())-1, m.histIdx)
+	assert.Equal(t, -1, m.histIdx)
 	assert.Len(t, m.nodes, 1)
 	assert.Equal(t, "cly", m.nodes[0].Name)
 	assert.Equal(t, "live-1", m.nodes[0].Sessions[0].SessionID)
@@ -108,19 +108,18 @@ func TestTUI_HistoryToggle_KeepsSelectedSnapshot(t *testing.T) {
 
 	m = key(m, "h")
 	assert.True(t, m.showHist)
+	assert.Equal(t, -1, m.histIdx)
 
-	// Navigate to v1 (index 0) — up twice from v3
-	m = key(m, "k")
-	m = key(m, "k")
-	assert.Equal(t, 0, m.histIdx)
+	// j from Latest → newest snapshot (index 2 = v3 with cly+Obsidian)
+	m = key(m, "j")
+	assert.Equal(t, 2, m.histIdx)
 
-	// Close history — should keep v1's tree
+	// Close history — should keep v3's tree (cly+Obsidian)
 	m = key(m, "h")
 	assert.False(t, m.showHist)
 	require.Len(t, m.nodes, 2)
 	assert.Equal(t, "cly", m.nodes[0].Name)
-	assert.Equal(t, "oncall", m.nodes[1].Name)
-	assert.Len(t, m.nodes[0].Sessions, 2)
+	assert.Equal(t, "Obsidian", m.nodes[1].Name)
 }
 
 func TestTUI_HistoryEnter_LoadsSnapshotWithCorrectCount(t *testing.T) {
@@ -128,12 +127,11 @@ func TestTUI_HistoryEnter_LoadsSnapshotWithCorrectCount(t *testing.T) {
 	m := newTUIModel(testLiveNodes(), testSnapshots(), 0)
 
 	m = key(m, "h")
-	m = key(m, "k") // v3→v2
-	m = key(m, "k") // v2→v1
+	// j from Latest → index 2 (v3, 3 sessions, cly+Obsidian)
+	m = key(m, "j")
 	m = key(m, "enter")
 
 	assert.False(t, m.showHist)
-	assert.Contains(t, m.message, "v1")
 	assert.Contains(t, m.message, "3 sessions")
 	require.Len(t, m.nodes, 2)
 }
@@ -143,7 +141,9 @@ func TestTUI_HistoryEnter_V2_ShowsCorrectSessionCount(t *testing.T) {
 	m := newTUIModel(testLiveNodes(), testSnapshots(), 0)
 
 	m = key(m, "h")
-	m = key(m, "k") // v3→v2
+	// j from Latest → index 2 (v3); j again → index 1 (v2, 1 session)
+	m = key(m, "j") // Latest → index 2 (newest)
+	m = key(m, "j") // index 2 → index 1 (v2)
 	m = key(m, "enter")
 
 	assert.Contains(t, m.message, "1 sessions")
@@ -151,12 +151,47 @@ func TestTUI_HistoryEnter_V2_ShowsCorrectSessionCount(t *testing.T) {
 	assert.Equal(t, "ddd", m.nodes[0].Sessions[0].SessionID)
 }
 
+func TestTUI_NavigateBackToLatest(t *testing.T) {
+	isolateState(t)
+	m := newTUIModel(testLiveNodes(), testSnapshots(), 0)
+
+	m = key(m, "h")
+	assert.Equal(t, -1, m.histIdx) // starts at Latest
+
+	// j: Latest → newest snapshot (index 2)
+	m = key(m, "j")
+	assert.Equal(t, 2, m.histIdx)
+
+	// j: index 2 → index 1
+	m = key(m, "j")
+	assert.Equal(t, 1, m.histIdx)
+
+	// k: index 1 → index 2
+	m = key(m, "k")
+	assert.Equal(t, 2, m.histIdx)
+
+	// k: index 2 → Latest (-1)
+	m = key(m, "k")
+	assert.Equal(t, -1, m.histIdx)
+	assert.Equal(t, testLiveNodes()[0].Sessions[0].SessionID, m.nodes[0].Sessions[0].SessionID)
+
+	// k at Latest: stays at Latest
+	m = key(m, "k")
+	assert.Equal(t, -1, m.histIdx)
+}
+
 func TestTUI_RestoresLastHistIdx(t *testing.T) {
 	isolateState(t)
-	SaveLastHistIdx(1)
 
-	m := newTUIModel(testLiveNodes(), testSnapshots(), 0)
-	assert.Equal(t, 0, m.histIdx, "should restore to v1 (index 0)")
+	// Create a real snapshot so we have a valid version to save
+	s1, _, err := Upsert(testSnapshots()[0].Tree, true)
+	require.NoError(t, err)
+	SaveLastHistIdx(s1.Version)
+
+	loaded, _ := LoadSnapshots()
+	m := newTUIModel(testLiveNodes(), loaded, 0)
+	// histIdx is the array index (0), not the version (timestamp)
+	assert.Equal(t, 0, m.histIdx, "should restore to index 0 (s1)")
 }
 
 func TestTUI_ViewShowsHistoryPanel(t *testing.T) {
@@ -168,11 +203,9 @@ func TestTUI_ViewShowsHistoryPanel(t *testing.T) {
 
 	view := m.View().Content
 	assert.Contains(t, view, "History")
-	assert.Contains(t, view, "v1")
-	assert.Contains(t, view, "v2")
-	assert.Contains(t, view, "v3")
-	assert.Contains(t, view, "3 sessions")
-	assert.Contains(t, view, "1 sessions")
+	assert.Contains(t, view, "Latest")
+	assert.Contains(t, view, "esc to close")
+	assert.Contains(t, view, "sessions")
 }
 
 func TestTUI_Quit(t *testing.T) {
@@ -215,23 +248,23 @@ func TestTUI_SearchFilter(t *testing.T) {
 
 func TestSnapshot_SoftDelete(t *testing.T) {
 	isolateState(t)
-	_, _, _ = Upsert(testSnapshots()[0].Tree, true)
-	_, _, _ = Upsert(testSnapshots()[1].Tree, true)
-	_, _, _ = Upsert(testSnapshots()[2].Tree, true)
+	s1, _, _ := Upsert(testSnapshots()[0].Tree, true)
+	s2, _, _ := Upsert(testSnapshots()[1].Tree, true)
+	s3, _, _ := Upsert(testSnapshots()[2].Tree, true)
 
 	all, _ := LoadSnapshots()
 	assert.Len(t, all, 3)
 	assert.Len(t, ActiveSnapshots(all), 3)
 
-	// Soft delete v2
-	require.NoError(t, DeleteSnapshot(2))
+	// Soft delete s2
+	require.NoError(t, DeleteSnapshot(s2.Version))
 
 	all, _ = LoadSnapshots()
 	assert.Len(t, all, 3, "all snapshots still in file")
 	active := ActiveSnapshots(all)
 	assert.Len(t, active, 2, "only 2 active")
-	assert.Equal(t, 1, active[0].Version)
-	assert.Equal(t, 3, active[1].Version)
+	assert.Equal(t, s1.Version, active[0].Version)
+	assert.Equal(t, s3.Version, active[1].Version)
 }
 
 func TestCountSessions(t *testing.T) {
@@ -253,23 +286,24 @@ func TestSnapshot_UpsertAndLoad(t *testing.T) {
 	snap, isNew, err := Upsert(tree, false)
 	require.NoError(t, err)
 	assert.True(t, isNew)
-	assert.Equal(t, 1, snap.Version)
+	v1 := snap.Version
+	assert.Greater(t, v1, 0)
 
 	snap, isNew, err = Upsert(tree, false)
 	require.NoError(t, err)
 	assert.False(t, isNew)
-	assert.Equal(t, 1, snap.Version)
+	assert.Equal(t, v1, snap.Version)
 
 	tree2 := testSnapshots()[1].Tree
+	time.Sleep(time.Second) // ensure different Unix timestamp
 	snap, isNew, err = Upsert(tree2, false)
 	require.NoError(t, err)
 	assert.True(t, isNew)
-	assert.Equal(t, 2, snap.Version)
+	assert.NotEqual(t, v1, snap.Version)
 
-	snap, isNew, err = Upsert(tree2, true)
+	_, isNew, err = Upsert(tree2, true)
 	require.NoError(t, err)
 	assert.True(t, isNew)
-	assert.Equal(t, 3, snap.Version)
 
 	loaded, err := LoadSnapshots()
 	require.NoError(t, err)
@@ -327,14 +361,13 @@ func TestTUI_Save_CreatesNewVersion(t *testing.T) {
 
 	// Press 's' to save current view
 	m = key(m, "s")
-	assert.Contains(t, m.message, "📸 saved v2")
+	assert.Contains(t, m.message, "📸 saved")
 	assert.Contains(t, m.message, "3 sessions")
 
 	// Verify snapshot was persisted
 	loaded, err = LoadSnapshots()
 	require.NoError(t, err)
 	assert.Len(t, loaded, 2)
-	assert.Equal(t, 2, loaded[1].Version)
 }
 
 func TestTUI_Save_ViewedSnapshot_CreatesNewVersion(t *testing.T) {
@@ -347,15 +380,16 @@ func TestTUI_Save_ViewedSnapshot_CreatesNewVersion(t *testing.T) {
 	loaded, _ := LoadSnapshots()
 	m := newTUIModel(testLiveNodes(), loaded, 0)
 
-	// Open history, select v1
+	// Open history, navigate: Latest → index 1 (snap2=1sess newest) → index 0 (snap1=3sess)
 	m = key(m, "h")
-	m = key(m, "k") // v2→v1
+	m = key(m, "j") // Latest → index 1 (snap2, newest)
+	m = key(m, "j") // index 1 → index 0 (snap1, 3 sessions)
 	m = key(m, "enter")
-	assert.Contains(t, m.message, "v1")
+	assert.Contains(t, m.message, "3 sessions")
 
-	// Save the v1 view — should create v3 with v1's tree
+	// Save the viewed snapshot — should create a new snapshot with same tree
 	m = key(m, "s")
-	assert.Contains(t, m.message, "📸 saved v3")
+	assert.Contains(t, m.message, "📸 saved")
 	assert.Contains(t, m.message, "3 sessions")
 
 	loaded, _ = LoadSnapshots()
@@ -381,30 +415,30 @@ func TestTUI_HelpBar_ShowsSave(t *testing.T) {
 
 func TestTUI_DeleteSnapshot_InHistory(t *testing.T) {
 	isolateState(t)
-	_, _, _ = Upsert(testSnapshots()[0].Tree, true) // v1
-	_, _, _ = Upsert(testSnapshots()[1].Tree, true) // v2
-	_, _, _ = Upsert(testSnapshots()[2].Tree, true) // v3
+	s1, _, _ := Upsert(testSnapshots()[0].Tree, true)
+	s2, _, _ := Upsert(testSnapshots()[1].Tree, true)
+	_ = s2
+	s3, _, _ := Upsert(testSnapshots()[2].Tree, true)
 
 	loaded, _ := LoadSnapshots()
 	require.Len(t, loaded, 3)
 
 	m := newTUIModel(testLiveNodes(), loaded, 0)
 
-	// Open history, navigate to v2 (middle)
+	// Open history: Latest → j → index 2 (s3 newest) → j → index 1 (s2) → delete
 	m = key(m, "h")
-	m = key(m, "k") // v3→v2
-
-	// Delete v2
+	m = key(m, "j") // Latest → index 2 (s3)
+	m = key(m, "j") // index 2 → index 1 (s2)
 	m = key(m, "d")
-	assert.Contains(t, m.message, "deleted v2")
+	assert.Contains(t, m.message, "deleted")
 
-	// Verify v2 is soft-deleted
+	// Verify s2 is soft-deleted
 	all, _ := LoadSnapshots()
 	assert.Len(t, all, 3, "all still in file")
 	active := ActiveSnapshots(all)
 	assert.Len(t, active, 2)
-	assert.Equal(t, 1, active[0].Version)
-	assert.Equal(t, 3, active[1].Version)
+	assert.Equal(t, s1.Version, active[0].Version)
+	assert.Equal(t, s3.Version, active[1].Version)
 }
 
 func TestTUI_DeleteSnapshot_LastOneBlocked(t *testing.T) {
@@ -414,7 +448,14 @@ func TestTUI_DeleteSnapshot_LastOneBlocked(t *testing.T) {
 	loaded, _ := LoadSnapshots()
 	m := newTUIModel(testLiveNodes(), loaded, 0)
 
+	// On "Latest" entry (histIdx=-1), delete shows "can't delete latest"
 	m = key(m, "h")
+	assert.Equal(t, -1, m.histIdx)
+	m = key(m, "d")
+	assert.Equal(t, "can't delete latest", m.message)
+
+	// Navigate to index 0 (the only snapshot), delete shows blocked
+	m = key(m, "j")
 	m = key(m, "d")
 	assert.Equal(t, "can't delete last snapshot", m.message)
 
@@ -424,10 +465,10 @@ func TestTUI_DeleteSnapshot_LastOneBlocked(t *testing.T) {
 
 func TestDeleteSnapshot(t *testing.T) {
 	isolateState(t)
-	_, _, _ = Upsert(testSnapshots()[0].Tree, true)
-	_, _, _ = Upsert(testSnapshots()[1].Tree, true)
+	s1, _, _ := Upsert(testSnapshots()[0].Tree, true)
+	s2, _, _ := Upsert(testSnapshots()[1].Tree, true)
 
-	err := DeleteSnapshot(1)
+	err := DeleteSnapshot(s1.Version)
 	require.NoError(t, err)
 
 	// All snapshots still in file (soft delete)
@@ -438,7 +479,7 @@ func TestDeleteSnapshot(t *testing.T) {
 	// Only active ones filtered
 	active := ActiveSnapshots(loaded)
 	require.Len(t, active, 1)
-	assert.Equal(t, 2, active[0].Version)
+	assert.Equal(t, s2.Version, active[0].Version)
 }
 
 func TestDeleteSnapshot_NotFound(t *testing.T) {

@@ -74,7 +74,7 @@ type tuiModel struct {
 	sinceHours  float64 // 0 = no filter; set from --since flag
 
 	showHist    bool
-	histIdx     int
+	histIdx     int // -1 = Latest (live), 0..n-1 = snapshot index
 	height      int
 	width       int
 	scrollOff   int // scroll offset for tree view
@@ -88,7 +88,8 @@ func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64
 	ti.Placeholder = "search workspace or session…"
 	ti.CharLimit = 80
 
-	histIdx := len(snapshots) - 1
+	// Default: latest (live)
+	histIdx := -1
 
 	// Restore last viewed history version if available
 	if lastVer := LoadLastHistIdx(); lastVer > 0 && len(snapshots) > 0 {
@@ -98,13 +99,6 @@ func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64
 				break
 			}
 		}
-	}
-	// Clamp to valid range
-	if histIdx < 0 {
-		histIdx = 0
-	}
-	if histIdx >= len(snapshots) && len(snapshots) > 0 {
-		histIdx = len(snapshots) - 1
 	}
 
 	// Build open sets from live nodes
@@ -118,9 +112,9 @@ func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64
 		}
 	}
 
-	// If user previously selected a non-latest snapshot, show that version's tree
+	// If user previously selected a snapshot, show that version's tree
 	displayNodes := nodes
-	if len(snapshots) > 0 && histIdx < len(snapshots)-1 {
+	if histIdx >= 0 && histIdx < len(snapshots) {
 		displayNodes = snapshots[histIdx].Tree
 	}
 
@@ -139,18 +133,27 @@ func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64
 
 	// If current tree is empty, fall back to last snapshot
 	if len(nodes) == 0 && len(snapshots) > 0 {
-		snap := snapshots[histIdx]
+		snap := snapshots[len(snapshots)-1]
+		m.histIdx = len(snapshots) - 1
 		m.allNodes = snap.Tree
 		m.liveNodes = snap.Tree
 		m.showHist = true
-		m.message = fmt.Sprintf("no live sessions -- showing snapshot v%d", snap.Version)
+		m.message = fmt.Sprintf("no live sessions -- showing snapshot from %s", fmtSnapTime(snap))
 	}
 
 	m.applyFilters()
 	return m
 }
 
-func (m tuiModel) Init() tea.Cmd { return nil }
+// refreshMsg is sent when a live rescan completes.
+type refreshMsg struct{ nodes []WorkspaceNode }
+
+func scanLive() tea.Msg {
+	nodes, _ := ScanTree()
+	return refreshMsg{nodes: nodes}
+}
+
+func (m tuiModel) Init() tea.Cmd { return scanLive }
 
 // ── Filtering ─────────────────────────────────────────────────────────────────
 
@@ -350,6 +353,22 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case refreshMsg:
+		m.liveNodes = msg.nodes
+		m.openWS = make(map[string]bool)
+		m.openSess = make(map[string]bool)
+		for _, ws := range msg.nodes {
+			m.openWS[ws.Name] = true
+			if len(ws.Sessions) > 0 {
+				m.openSess[ws.Sessions[0].SessionID] = true
+			}
+		}
+		if m.histIdx == -1 {
+			m.allNodes = m.liveNodes
+			m.applyFilters()
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.height = msg.Height
 		m.width = msg.Width
@@ -362,12 +381,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			if m.showHist {
-				if m.histIdx > 0 {
-					m.histIdx--
-					m.allNodes = m.snapshots[m.histIdx].Tree
-					m.cur = cursor{ws: 0, sess: 0}
-					m.applyFilters()
-					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
+				switch {
+				case m.histIdx == -1:
+					// already at Latest (top), do nothing
+				case m.histIdx == len(m.snapshots)-1:
+					// newest snapshot → Latest
+					m.histIdx = -1
+				default:
+					// move to newer snapshot (higher index)
+					m.histIdx++
 				}
 			} else {
 				m.moveCursor(-1)
@@ -377,12 +399,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "down", "j":
 			if m.showHist {
-				if m.histIdx < len(m.snapshots)-1 {
-					m.histIdx++
-					m.allNodes = m.snapshots[m.histIdx].Tree
-					m.cur = cursor{ws: 0, sess: 0}
-					m.applyFilters()
-					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
+				switch {
+				case m.histIdx == -1 && len(m.snapshots) > 0:
+					// Latest → newest snapshot
+					m.histIdx = len(m.snapshots) - 1
+				case m.histIdx > 0:
+					// move to older snapshot (lower index)
+					m.histIdx--
+				// histIdx == 0: already at oldest (bottom), do nothing
 				}
 			} else {
 				m.moveCursor(1)
@@ -392,18 +416,21 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			if m.showHist {
-				if m.histIdx < 0 || m.histIdx >= len(m.snapshots) {
-					m.message = "no snapshot selected"
-					break
-				}
-				// Load selected snapshot's tree and exit history view
-				snap := m.snapshots[m.histIdx]
-				m.allNodes = snap.Tree
 				m.showHist = false
-				m.cur = cursor{ws: 0, sess: 0}
-				m.applyFilters()
-				SaveLastHistIdx(snap.Version)
-				m.message = fmt.Sprintf("viewing snapshot v%d (%d sessions)", snap.Version, countSessions(snap.Tree))
+				if m.histIdx == -1 {
+					m.allNodes = m.liveNodes
+					m.cur = cursor{ws: 0, sess: 0}
+					m.applyFilters()
+					SaveLastHistIdx(-1)
+					m.message = fmt.Sprintf("viewing latest (%d sessions)", countSessions(m.liveNodes))
+				} else if m.histIdx >= 0 && m.histIdx < len(m.snapshots) {
+					snap := m.snapshots[m.histIdx]
+					m.allNodes = snap.Tree
+					m.cur = cursor{ws: 0, sess: 0}
+					m.applyFilters()
+					SaveLastHistIdx(snap.Version)
+					m.message = fmt.Sprintf("viewing %s (%d sessions)", fmtSnapTime(snap), countSessions(snap.Tree))
+				}
 				break
 			}
 			// Open session in existing or new workspace
@@ -433,8 +460,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "d":
-			if m.showHist && len(m.snapshots) > 1 {
+			if m.showHist && m.histIdx >= 0 && len(m.snapshots) > 1 {
 				ver := m.snapshots[m.histIdx].Version
+				timeStr := fmtSnapTime(m.snapshots[m.histIdx])
 				if err := DeleteSnapshot(ver); err != nil {
 					m.message = fmt.Sprintf("delete error: %v", err)
 					break
@@ -443,12 +471,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.histIdx >= len(m.snapshots) {
 					m.histIdx = len(m.snapshots) - 1
 				}
-				if len(m.snapshots) > 0 {
-					m.allNodes = m.snapshots[m.histIdx].Tree
-					m.applyFilters()
-					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
-				}
-				m.message = fmt.Sprintf("deleted v%d", ver)
+				m.message = fmt.Sprintf("deleted %s", timeStr)
+				break
+			} else if m.showHist && m.histIdx == -1 {
+				m.message = "can't delete latest"
 				break
 			} else if m.showHist {
 				m.message = "can't delete last snapshot"
@@ -513,7 +539,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				all, _ := LoadSnapshots(); m.snapshots = ActiveSnapshots(all)
 				m.histIdx = len(m.snapshots) - 1
 				SaveLastHistIdx(snap.Version)
-				m.message = fmt.Sprintf("📸 saved v%d (%d sessions)", snap.Version, countSessions(m.allNodes))
+				m.message = fmt.Sprintf("📸 saved %s (%d sessions)", fmtSnapTime(snap), countSessions(m.allNodes))
 			} else {
 				m.message = "no changes to save"
 			}
@@ -525,21 +551,38 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 
 		case "esc":
-			if m.searchInput.Value() != "" {
+			if m.showHist {
+				// Cancel picker — commit selection (same as h-close)
+				m.showHist = false
+				if m.histIdx >= 0 && m.histIdx < len(m.snapshots) {
+					m.allNodes = m.snapshots[m.histIdx].Tree
+					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
+				} else {
+					m.allNodes = m.liveNodes
+					SaveLastHistIdx(-1)
+				}
+				m.cur = cursor{ws: 0, sess: 0}
+				m.applyFilters()
+				m.message = ""
+			} else if m.searchInput.Value() != "" {
 				m.searchInput.SetValue("")
 				m.applyFilters()
 				m.message = "filter cleared"
 			}
 
+		case "r":
+			m.message = "refreshing..."
+			return m, scanLive
+
 		case "h":
 			m.showHist = !m.showHist
-			if m.showHist {
-				// Keep current histIdx (restored from last session or current position)
-			} else {
+			if !m.showHist {
 				// Keep the selected snapshot's tree (don't reset to live)
 				if m.histIdx >= 0 && m.histIdx < len(m.snapshots) {
 					m.allNodes = m.snapshots[m.histIdx].Tree
 					SaveLastHistIdx(m.snapshots[m.histIdx].Version)
+				} else {
+					m.allNodes = m.liveNodes
 				}
 				m.cur = cursor{ws: 0, sess: 0}
 				m.applyFilters()
@@ -702,6 +745,7 @@ func (m tuiModel) View() tea.View {
 			"o: open & stay",
 			"/: search",
 			"s: save",
+			"r: refresh",
 		}
 		helpParts = append(helpParts, "h: history")
 		if m.showHist {
@@ -725,26 +769,29 @@ func (m tuiModel) View() tea.View {
 	}
 	bg := lipgloss.Place(w, h, lipgloss.Top, lipgloss.Left, pageContent)
 
-	if m.showHist && len(m.snapshots) > 0 {
+	if m.showHist {
 		var hlines []string
-		for i, snap := range m.snapshots {
+		// Latest (live) entry
+		latestMarker := "  "
+		if m.histIdx == -1 {
+			latestMarker = dimStyle2.Render("▶ ")
+		}
+		hlines = append(hlines, fmt.Sprintf("%sLatest  (live, %d sessions)",
+			latestMarker, countSessions(m.liveNodes),
+		))
+		// Render snapshots newest-first (reverse order)
+		for i := len(m.snapshots) - 1; i >= 0; i-- {
+			snap := m.snapshots[i]
 			marker := "  "
 			if i == m.histIdx {
 				marker = dimStyle2.Render("▶ ")
 			}
-			count := 0
-			for _, ws := range snap.Tree {
-				count += len(ws.Sessions)
-			}
-			hlines = append(hlines, fmt.Sprintf("%sv%-2d  %s  %d sessions",
-				marker, snap.Version,
-				snap.UpdatedAt.Format("2006-01-02 15:04"),
-				count,
+			count := countSessions(snap.Tree)
+			hlines = append(hlines, fmt.Sprintf("%s%s  %d sessions",
+				marker, fmtSnapTime(snap), count,
 			))
 		}
-		histPanel := histPanelStyle.Render("History\n\n" + strings.Join(hlines, "\n"))
-
-		// Center the panel on screen
+		histPanel := histPanelStyle.Render("History  (esc to close)\n\n" + strings.Join(hlines, "\n"))
 		panelW := lipgloss.Width(histPanel)
 		panelH := lipgloss.Height(histPanel)
 		px := (w - panelW) / 2
