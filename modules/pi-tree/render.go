@@ -3,6 +3,7 @@ package pitree
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // RenderTree returns the plain-text tree representation.
@@ -39,3 +40,18 @@ func countSessions(tree []WorkspaceNode) int {
 	}
 	return n
 }
+
+// fmtSnapTime formats a snapshot's timestamp in a human-readable way for the picker.
+func fmtSnapTime(s Snapshot) string {
+	t := s.CreatedAt
+	now := time.Now()
+	switch {
+	case t.Format("2006-01-02") == now.Format("2006-01-02"):
+		return "Today " + t.Format("15:04:05")
+	case t.Format("2006-01-02") == now.AddDate(0, 0, -1).Format("2006-01-02"):
+		return "Yesterday " + t.Format("15:04:05")
+	default:
+		return t.Format("Mon Jan 2  15:04:05")
+	}
+}
+

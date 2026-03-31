@@ -53,7 +53,7 @@ var lastHistIdxPath = func() string {
 	return filepath.Join(home, ".local", "share", "cly", "pi-tree", "last-hist-idx")
 }
 
-// SaveLastHistIdx persists the last selected history version.
+// SaveLastHistIdx persists the last selected history version. -1 means Latest (live).
 func SaveLastHistIdx(version int) {
 	_ = os.WriteFile(lastHistIdxPath(), []byte(fmt.Sprintf("%d", version)), 0o644)
 }
@@ -137,11 +137,8 @@ func Upsert(tree []WorkspaceNode, force bool) (Snapshot, bool, error) {
 		}
 	}
 
-	// New version
-	version := 1
-	if len(snapshots) > 0 {
-		version = snapshots[len(snapshots)-1].Version + 1
-	}
+	// New version — use Unix timestamp as version ID
+	version := int(now.Unix())
 	snap := Snapshot{
 		Version:   version,
 		CreatedAt: now,
