@@ -28,6 +28,7 @@ import (
 	"github.com/yurifrl/cly/modules/update"
 	"github.com/yurifrl/cly/modules/uuid"
 	"github.com/yurifrl/cly/modules/zl"
+	"github.com/yurifrl/cly/modules/oi"
 	"github.com/yurifrl/cly/modules/zs"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
@@ -88,6 +89,7 @@ func init() {
 	statusline.Register(RootCmd)
 	update.Register(RootCmd)
 	zl.Register(RootCmd)
+	oi.Register(RootCmd)
 	zs.Register(RootCmd)
 	cmd.Register(RootCmd)
 }
