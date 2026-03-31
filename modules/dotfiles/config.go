@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	pkgconfig "github.com/yurifrl/cly/pkg/config"
 )
 
 type Mapping struct {
@@ -185,6 +187,45 @@ func isValidJobName(name string) bool {
 		}
 	}
 	return true
+}
+
+// ParseMapping parses a "source -> destination" string into a Mapping.
+// Source paths starting with ./ are resolved relative to the dotfiles directory.
+func ParseMapping(line string) (Mapping, error) {
+	parts := strings.Split(line, "->")
+	if len(parts) != 2 {
+		return Mapping{}, fmt.Errorf("invalid format, expected 'source -> destination'")
+	}
+
+	source := strings.TrimSpace(parts[0])
+	destination := strings.TrimSpace(parts[1])
+
+	if source == "" || destination == "" {
+		return Mapping{}, fmt.Errorf("source or destination is empty")
+	}
+
+	isDir := strings.HasSuffix(source, "/")
+	if isDir {
+		source = strings.TrimSuffix(source, "/")
+		destination = strings.TrimSuffix(destination, "/")
+	}
+
+	// Resolve source relative to dotfiles dir
+	cfg := pkgconfig.Get()
+	dotfilesDir := "~/DotFiles"
+	if cfg != nil && cfg.App.DotFilesDir != "" {
+		dotfilesDir = cfg.App.DotFilesDir
+	}
+	baseDir := expandTilde(dotfilesDir)
+
+	source = resolvePath(source, baseDir)
+	destination = expandTilde(destination)
+
+	return Mapping{
+		Source:      source,
+		Destination: destination,
+		IsDir:       isDir,
+	}, nil
 }
 
 func parseMappingLine(cfg *Config, line string, lineNum int, baseDir string) error {

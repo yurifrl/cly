@@ -64,12 +64,12 @@ Config syntax (dotfiles.conf):
 
 	evalCmd := &cobra.Command{
 		Use:   "eval [src]",
-		Short: "Re-apply a specific mapping by source path",
-		Long: `Re-apply a single entry from dotfiles.conf by matching its source path.
+		Short: "Apply a single mapping from 'source -> destination' format",
+		Long: `Apply a single dotfiles mapping directly.
 
 Example:
-  cly dotfiles eval ./home/.pi/agent/settings.jsonc
-  echo ./home/.pi/agent/settings.jsonc | cly dotfiles eval`,
+  cly dotfiles eval "./home/.pi/agent/settings.jsonc -> ~/.pi/agent/settings.json"
+  echo "./home/.pi/agent/settings.jsonc -> ~/.pi/agent/settings.json" | cly dotfiles eval`,
 		RunE: runEval,
 	}
 
@@ -79,9 +79,9 @@ Example:
 }
 
 func runEval(cmd *cobra.Command, args []string) error {
-	var src string
+	var input string
 	if len(args) > 0 {
-		src = strings.TrimSpace(args[0])
+		input = strings.TrimSpace(strings.Join(args, " "))
 	} else {
 		stat, _ := os.Stdin.Stat()
 		if (stat.Mode() & os.ModeCharDevice) == 0 {
@@ -89,35 +89,26 @@ func runEval(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return fmt.Errorf("failed to read stdin: %w", err)
 			}
-			src = strings.TrimSpace(string(data))
+			input = strings.TrimSpace(string(data))
 		} else {
-			return fmt.Errorf("provide a source path as argument or via stdin")
+			return fmt.Errorf("provide a mapping (e.g. './src -> ~/dest') as argument or via stdin")
 		}
 	}
 
-	configPath, err := getConfigPath()
+	// Parse "source -> dest" mapping format
+	m, err := ParseMapping(input)
 	if err != nil {
-		return err
-	}
-	cfg, err := ParseConfig(configPath)
-	if err != nil {
-		return err
+		return fmt.Errorf("invalid mapping: %w", err)
 	}
 
-	for _, m := range cfg.Mappings {
-		if m.Source == src || filepath.Base(m.Source) == filepath.Base(src) {
-			if IsJsoncToJson(m) {
-				result := CopyJsoncToJson(m)
-				printJsoncResult(m, result)
-				return nil
-			}
-			result := CreateSymlink(m)
-			printResult(m, result)
-			return nil
-		}
+	if IsJsoncToJson(m) {
+		result := CopyJsoncToJson(m)
+		printJsoncResult(m, result)
+		return nil
 	}
-
-	return fmt.Errorf("no mapping found for: %s", src)
+	result := CreateSymlink(m)
+	printResult(m, result)
+	return nil
 }
 
 func getConfigPath() (string, error) {
