@@ -140,9 +140,9 @@ func findSessionDirByName(wsName string, allDirs []string) string {
 	return ""
 }
 
-// activeSessions returns session files modified within the last maxAge duration.
-// These are the sessions with a running pi process (actively being written to).
-func activeSessions(dir string, maxAge time.Duration) []PiSession {
+// activeSessions returns all session files in a directory, sorted newest first.
+// maxAge is ignored (kept for API compatibility) — we show all sessions.
+func activeSessions(dir string, _ time.Duration) []PiSession {
 	if dir == "" {
 		return nil
 	}
@@ -150,8 +150,6 @@ func activeSessions(dir string, maxAge time.Duration) []PiSession {
 	if err != nil {
 		return nil
 	}
-
-	cutoff := time.Now().Add(-maxAge)
 
 	type fileInfo struct {
 		name  string
@@ -165,10 +163,6 @@ func activeSessions(dir string, maxAge time.Duration) []PiSession {
 		}
 		info, err := e.Info()
 		if err != nil {
-			continue
-		}
-		// Only include files modified recently (active pi sessions)
-		if info.ModTime().Before(cutoff) {
 			continue
 		}
 		files = append(files, fileInfo{name: e.Name(), mtime: info.ModTime(), size: info.Size()})
@@ -221,18 +215,45 @@ func readSessionName(path string) string {
 	return name
 }
 
+// cwdToSessionDir converts a working directory path to the pi session directory name.
+// e.g. "/Users/yuri/Workdir/Yuri/cly" → "--Users-yuri-Workdir-Yuri-cly--"
+func cwdToSessionDir(cwd string) string {
+	slug := strings.TrimPrefix(cwd, "/")
+	slug = strings.ReplaceAll(slug, "/", "-")
+	return "--" + slug + "--"
+}
+
+// openPiSessions returns all running pi (node) processes and their cwds.
+// Returns map of cwd → session dir path.
+func openPiCwds() []string {
+	out, err := runCommand("bash", "-c",
+		`lsof -c node -a -d cwd 2>/dev/null | awk 'NR>1 {print $NF}' | sort -u`)
+	if err != nil {
+		return nil
+	}
+	var cwds []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		cwd := strings.TrimSpace(line)
+		if cwd != "" {
+			cwds = append(cwds, cwd)
+		}
+	}
+	return cwds
+}
+
 // ScanTree queries cmux and reads pi session files to build the current tree.
 func ScanTree() ([]WorkspaceNode, error) {
+	// Get cmux workspaces for grouping
 	wsOut, err := cmuxRun("list-workspaces")
 	if err != nil {
 		return nil, fmt.Errorf("cmux list-workspaces: %w", err)
 	}
 
-	type wsRef struct {
+	type wsInfo struct {
 		ref  string
 		name string
 	}
-	var refs []wsRef
+	var workspaces []wsInfo
 	for _, line := range bytes.Split(wsOut, []byte("\n")) {
 		s := strings.TrimSpace(string(line))
 		if s == "" {
@@ -248,45 +269,92 @@ func ScanTree() ([]WorkspaceNode, error) {
 		name = strings.TrimSuffix(name, "  [selected]")
 		name = strings.TrimSpace(name)
 		if strings.HasPrefix(ref, "workspace:") {
-			refs = append(refs, wsRef{ref: ref, name: name})
+			workspaces = append(workspaces, wsInfo{ref: ref, name: name})
 		}
 	}
 
-	if len(refs) == 0 {
-		return nil, fmt.Errorf("no workspaces found")
-	}
+	// Build cwd→workspace map (each workspace dir → its name/ref)
+	allDirs := listAllSessionDirs()
+	sessionBase := piSessionsDir()
 
-	// Build list of all session dirs for fuzzy matching
-	allSessionDirs := listAllSessionDirs()
-
-	seen := map[string]bool{}
-	var nodes []WorkspaceNode
-	for _, r := range refs {
-		// Try slug map first, then fuzzy match by workspace name
+	// Map: cwd → wsInfo
+	cwdToWS := map[string]wsInfo{}
+	for _, ws := range workspaces {
+		slug := cwdSlugForWorkspace(ws.name)
 		dir := ""
-		slug := cwdSlugForWorkspace(r.name)
 		if slug != "" {
 			dir = findSessionDir(slug)
 		}
 		if dir == "" {
-			dir = findSessionDirByName(r.name, allSessionDirs)
+			dir = findSessionDirByName(ws.name, allDirs)
 		}
+		if dir != "" {
+			cwd := sessionDirNameToWorkingDir(filepath.Base(dir))
+			cwdToWS[cwd] = ws
+		}
+	}
 
-		sessions := activeSessions(dir, 10*time.Minute)
+	// Find open pi processes by cwd
+	piCwds := openPiCwds()
+
+	// For each open pi cwd, find the session dir and its most recent .jsonl
+	type sessionEntry struct {
+		cwd     string
+		session PiSession
+	}
+	var entries []sessionEntry
+
+	seen := map[string]bool{}
+	for _, cwd := range piCwds {
+		dirName := cwdToSessionDir(cwd)
+		dir := filepath.Join(sessionBase, dirName)
+
+		// Check if this directory exists
+		if _, err := os.Stat(dir); err != nil {
+			continue
+		}
+		if seen[cwd] {
+			continue
+		}
+		seen[cwd] = true
+
+		sessions := allSessionsInDir(dir)
 		if len(sessions) == 0 {
 			continue
 		}
+		// Only include the most recent session per cwd (the active one)
+		entries = append(entries, sessionEntry{cwd: cwd, session: sessions[0]})
+	}
 
-		if seen[r.name] {
-			continue
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	// Group by workspace name; entries not matching a workspace get the dir basename
+	wsNodes := map[string]*WorkspaceNode{}
+	wsOrder := []string{}
+
+	for _, e := range entries {
+		ws, ok := cwdToWS[e.cwd]
+		wsName := ws.name
+		wsRef := ws.ref
+		if !ok || wsName == "" {
+			// Derive name from cwd
+			wsName = filepath.Base(e.cwd)
 		}
-		seen[r.name] = true
+		if _, exists := wsNodes[wsName]; !exists {
+			wsNodes[wsName] = &WorkspaceNode{
+				Name:         wsName,
+				WorkspaceRef: wsRef,
+			}
+			wsOrder = append(wsOrder, wsName)
+		}
+		wsNodes[wsName].Sessions = append(wsNodes[wsName].Sessions, e.session)
+	}
 
-		nodes = append(nodes, WorkspaceNode{
-			Name:         r.name,
-			WorkspaceRef: r.ref,
-			Sessions:     sessions,
-		})
+	var nodes []WorkspaceNode
+	for _, name := range wsOrder {
+		nodes = append(nodes, *wsNodes[name])
 	}
 
 	// Sort by most recent session first
@@ -301,4 +369,16 @@ func ScanTree() ([]WorkspaceNode, error) {
 	})
 
 	return nodes, nil
+}
+
+// sessionDirNameToWorkingDir converts a session dir basename to the working dir path.
+func sessionDirNameToWorkingDir(dirName string) string {
+	dirName = strings.TrimPrefix(dirName, "--")
+	dirName = strings.TrimSuffix(dirName, "--")
+	return "/" + strings.ReplaceAll(dirName, "-", "/")
+}
+
+// allSessionsInDir returns all .jsonl sessions in a directory sorted newest first.
+func allSessionsInDir(dir string) []PiSession {
+	return activeSessions(dir, 0)
 }
