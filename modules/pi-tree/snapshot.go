@@ -34,6 +34,7 @@ type Snapshot struct {
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 	Deleted   bool            `json:"deleted,omitempty"`
+	AutoSave  bool            `json:"auto_save,omitempty"`
 	Tree      []WorkspaceNode `json:"tree"`
 }
 
@@ -138,11 +139,13 @@ func Upsert(tree []WorkspaceNode, force bool) (Snapshot, bool, error) {
 	}
 
 	// New version — use Unix timestamp as version ID
+	// AutoSave is true when not forced (i.e. automatic upsert on launch)
 	version := int(now.Unix())
 	snap := Snapshot{
 		Version:   version,
 		CreatedAt: now,
 		UpdatedAt: now,
+		AutoSave:  !force,
 		Tree:      tree,
 	}
 	snapshots = append(snapshots, snap)

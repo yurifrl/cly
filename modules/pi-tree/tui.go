@@ -73,14 +73,57 @@ type tuiModel struct {
 	searchInput textinput.Model
 	sinceHours  float64 // 0 = no filter; set from --since flag
 
-	showHist    bool
-	histIdx     int // -1 = Latest (live), 0..n-1 = snapshot index
-	height      int
-	width       int
-	scrollOff   int // scroll offset for tree view
-	message     string
-	quit        bool
-	pendingExec string // command to exec after TUI exits (replaces process)
+	showHist     bool
+	histIdx      int  // -1 = Latest (live), 0..n-1 = snapshot index
+	hideAutoSave bool // when true, autosaved snapshots are hidden from history (default: true)
+	height       int
+	width        int
+	scrollOff    int // scroll offset for tree view
+	message      string
+	quit         bool
+	pendingExec  string // command to exec after TUI exits (replaces process)
+}
+
+// isSnapVisible returns whether a snapshot at index i should be shown in history.
+func (m tuiModel) isSnapVisible(i int) bool {
+	if !m.hideAutoSave {
+		return true
+	}
+	if i < 0 || i >= len(m.snapshots) {
+		return true
+	}
+	return !m.snapshots[i].AutoSave
+}
+
+// nextVisibleSnap returns the next visible snapshot index moving from cur in direction dir (+1 or -1).
+// Returns -2 if none found.
+func (m tuiModel) nextVisibleSnap(cur, dir int) int {
+	for i := cur + dir; i >= 0 && i < len(m.snapshots); i += dir {
+		if m.isSnapVisible(i) {
+			return i
+		}
+	}
+	return -2 // sentinel: nothing found
+}
+
+// lastVisibleSnap returns the highest-index visible snapshot, or -2 if none.
+func (m tuiModel) lastVisibleSnap() int {
+	for i := len(m.snapshots) - 1; i >= 0; i-- {
+		if m.isSnapVisible(i) {
+			return i
+		}
+	}
+	return -2
+}
+
+// firstVisibleSnap returns the lowest-index visible snapshot, or -2 if none.
+func (m tuiModel) firstVisibleSnap() int {
+	for i := 0; i < len(m.snapshots); i++ {
+		if m.isSnapVisible(i) {
+			return i
+		}
+	}
+	return -2
 }
 
 func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64) tuiModel {
@@ -122,13 +165,14 @@ func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64
 		liveNodes:   nodes,
 		allNodes:    displayNodes,
 		nodes:       displayNodes,
-		snapshots:   snapshots,
-		histIdx:     histIdx,
-		cur:         cursor{ws: 0, sess: 0},
-		openWS:      openWS,
-		openSess:    openSess,
-		searchInput: ti,
-		sinceHours:  sinceHours,
+		snapshots:    snapshots,
+		histIdx:      histIdx,
+		cur:          cursor{ws: 0, sess: 0},
+		openWS:       openWS,
+		openSess:     openSess,
+		searchInput:  ti,
+		sinceHours:   sinceHours,
+		hideAutoSave: true,
 	}
 
 	// If current tree is empty, fall back to last snapshot
@@ -381,15 +425,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			if m.showHist {
-				switch {
-				case m.histIdx == -1:
+				if m.histIdx == -1 {
 					// already at Latest (top), do nothing
-				case m.histIdx == len(m.snapshots)-1:
-					// newest snapshot → Latest
-					m.histIdx = -1
-				default:
-					// move to newer snapshot (higher index)
-					m.histIdx++
+				} else {
+					// try to move to a newer visible snapshot
+					next := m.nextVisibleSnap(m.histIdx, +1)
+					if next != -2 {
+						m.histIdx = next
+					} else {
+						// no more visible snapshots above → go to Latest
+						m.histIdx = -1
+					}
 				}
 			} else {
 				m.moveCursor(-1)
@@ -399,14 +445,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "down", "j":
 			if m.showHist {
-				switch {
-				case m.histIdx == -1 && len(m.snapshots) > 0:
-					// Latest → newest snapshot
-					m.histIdx = len(m.snapshots) - 1
-				case m.histIdx > 0:
-					// move to older snapshot (lower index)
-					m.histIdx--
-				// histIdx == 0: already at oldest (bottom), do nothing
+				if m.histIdx == -1 {
+					// Latest → newest visible snapshot
+					if idx := m.lastVisibleSnap(); idx != -2 {
+						m.histIdx = idx
+					}
+				} else {
+					// move to older visible snapshot
+					next := m.nextVisibleSnap(m.histIdx, -1)
+					if next != -2 {
+						m.histIdx = next
+					}
 				}
 			} else {
 				m.moveCursor(1)
@@ -589,6 +638,26 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.message = ""
 
+		case "a":
+			if m.showHist {
+				m.hideAutoSave = !m.hideAutoSave
+				if m.hideAutoSave {
+					m.message = "hiding autosaved snapshots"
+					// If current selection is an autosave, move to nearest visible
+					if m.histIdx >= 0 && !m.isSnapVisible(m.histIdx) {
+						if next := m.nextVisibleSnap(m.histIdx, +1); next != -2 {
+							m.histIdx = next
+						} else if next := m.nextVisibleSnap(m.histIdx, -1); next != -2 {
+							m.histIdx = next
+						} else {
+							m.histIdx = -1 // fall back to Latest
+						}
+					}
+				} else {
+					m.message = "showing all snapshots"
+				}
+			}
+
 		}
 	}
 	return m, nil
@@ -605,8 +674,20 @@ func (m tuiModel) View() tea.View {
 
 	var b strings.Builder
 
-	// Title row
+	// Title row with current version indicator
 	title := "π session tree"
+	if m.histIdx == -1 {
+		title += "  " + lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("46")).Render("● LIVE")
+	} else if m.histIdx >= 0 && m.histIdx < len(m.snapshots) {
+		snap := m.snapshots[m.histIdx]
+		autoTag := ""
+		if snap.AutoSave {
+			autoTag = dimStyle2.Render(" [auto]")
+		}
+		title += "  " + lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196")).Render(
+			fmt.Sprintf("◆ SNAPSHOT %s (%d sessions)", fmtSnapTime(snap), countSessions(snap.Tree)),
+		) + autoTag
+	}
 	b.WriteString(titleStyle.Render(title))
 	b.WriteString("\n")
 
@@ -751,6 +832,11 @@ func (m tuiModel) View() tea.View {
 		if m.showHist {
 			helpParts = append(helpParts, "↑/↓: revision")
 			helpParts = append(helpParts, "d: delete")
+			if m.hideAutoSave {
+				helpParts = append(helpParts, "a: show auto")
+			} else {
+				helpParts = append(helpParts, "a: hide auto")
+			}
 		}
 		helpParts = append(helpParts, "q: quit")
 	}
@@ -781,17 +867,28 @@ func (m tuiModel) View() tea.View {
 		))
 		// Render snapshots newest-first (reverse order)
 		for i := len(m.snapshots) - 1; i >= 0; i-- {
+			if !m.isSnapVisible(i) {
+				continue
+			}
 			snap := m.snapshots[i]
 			marker := "  "
 			if i == m.histIdx {
 				marker = dimStyle2.Render("▶ ")
 			}
 			count := countSessions(snap.Tree)
-			hlines = append(hlines, fmt.Sprintf("%s%s  %d sessions",
-				marker, fmtSnapTime(snap), count,
+			autoTag := ""
+			if snap.AutoSave {
+				autoTag = dimStyle2.Render(" [auto]")
+			}
+			hlines = append(hlines, fmt.Sprintf("%s%s  %d sessions%s",
+				marker, fmtSnapTime(snap), count, autoTag,
 			))
 		}
-		histPanel := histPanelStyle.Render("History  (esc to close)\n\n" + strings.Join(hlines, "\n"))
+		autoLabel := ""
+		if m.hideAutoSave {
+			autoLabel = dimStyle2.Render("  (hiding auto)")
+		}
+		histPanel := histPanelStyle.Render("History  (esc to close)" + autoLabel + "\n\n" + strings.Join(hlines, "\n"))
 		panelW := lipgloss.Width(histPanel)
 		panelH := lipgloss.Height(histPanel)
 		px := (w - panelW) / 2

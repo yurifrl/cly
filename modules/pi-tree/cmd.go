@@ -62,6 +62,7 @@ func runTUI2(cmd *cobra.Command, jsonOut bool, forceSave bool, sinceHours float6
 
 func historyCmd() *cobra.Command {
 	var flagJSON bool
+	var flagNoAuto bool
 	cmd := &cobra.Command{
 		Use:   "history",
 		Short: "List saved pi-tree snapshots",
@@ -71,6 +72,15 @@ func historyCmd() *cobra.Command {
 				return err
 			}
 			snapshots := ActiveSnapshots(all)
+			if flagNoAuto {
+				var filtered []Snapshot
+				for _, s := range snapshots {
+					if !s.AutoSave {
+						filtered = append(filtered, s)
+					}
+				}
+				snapshots = filtered
+			}
 			if len(snapshots) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No snapshots yet. Run `cly pi-tree` first.")
 				return nil
@@ -85,25 +95,31 @@ func historyCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "  %-4s  %-16s  %-16s  %s\n",
-				"ver", "created", "updated", "sessions")
-			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", "────────────────────────────────────────────────────")
+			fmt.Fprintf(cmd.OutOrStdout(), "  %-4s  %-16s  %-16s  %-10s  %s\n",
+				"ver", "created", "updated", "sessions", "type")
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", "─────────────────────────────────────────────────────────────────")
 			for _, s := range snapshots {
 				count := 0
 				for _, ws := range s.Tree {
 					count += len(ws.Sessions)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "  v%-3d  %s  %s  %d\n",
+				saveType := "manual"
+				if s.AutoSave {
+					saveType = "auto"
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "  v%-3d  %s  %s  %-10d  %s\n",
 					s.Version,
 					s.CreatedAt.Format("2006-01-02 15:04"),
 					s.UpdatedAt.Format("2006-01-02 15:04"),
 					count,
+					saveType,
 				)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "Output snapshots as JSON")
+	cmd.Flags().BoolVar(&flagNoAuto, "no-auto", false, "Hide autosaved snapshots")
 	return cmd
 }
 
