@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-05 Charm Stack Skill Rewrite for v2
+- Session ID: 2df1782c-6f24-4bc6-8be4-a3d56292c3c1
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-04-01T12-47-00-611Z_2df1782c-6f24-4bc6-8be4-a3d56292c3c1.jsonl
+- Session Name: 2026-04-04-2100-oi-spell-checker
+- Context Name: 2026-04-04-2100-oi-spell-checker
+
+### Changed
+- `.agents/skills/charm-stack/SKILL.md` — complete rewrite for Charm v2 (released Feb 2026). Covers new import paths (`charm.land/*/v2`), declarative `tea.View` return type, `tea.KeyPressMsg`/`tea.KeyReleaseMsg`, split mouse messages, Lipgloss v2 color model (`LightDark` replaces `AdaptiveColor`), Bubbles v2 functional options and getter/setter API, Huh v2 integration, and v1-to-v2 migration reference table.
+
 ## 2026-03-30 Fix gc Git Commits Path Doubling and Continue-on-Error
 - Session ID: 1b0f6310-6e22-4b78-b38e-ef6b01d8d629
 - Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-03-30T17-56-30-795Z_1b0f6310-6e22-4b78-b38e-ef6b01d8d629.jsonl
