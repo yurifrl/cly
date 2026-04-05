@@ -788,20 +788,17 @@ func (m tuiModel) View() tea.View {
 				}
 			}
 
-			var nameStr, date string
+			var nameStr string
 			if isCur {
 				nameStr = curSessStyle.Render(displayName)
-				date = dateStyle2.Render(s.StartedAt)
 			} else if sessOpen {
 				nameStr = nameStyle.Render(displayName)
-				date = dateStyle2.Render(s.StartedAt)
 			} else {
 				nameStr = closedNameStyle.Render(displayName)
-				date = closedDateStyle.Render(s.StartedAt)
 			}
 
-			line := fmt.Sprintf("%s%s%s  %s",
-				sessPrefix, branchStr, nameStr, date)
+			line := fmt.Sprintf("%s%s%s",
+				sessPrefix, branchStr, nameStr)
 
 			treeLines = append(treeLines, line)
 		}
