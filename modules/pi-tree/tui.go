@@ -329,8 +329,8 @@ func (m tuiModel) cursorLineIndex() int {
 
 // viewableHeight returns how many tree lines fit on screen.
 func (m tuiModel) viewableHeight() int {
-	// Reserve lines for: title, search bar, since badge, message, help bar
-	reserved := 4
+	// Reserve lines for: title, search bar, since badge, message, help bar, detail panel
+	reserved := 9 // 4 base + 5 for detail panel (always reserved for stable layout)
 	if m.filterMode == filterSearch || m.searchInput.Value() != "" {
 		reserved += 2
 	}
@@ -366,6 +366,18 @@ func (m tuiModel) cursorSession() (WorkspaceNode, PiSession, bool) {
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
+
+// previewHistSelection updates the background tree to match the current history selection.
+func (m *tuiModel) previewHistSelection() {
+	if m.histIdx == -1 {
+		m.allNodes = m.liveNodes
+	} else if m.histIdx >= 0 && m.histIdx < len(m.snapshots) {
+		m.allNodes = m.snapshots[m.histIdx].Tree
+	}
+	m.cur = cursor{ws: 0, sess: 0}
+	m.scrollOff = 0
+	m.applyFilters()
+}
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Search mode: route keys to text input
@@ -437,6 +449,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.histIdx = -1
 					}
 				}
+				m.previewHistSelection()
 			} else {
 				m.moveCursor(-1)
 				m.ensureVisible()
@@ -457,6 +470,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.histIdx = next
 					}
 				}
+				m.previewHistSelection()
 			} else {
 				m.moveCursor(1)
 				m.ensureVisible()
@@ -743,41 +757,30 @@ func (m tuiModel) View() tea.View {
 
 			branchStr := dimStyle2.Render(branch)
 
-			var sidStr, size, date, sessName string
+			// Compact line: name then date
+			displayName := s.SessionName
+			if displayName == "" {
+				if len(s.SessionID) > 8 {
+					displayName = s.SessionID[:8]
+				} else {
+					displayName = s.SessionID
+				}
+			}
+
+			var nameStr, date string
 			if isCur {
-				sidStr = curSessStyle.Render(s.SessionID)
-				size = sizeStyle.Render(fmt.Sprintf("%7s", formatSize(s.SizeBytes)))
+				nameStr = curSessStyle.Render(displayName)
 				date = dateStyle2.Render(s.StartedAt)
-				if s.SessionName != "" {
-					sessName = "  " + nameStyle.Render(s.SessionName)
-				}
 			} else if sessOpen {
-				sidStr = sessionStyle.Render(s.SessionID)
-				size = sizeStyle.Render(fmt.Sprintf("%7s", formatSize(s.SizeBytes)))
+				nameStr = nameStyle.Render(displayName)
 				date = dateStyle2.Render(s.StartedAt)
-				if s.SessionName != "" {
-					sessName = "  " + nameStyle.Render(s.SessionName)
-				}
 			} else {
-				sidStr = closedSessStyle.Render(s.SessionID)
-				size = closedSizeStyle.Render(fmt.Sprintf("%7s", formatSize(s.SizeBytes)))
+				nameStr = closedNameStyle.Render(displayName)
 				date = closedDateStyle.Render(s.StartedAt)
-				if s.SessionName != "" {
-					sessName = "  " + closedNameStyle.Render(s.SessionName)
-				}
 			}
 
-			// Working directory suffix
-			workDirStr := ""
-			if s.FilePath != "" {
-				workDir := sessionDirToWorkingDir(s.FilePath)
-				if workDir != "" {
-					workDirStr = dimStyle2.Render("  " + workDir)
-				}
-			}
-
-			line := fmt.Sprintf("%s%s%s  %s  %s%s%s",
-				sessPrefix, branchStr, sidStr, size, date, sessName, workDirStr)
+			line := fmt.Sprintf("%s%s%s  %s",
+				sessPrefix, branchStr, nameStr, date)
 
 			treeLines = append(treeLines, line)
 		}
@@ -902,14 +905,53 @@ func (m tuiModel) View() tea.View {
 
 		root := lipgloss.NewLayer(bg)
 		modal := lipgloss.NewLayer(histPanel).X(px).Y(py).Z(1)
-		comp := lipgloss.NewCompositor(root, modal)
+		layers := []*lipgloss.Layer{root, modal}
+		if detail := m.renderDetailPanel(); detail != "" {
+			detailLayer := lipgloss.NewLayer(detail).X(1).Y(h - lipgloss.Height(detail) - 1).Z(2)
+			layers = append(layers, detailLayer)
+		}
+		comp := lipgloss.NewCompositor(layers...)
 		v.SetContent(comp.Render())
 	} else {
-		v.SetContent(bg)
+		root := lipgloss.NewLayer(bg)
+		if detail := m.renderDetailPanel(); detail != "" {
+			detailLayer := lipgloss.NewLayer(detail).X(1).Y(h - lipgloss.Height(detail) - 1).Z(1)
+			comp := lipgloss.NewCompositor(root, detailLayer)
+			v.SetContent(comp.Render())
+		} else {
+			v.SetContent(bg)
+		}
 	}
 
 	return v
 }
+
+// renderDetailPanel returns a styled detail box for the currently selected session.
+// Returns empty string if no session is selected.
+func (m tuiModel) renderDetailPanel() string {
+	_, sess, ok := m.cursorSession()
+	if !ok {
+		return ""
+	}
+
+	var lines []string
+	lines = append(lines, dimStyle2.Render("id   ")+sessionStyle.Render(sess.SessionID))
+	lines = append(lines, dimStyle2.Render("size ")+sizeStyle.Render(formatSize(sess.SizeBytes)))
+	if sess.FilePath != "" {
+		workDir := sessionDirToWorkingDir(sess.FilePath)
+		if workDir != "" {
+			lines = append(lines, dimStyle2.Render("path ")+dimStyle2.Render(workDir))
+		}
+	}
+
+	detailStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1)
+
+	return detailStyle.Render(strings.Join(lines, "\n"))
+}
+
 // ── Open actions ──────────────────────────────────────────────────────────────
 
 // sessionDirToWorkingDir converts a pi session directory name to the original working directory.
