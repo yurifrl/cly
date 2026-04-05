@@ -15,6 +15,7 @@ import (
 type tuiItem struct {
 	entry    Entry
 	selected bool
+	active   bool // true if session is currently open in pi
 }
 
 func (i tuiItem) FilterValue() string { return i.entry.Name }
@@ -29,7 +30,12 @@ func (i tuiItem) headline() string {
 		parts = append(parts, dateStyle.Render(i.entry.SavedAt.Format("2006-01-02 15:04")))
 	}
 	parts = append(parts, idStyle.Render(i.entry.ID))
-	return fmt.Sprintf("%s  %s", i.entry.Name, strings.Join(parts, sep))
+
+	name := i.entry.Name
+	if effectiveProvider(i.entry) == "pi" && !i.active {
+		name = mutedNameStyle.Render(name)
+	}
+	return fmt.Sprintf("%s  %s", name, strings.Join(parts, sep))
 }
 
 var (
@@ -81,6 +87,7 @@ type tuiModel struct {
 	filePath  string
 	provider  Provider
 	message   string // status message shown briefly
+	activeIDs map[string]bool // active pi session IDs
 }
 
 func (m tuiModel) Init() tea.Cmd { return nil }
@@ -257,7 +264,7 @@ func (m *tuiModel) refreshList() {
 		if e.Name == "" {
 			continue
 		}
-		items = append(items, tuiItem{entry: e})
+		items = append(items, tuiItem{entry: e, active: m.activeIDs[e.ID]})
 	}
 	m.list.SetItems(items)
 }
@@ -365,6 +372,7 @@ func runTUI(cmd *cobra.Command) error {
 	}
 
 	allowYolo := providerSupportsYolo(provider)
+	activeIDs := activePiSessionIDs()
 
 	entries := sortedEntries(sessions, SortDateDesc)
 	items := make([]list.Item, 0, len(entries))
@@ -372,7 +380,7 @@ func runTUI(cmd *cobra.Command) error {
 		if e.Name == "" {
 			continue
 		}
-		items = append(items, tuiItem{entry: e})
+		items = append(items, tuiItem{entry: e, active: activeIDs[e.ID]})
 	}
 
 	const listHeight = 14
@@ -391,6 +399,7 @@ func runTUI(cmd *cobra.Command) error {
 		allowYolo: allowYolo,
 		filePath:  filePath,
 		provider:  provider,
+		activeIDs: activeIDs,
 	}
 
 	p := tea.NewProgram(model)

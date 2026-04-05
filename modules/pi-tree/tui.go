@@ -293,18 +293,39 @@ func (m *tuiModel) moveCursor(delta int) {
 	m.cur.sess = ps[idx].sess
 }
 
-// ensureVisible adjusts scrollOff so the cursor line is visible.
+// ensureVisible adjusts scrollOff so the cursor line stays visible with context.
 func (m *tuiModel) ensureVisible() {
 	curLine := m.cursorLineIndex()
 	viewHeight := m.viewableHeight()
 	if viewHeight <= 0 {
 		return
 	}
-	if curLine < m.scrollOff {
-		m.scrollOff = curLine
+
+	// Scroll margin: start scrolling before cursor hits the edge
+	margin := 3
+	if viewHeight < 10 {
+		margin = 1
 	}
-	if curLine >= m.scrollOff+viewHeight {
-		m.scrollOff = curLine - viewHeight + 1
+
+	// When scrolling up, include the workspace header above the cursor
+	topLine := curLine
+	if m.cur.sess >= 0 {
+		headerLine := curLine - m.cur.sess - 1
+		if headerLine >= 0 {
+			topLine = headerLine
+		}
+	}
+
+	// Scroll up: keep margin above the workspace header
+	if topLine < m.scrollOff+margin {
+		m.scrollOff = topLine - margin
+		if m.scrollOff < 0 {
+			m.scrollOff = 0
+		}
+	}
+	// Scroll down: keep margin below the cursor
+	if curLine > m.scrollOff+viewHeight-margin-1 {
+		m.scrollOff = curLine - viewHeight + margin + 1
 	}
 }
 
@@ -330,7 +351,7 @@ func (m tuiModel) cursorLineIndex() int {
 // viewableHeight returns how many tree lines fit on screen.
 func (m tuiModel) viewableHeight() int {
 	// Reserve lines for: title, search bar, since badge, message, help bar, detail panel
-	reserved := 9 // 4 base + 5 for detail panel (always reserved for stable layout)
+	reserved := 10 // 4 base + 6 for detail panel (always reserved for stable layout)
 	if m.filterMode == filterSearch || m.searchInput.Value() != "" {
 		reserved += 2
 	}
@@ -937,6 +958,7 @@ func (m tuiModel) renderDetailPanel() string {
 	var lines []string
 	lines = append(lines, dimStyle2.Render("id   ")+sessionStyle.Render(sess.SessionID))
 	lines = append(lines, dimStyle2.Render("size ")+sizeStyle.Render(formatSize(sess.SizeBytes)))
+	lines = append(lines, dimStyle2.Render("date ")+dateStyle2.Render(sess.StartedAt))
 	if sess.FilePath != "" {
 		workDir := sessionDirToWorkingDir(sess.FilePath)
 		if workDir != "" {

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
@@ -20,6 +22,7 @@ var (
 	idStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	providerTagStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	yoloOnStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	mutedNameStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 	footerBoxStyle    = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("240")).
@@ -27,7 +30,10 @@ var (
 				MarginLeft(2)
 )
 
-type pickerItem struct{ entry Entry }
+type pickerItem struct {
+	entry  Entry
+	active bool // true if session is currently open in pi
+}
 
 func (i pickerItem) FilterValue() string { return i.entry.Name }
 
@@ -46,7 +52,12 @@ func (i pickerItem) headline() string {
 		parts = append(parts, dateStyle.Render(i.entry.SavedAt.Format("2006-01-02 15:04")))
 	}
 	parts = append(parts, idStyle.Render(i.entry.ID))
-	return fmt.Sprintf("%s  %s", i.entry.Name, strings.Join(parts, sep))
+
+	name := i.entry.Name
+	if effectiveProvider(i.entry) == "pi" && !i.active {
+		name = mutedNameStyle.Render(name)
+	}
+	return fmt.Sprintf("%s  %s", name, strings.Join(parts, sep))
 }
 
 type simpleDelegate struct{}
@@ -213,13 +224,15 @@ func sortedEntries(sessions Sessions, order SortOrder) []Entry {
 }
 
 func runPicker(sessions Sessions, allowYolo bool) (*Entry, bool, error) {
+	activeIDs := activePiSessionIDs()
 	entries := sortedEntries(sessions, SortDateDesc)
 	items := make([]list.Item, 0, len(entries))
 	for _, e := range entries {
 		if e.Name == "" {
 			continue
 		}
-		items = append(items, pickerItem{entry: e})
+		active := activeIDs[e.ID]
+		items = append(items, pickerItem{entry: e, active: active})
 	}
 
 	const listHeight = 14
@@ -242,4 +255,40 @@ func runPicker(sessions Sessions, allowYolo bool) (*Entry, bool, error) {
 		return nil, false, nil
 	}
 	return pm.chosen, pm.yolo, nil
+}
+
+// activePiSessionIDs scans ~/.pi/agent/sessions/ for .jsonl files modified
+// within the last 10 minutes and extracts their session UUIDs.
+// Filename pattern: <timestamp>_<uuid>.jsonl
+func activePiSessionIDs() map[string]bool {
+	ids := make(map[string]bool)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ids
+	}
+
+	sessionsDir := filepath.Join(home, ".pi", "agent", "sessions")
+	cutoff := time.Now().Add(-10 * time.Minute)
+
+	// Walk all subdirectories
+	_ = filepath.Walk(sessionsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".jsonl") {
+			return nil
+		}
+		if info.ModTime().Before(cutoff) {
+			return nil
+		}
+		// Extract UUID from filename: <timestamp>_<uuid>.jsonl
+		base := filepath.Base(path)
+		base = strings.TrimSuffix(base, ".jsonl")
+		if idx := strings.LastIndex(base, "_"); idx >= 0 {
+			ids[base[idx+1:]] = true
+		}
+		return nil
+	})
+
+	return ids
 }
