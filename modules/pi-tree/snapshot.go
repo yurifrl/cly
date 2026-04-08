@@ -19,6 +19,7 @@ type PiSession struct {
 	SizeBytes   int64  `json:"size_bytes"`
 	SurfaceRef  string `json:"surface_ref,omitempty"` // e.g. "surface:65"
 	FilePath    string `json:"file_path,omitempty"`   // full path to the .jsonl file
+	IsOpen      bool   `json:"is_open,omitempty"`     // true if pi process is running for this session's workspace
 }
 
 // WorkspaceNode represents one cmux workspace with its π sessions.

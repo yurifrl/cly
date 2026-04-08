@@ -140,10 +140,10 @@ func findSessionDirByName(wsName string, allDirs []string) string {
 	return ""
 }
 
-// activeSessions returns all session files in a directory, sorted newest first.
-// maxAge is ignored (kept for API compatibility) — we show all sessions.
-func activeSessions(dir string, _ time.Duration) []PiSession {
-	if dir == "" {
+// activeSessions returns the N most recently modified session files in a directory.
+// Each returned session has IsOpen = true.
+func activeSessions(dir string, maxCount int) []PiSession {
+	if dir == "" || maxCount <= 0 {
 		return nil
 	}
 	entries, err := os.ReadDir(dir)
@@ -171,6 +171,11 @@ func activeSessions(dir string, _ time.Duration) []PiSession {
 		return files[i].mtime.After(files[j].mtime)
 	})
 
+	// Only take the top N most recently modified files
+	if len(files) > maxCount {
+		files = files[:maxCount]
+	}
+
 	var result []PiSession
 	for _, f := range files {
 		stem := strings.TrimSuffix(f.name, ".jsonl")
@@ -188,6 +193,7 @@ func activeSessions(dir string, _ time.Duration) []PiSession {
 			StartedAt:   started,
 			SizeBytes:   f.size,
 			FilePath:    fullPath,
+			IsOpen:      true,
 		})
 	}
 	return result
@@ -225,20 +231,36 @@ func cwdToSessionDir(cwd string) string {
 
 // openPiSessions returns all running pi (node) processes and their cwds.
 // Returns map of cwd → session dir path.
-func openPiCwds() []string {
-	out, err := runCommand("bash", "-c",
-		`lsof -c node -a -d cwd 2>/dev/null | awk 'NR>1 {print $NF}' | sort -u`)
+// openPiProcesses returns a map of CWD → count of running pi processes.
+func openPiProcesses() map[string]int {
+	// Find PIDs of processes whose command name is exactly "pi"
+	pidOut, err := runCommand("bash", "-c",
+		`ps -eo pid,comm | awk '$2 == "pi" {print $1}'`)
 	if err != nil {
 		return nil
 	}
-	var cwds []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		cwd := strings.TrimSpace(line)
-		if cwd != "" {
-			cwds = append(cwds, cwd)
+	pids := strings.Fields(strings.TrimSpace(string(pidOut)))
+	if len(pids) == 0 {
+		return nil
+	}
+
+	counts := make(map[string]int)
+	for _, pid := range pids {
+		out, err := runCommand("lsof", "-a", "-p", pid, "-d", "cwd", "-Fn")
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.HasPrefix(line, "n/") {
+				cwd := line[1:]
+				if cwd != "/" {
+					counts[cwd]++
+				}
+				break
+			}
 		}
 	}
-	return cwds
+	return counts
 }
 
 // ScanTree queries cmux and reads pi session files to build the current tree.
@@ -294,36 +316,44 @@ func ScanTree() ([]WorkspaceNode, error) {
 		}
 	}
 
-	// Find open pi processes by cwd
-	piCwds := openPiCwds()
+	// Find running pi processes and their CWDs
+	piCounts := openPiProcesses()
 
-	// For each open pi cwd, find the session dir and its most recent .jsonl
+	// Scan session directories for active sessions
 	type sessionEntry struct {
 		cwd     string
 		session PiSession
 	}
 	var entries []sessionEntry
 
-	seen := map[string]bool{}
-	for _, cwd := range piCwds {
-		dirName := cwdToSessionDir(cwd)
-		dir := filepath.Join(sessionBase, dirName)
-
-		// Check if this directory exists
-		if _, err := os.Stat(dir); err != nil {
+	for _, d := range allDirs {
+		dir := filepath.Join(sessionBase, d)
+		cwd := sessionDirNameToWorkingDir(d)
+		if cwd == "" {
 			continue
 		}
-		if seen[cwd] {
+		// Skip dirs whose resolved path doesn't exist or points inside session storage
+		if strings.HasPrefix(cwd, sessionBase) {
 			continue
 		}
-		seen[cwd] = true
+		if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
+			continue
+		}
 
-		sessions := allSessionsInDir(dir)
+		// Only include directories that have running pi processes
+		count := piCounts[cwd]
+		if count == 0 {
+			continue
+		}
+
+		sessions := activeSessions(dir, count)
 		if len(sessions) == 0 {
 			continue
 		}
-		// Only include the most recent session per cwd (the active one)
-		entries = append(entries, sessionEntry{cwd: cwd, session: sessions[0]})
+
+		for _, s := range sessions {
+			entries = append(entries, sessionEntry{cwd: cwd, session: s})
+		}
 	}
 
 	if len(entries) == 0 {
@@ -375,6 +405,14 @@ func ScanTree() ([]WorkspaceNode, error) {
 func sessionDirNameToWorkingDir(dirName string) string {
 	dirName = strings.TrimPrefix(dirName, "--")
 	dirName = strings.TrimSuffix(dirName, "--")
+	if dirName == "" {
+		return ""
+	}
+	parts := strings.Split(dirName, "-")
+	result := resolveEncodedPath(parts)
+	if result != "" {
+		return result
+	}
 	return "/" + strings.ReplaceAll(dirName, "-", "/")
 }
 
