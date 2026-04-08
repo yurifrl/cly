@@ -23,7 +23,7 @@ GROUPING RULES (priority order):
 5. Different types (feat vs fix vs chore vs refactor vs docs) = separate groups
 
 HARD CONSTRAINTS:
-- Every file MUST appear in exactly one group
+- Every file MUST appear in exactly one group UNLESS additional instructions say to exclude/ignore it (excluded files should be omitted entirely)
 - Each group gets a conventional commit message (feat:, fix:, chore:, refactor:, docs:, test:, style:, build:, ci:, perf:)
 - Prefer fewer groups (2-5) over many tiny ones
 - Group titles must be concise conventional commit messages

@@ -21,7 +21,7 @@ GROUPING RULES (priority order):
 5. Different concerns (feat vs fix vs chore) in the same file = separate groups
 
 HARD CONSTRAINTS:
-- Every hunk MUST appear in exactly one group
+- Every hunk MUST appear in exactly one group UNLESS additional instructions say to exclude/ignore certain files (excluded files and their hunks should be omitted entirely)
 - Reference hunks by file path and hunk ID (e.g., h1, h2)
 - Each group gets a conventional commit message (feat:, fix:, chore:, refactor:, docs:, test:, style:, build:, ci:, perf:)
 - Files with only one hunk: just list the file (all hunks implied)

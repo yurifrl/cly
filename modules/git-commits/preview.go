@@ -72,7 +72,7 @@ type ConfirmResult struct {
 // Confirm prompts the user for confirmation with 3 options.
 // Returns the action chosen and an optional re-plan prompt.
 func Confirm() ConfirmResult {
-	fmt.Println(style.SubtleStyle.Render("  [Y]es  [n]o  [r]evise split"))
+	fmt.Println(style.SubtleStyle.Render("  [Y]es  [n]o  [r]evise split  [p]rompt"))
 	fmt.Print("→ ")
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
@@ -87,6 +87,18 @@ func Confirm() ConfirmResult {
 		return ConfirmResult{Action: ConfirmYes}
 	case lower == "n" || lower == "no":
 		return ConfirmResult{Action: ConfirmNo}
+	case lower == "p" || lower == "prompt":
+		// Ask for a preprompt to guide the AI on the next attempt
+		fmt.Print(style.BlueStyle.Render("Preprompt: "))
+		prompt, err := reader.ReadString('\n')
+		if err != nil {
+			return ConfirmResult{Action: ConfirmNo}
+		}
+		prompt = strings.TrimSpace(prompt)
+		if prompt == "" {
+			return ConfirmResult{Action: ConfirmNo}
+		}
+		return ConfirmResult{Action: ConfirmRevise, Prompt: prompt}
 	case lower == "r" || lower == "revise":
 		// Ask for the guidance prompt
 		fmt.Print(style.BlueStyle.Render("Guide the split: "))
