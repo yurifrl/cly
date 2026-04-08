@@ -58,7 +58,7 @@ func testSnapshots() []Snapshot {
 func testLiveNodes() []WorkspaceNode {
 	return []WorkspaceNode{
 		{Name: "cly", Sessions: []PiSession{
-			{SessionID: "live-1", StartedAt: "2026-03-29 17:00", SizeBytes: 16384},
+			{SessionID: "live-1", StartedAt: "2026-03-29 17:00", SizeBytes: 16384, IsOpen: true},
 		}},
 	}
 }
@@ -190,8 +190,8 @@ func TestTUI_RestoresLastHistIdx(t *testing.T) {
 
 	loaded, _ := LoadSnapshots()
 	m := newTUIModel(testLiveNodes(), loaded, 0)
-	// histIdx is the array index (0), not the version (timestamp)
-	assert.Equal(t, 0, m.histIdx, "should restore to index 0 (s1)")
+	// Always starts in live view now, ignores saved histIdx
+	assert.Equal(t, -1, m.histIdx, "should always start in live view")
 }
 
 func TestTUI_ViewShowsHistoryPanel(t *testing.T) {
@@ -217,7 +217,14 @@ func TestTUI_Quit(t *testing.T) {
 
 func TestTUI_CursorMovement(t *testing.T) {
 	isolateState(t)
-	m := newTUIModel(testSnapshots()[0].Tree, testSnapshots(), 0)
+	nodes := testSnapshots()[0].Tree
+	// Mark sessions as open so they appear in live view
+	for i := range nodes {
+		for j := range nodes[i].Sessions {
+			nodes[i].Sessions[j].IsOpen = true
+		}
+	}
+	m := newTUIModel(nodes, testSnapshots(), 0)
 
 	assert.Equal(t, 0, m.cur.ws)
 	assert.Equal(t, 0, m.cur.sess)
@@ -233,7 +240,13 @@ func TestTUI_CursorMovement(t *testing.T) {
 
 func TestTUI_SearchFilter(t *testing.T) {
 	isolateState(t)
-	m := newTUIModel(testSnapshots()[2].Tree, nil, 0)
+	nodes := testSnapshots()[2].Tree
+	for i := range nodes {
+		for j := range nodes[i].Sessions {
+			nodes[i].Sessions[j].IsOpen = true
+		}
+	}
+	m := newTUIModel(nodes, nil, 0)
 
 	m = key(m, "/")
 	assert.Equal(t, filterSearch, m.filterMode)
@@ -335,7 +348,13 @@ func TestLastHistIdx_PersistsToFile(t *testing.T) {
 
 func TestViewOutput_ContainsTreeContent(t *testing.T) {
 	isolateState(t)
-	m := newTUIModel(testSnapshots()[0].Tree, testSnapshots(), 0)
+	nodes := testSnapshots()[0].Tree
+	for i := range nodes {
+		for j := range nodes[i].Sessions {
+			nodes[i].Sessions[j].IsOpen = true
+		}
+	}
+	m := newTUIModel(nodes, testSnapshots(), 0)
 	m.width = 120
 	m.height = 40
 
@@ -504,7 +523,7 @@ func TestSessionName_InView(t *testing.T) {
 	isolateState(t)
 	tree := []WorkspaceNode{
 		{Name: "cly", Sessions: []PiSession{
-			{SessionID: "abc123", SessionName: "Fix TUI bugs", StartedAt: "2026-03-29 17:00", SizeBytes: 1024},
+			{SessionID: "abc123", SessionName: "Fix TUI bugs", StartedAt: "2026-03-29 17:00", SizeBytes: 1024, IsOpen: true},
 		}},
 	}
 	m := newTUIModel(tree, nil, 0)

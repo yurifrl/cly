@@ -81,6 +81,7 @@ type tuiModel struct {
 	scrollOff    int // scroll offset for tree view
 	message      string
 	quit         bool
+
 	pendingExec  string // command to exec after TUI exits (replaces process)
 }
 
@@ -131,18 +132,8 @@ func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64
 	ti.Placeholder = "search workspace or session…"
 	ti.CharLimit = 80
 
-	// Default: latest (live)
+	// Always start with live view
 	histIdx := -1
-
-	// Restore last viewed history version if available
-	if lastVer := LoadLastHistIdx(); lastVer > 0 && len(snapshots) > 0 {
-		for i, s := range snapshots {
-			if s.Version == lastVer {
-				histIdx = i
-				break
-			}
-		}
-	}
 
 	// Build open sets from live nodes
 	openWS := make(map[string]bool)
@@ -173,6 +164,7 @@ func newTUIModel(nodes []WorkspaceNode, snapshots []Snapshot, sinceHours float64
 		searchInput:  ti,
 		sinceHours:   sinceHours,
 		hideAutoSave: true,
+
 	}
 
 	// If current tree is empty, fall back to last snapshot
@@ -208,6 +200,10 @@ func (m *tuiModel) applyFilters() {
 		wsMatch := query == "" || strings.Contains(strings.ToLower(ws.Name), query)
 		var sessions []PiSession
 		for _, s := range ws.Sessions {
+			// only show open sessions (live view only)
+			if m.histIdx == -1 && !s.IsOpen {
+				continue
+			}
 			// since filter
 			if m.sinceHours > 0 {
 				t, err := time.Parse("2006-01-02 15:04", s.StartedAt)
@@ -231,6 +227,7 @@ func (m *tuiModel) applyFilters() {
 		}
 	}
 	m.nodes = out
+
 	if m.cur.ws >= len(m.nodes) {
 		m.cur = cursor{ws: 0, sess: 0}
 	}
@@ -412,12 +409,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.applyFilters()
 				m.message = ""
 				return m, nil
+
 			case "enter":
 				m.filterMode = filterNone
 				m.searchInput.Blur()
 				m.applyFilters()
 				m.message = ""
 				return m, nil
+
 			case "ctrl+c":
 				m.quit = true
 				return m, tea.Quit
@@ -498,6 +497,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.message = ""
 
+
 		case "enter":
 			if m.showHist {
 				m.showHist = false
@@ -523,23 +523,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "nothing to open"
 				break
 			}
-			// Check if we're already in the session's working directory
 			workDir := sessionDirToWorkingDir(sess.FilePath)
 			cwd, _ := os.Getwd()
 			if workDir != "" && cwd != "" && strings.EqualFold(cwd, workDir) {
-				// Same dir — just exec pi locally and quit TUI
 				m.pendingExec = fmt.Sprintf("pi --session %s", sess.SessionID)
 				m.quit = true
 				return m, tea.Quit
 			}
-			// Different dir — open in target workspace
 			m.message = "opening..."
 			cmd, err := openSession(ws.Name, sess.SessionID, sess.FilePath)
 			if err != nil {
 				m.message = fmt.Sprintf("error: %v", err)
 			} else {
+				_, callerSurf := callerSurface()
+				if callerSurf != "" {
+					_, _ = runCommand("cmux", "close-surface", "--surface", callerSurf)
+				}
 				m.quit = true
-				m.message = fmt.Sprintf("✓ %s", cmd)
+				m.message = fmt.Sprintf("[OK] %s", cmd)
 				return m, tea.Quit
 			}
 
@@ -584,6 +585,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				m.message = fmt.Sprintf("error: %v", err)
 			} else {
+				// Close the current cmux surface/pane so we follow the new session
+				_, callerSurf := callerSurface()
+				if callerSurf != "" {
+					_, _ = runCommand("cmux", "close-surface", "--surface", callerSurf)
+				}
 				m.quit = true
 				m.message = fmt.Sprintf("✓ %s", cmd)
 				return m, tea.Quit
@@ -598,16 +604,47 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "nothing to open"
 				break
 			}
-			// Open in target workspace and stay there (no comeback)
+			// Open in target workspace and close this window (follow)
+			workDir := sessionDirToWorkingDir(sess.FilePath)
+			cwd, _ := os.Getwd()
+			if workDir != "" && cwd != "" && strings.EqualFold(cwd, workDir) {
+				m.pendingExec = fmt.Sprintf("pi --session %s", sess.SessionID)
+				m.quit = true
+				return m, tea.Quit
+			}
 			m.message = "opening..."
 			cmd, err := openSession(ws.Name, sess.SessionID, sess.FilePath)
 			if err != nil {
 				m.message = fmt.Sprintf("error: %v", err)
 			} else {
+				// Close the current cmux surface/pane so we follow the new session
+				_, callerSurf := callerSurface()
+				if callerSurf != "" {
+					_, _ = runCommand("cmux", "close-surface", "--surface", callerSurf)
+				}
 				m.quit = true
 				m.message = fmt.Sprintf("✓ %s", cmd)
 				return m, tea.Quit
 			}
+
+		case "O":
+			if m.showHist {
+				break
+			}
+			ws, sess, ok := m.cursorSession()
+			if !ok {
+				m.message = "nothing to open"
+				break
+			}
+			// Open in target workspace but keep this window (stay)
+			m.message = "opening..."
+			cmd, err := openSession(ws.Name, sess.SessionID, sess.FilePath)
+			if err != nil {
+				m.message = fmt.Sprintf("error: %v", err)
+			} else {
+				m.message = fmt.Sprintf("✓ %s (staying here)", cmd)
+			}
+
 
 
 		case "s":
@@ -673,25 +710,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.message = ""
 
-		case "a":
-			if m.showHist {
-				m.hideAutoSave = !m.hideAutoSave
-				if m.hideAutoSave {
-					m.message = "hiding autosaved snapshots"
-					// If current selection is an autosave, move to nearest visible
-					if m.histIdx >= 0 && !m.isSnapVisible(m.histIdx) {
-						if next := m.nextVisibleSnap(m.histIdx, +1); next != -2 {
-							m.histIdx = next
-						} else if next := m.nextVisibleSnap(m.histIdx, -1); next != -2 {
-							m.histIdx = next
-						} else {
-							m.histIdx = -1 // fall back to Latest
-						}
-					}
-				} else {
-					m.message = "showing all snapshots"
-				}
-			}
 
 		}
 	}
@@ -753,6 +771,7 @@ func (m tuiModel) View() tea.View {
 		} else {
 			wsPrefix = "  "
 		}
+
 
 		if isCurWs {
 			treeLines = append(treeLines, wsPrefix+curWsStyle.Render(ws.Name))
@@ -839,12 +858,12 @@ func (m tuiModel) View() tea.View {
 	// Help bar
 	var helpParts []string
 	if m.filterMode == filterSearch {
-		helpParts = []string{"enter/esc: done", "ctrl+c: quit"}
+		helpParts = []string{"esc: done", "ctrl+c: quit"}
 	} else {
 		helpParts = []string{
 			"↑/↓: move",
-			"enter: open",
-			"o: open & stay",
+			"o: open & follow",
+			"O: open & stay",
 			"/: search",
 			"s: save",
 			"r: refresh",
@@ -853,11 +872,6 @@ func (m tuiModel) View() tea.View {
 		if m.showHist {
 			helpParts = append(helpParts, "↑/↓: revision")
 			helpParts = append(helpParts, "d: delete")
-			if m.hideAutoSave {
-				helpParts = append(helpParts, "a: show auto")
-			} else {
-				helpParts = append(helpParts, "a: hide auto")
-			}
 		}
 		helpParts = append(helpParts, "q: quit")
 	}
@@ -985,8 +999,58 @@ func sessionDirToWorkingDir(filePath string) string {
 	dirName = strings.TrimPrefix(dirName, "--")
 	dirName = strings.TrimSuffix(dirName, "--")
 
-	result := "/" + strings.ReplaceAll(dirName, "-", "/")
-	return result
+	if dirName == "" {
+		return ""
+	}
+
+	// The encoding replaces / with - but directory names can also contain -.
+	// Use backtracking to find a real path on disk.
+	parts := strings.Split(dirName, "-")
+	result := resolveEncodedPath(parts)
+	if result != "" {
+		return result
+	}
+
+	// Fallback: naive replacement (all dashes become /)
+	return "/" + strings.ReplaceAll(dirName, "-", "/")
+}
+
+// resolveEncodedPath tries all possible splits of dash-separated parts
+// into path segments, returning the first that exists on disk.
+func resolveEncodedPath(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	return resolveEncodedPathRec(parts, "")
+}
+
+func resolveEncodedPathRec(parts []string, prefix string) string {
+	if len(parts) == 0 {
+		// Check if the full path is a directory
+		if info, err := os.Stat(prefix); err == nil && info.IsDir() {
+			return prefix
+		}
+		return ""
+	}
+	// Try joining increasingly more parts as one segment name
+	for i := 1; i <= len(parts); i++ {
+		segment := strings.Join(parts[:i], "-")
+		candidate := prefix + "/" + segment
+		// If there are remaining parts, this must be a valid directory prefix
+		if i < len(parts) {
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				if result := resolveEncodedPathRec(parts[i:], candidate); result != "" {
+					return result
+				}
+			}
+		} else {
+			// Last segment — this is the final path
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				return candidate
+			}
+		}
+	}
+	return ""
 }
 
 // resolveWorkspaceRef finds the current workspace ref by name from cmux.
@@ -1082,7 +1146,11 @@ func openSession(wsName, sessionID, filePath string) (string, error) {
 		}
 
 		time.Sleep(500 * time.Millisecond)
-		_, err = runCommand("cmux", "send-panel", "--panel", surfRef, "--workspace", wsRef, piCmd+"\n")
+		sendCmd := piCmd
+		if workDir != "" {
+			sendCmd = fmt.Sprintf("cd %s && %s", workDir, piCmd)
+		}
+		_, err = runCommand("cmux", "send-panel", "--panel", surfRef, "--workspace", wsRef, sendCmd+"\n")
 		if err != nil {
 			return "", fmt.Errorf("send-panel: %w", err)
 		}
@@ -1091,12 +1159,13 @@ func openSession(wsName, sessionID, filePath string) (string, error) {
 	}
 
 	// Workspace doesn't exist — create new one with working directory
-	args := []string{"new-workspace", "--command", piCmd}
-	cmd := fmt.Sprintf("cmux new-workspace --command %q", piCmd)
+	// cmux new-workspace only supports --command, so we cd first
+	fullCmd := piCmd
 	if workDir != "" {
-		args = append(args, "--working-directory", workDir)
-		cmd += fmt.Sprintf(" --working-directory %s", workDir)
+		fullCmd = fmt.Sprintf("cd %s && %s", workDir, piCmd)
 	}
+	args := []string{"new-workspace", "--command", fullCmd}
+	cmd := fmt.Sprintf("cmux new-workspace --command %q", fullCmd)
 	_, err := runCommand("cmux", args...)
 	if err != nil {
 		return cmd, fmt.Errorf("new-workspace: %w", err)
