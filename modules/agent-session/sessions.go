@@ -15,6 +15,7 @@ type Entry struct {
 	Path        string            `json:"path"`
 	Description string            `json:"description,omitempty"`
 	SavedAt     time.Time         `json:"saved_at,omitempty"`
+	DeletedAt   *time.Time        `json:"deleted_at,omitempty"`
 	Meta        map[string]string `json:"meta,omitempty"`
 }
 
@@ -88,10 +89,19 @@ func findByNameWithKey(s Sessions, provider, name string) (string, *Entry) {
 func upsertEntry(s Sessions, entry Entry) {
 	provider := normalizeProvider(entry.Provider)
 	entry.Provider = provider
-	if oldKey, _ := findByNameWithKey(s, provider, entry.Name); oldKey != "" && oldKey != sessionKey(provider, entry.Name) {
+	newKey := sessionKey(provider, entry.Name)
+	// Dedupe by ID across all providers: if another entry has the same ID, remove it.
+	if entry.ID != "" {
+		for k, e := range s {
+			if e.ID == entry.ID && k != newKey {
+				delete(s, k)
+			}
+		}
+	}
+	if oldKey, _ := findByNameWithKey(s, provider, entry.Name); oldKey != "" && oldKey != newKey {
 		delete(s, oldKey)
 	}
-	s[sessionKey(provider, entry.Name)] = entry
+	s[newKey] = entry
 }
 
 func Load(filePath string) (Sessions, error) {
@@ -123,7 +133,7 @@ func Save(filePath string, s Sessions) error {
 }
 
 func FindByName(s Sessions, name string) *Entry {
-	return FindByNameForProvider(s, defaultProvider, name)
+	return FindByNameForProvider(s, defaultProviderFallback, name)
 }
 
 func FindByNameForProvider(s Sessions, provider, name string) *Entry {
@@ -132,7 +142,7 @@ func FindByNameForProvider(s Sessions, provider, name string) *Entry {
 }
 
 func FindByID(s Sessions, id string) *Entry {
-	return FindByIDForProvider(s, defaultProvider, id)
+	return FindByIDForProvider(s, defaultProviderFallback, id)
 }
 
 func FindByIDForProvider(s Sessions, provider, id string) *Entry {
@@ -154,12 +164,57 @@ func FindByIDForProvider(s Sessions, provider, id string) *Entry {
 }
 
 func Remove(s Sessions, name string) Sessions {
-	return RemoveForProvider(s, defaultProvider, name)
+	return RemoveForProvider(s, defaultProviderFallback, name)
 }
 
 func RemoveForProvider(s Sessions, provider, name string) Sessions {
 	if key, _ := findByNameWithKey(s, provider, name); key != "" {
 		delete(s, key)
+	}
+	return s
+}
+
+// SoftDeleteForProvider marks a session as deleted without removing it.
+func SoftDeleteForProvider(s Sessions, provider, name string) Sessions {
+	if key, entry := findByNameWithKey(s, provider, name); key != "" {
+		now := time.Now()
+		entry.DeletedAt = &now
+		s[key] = *entry
+	}
+	return s
+}
+
+// filterDeleted returns only non-deleted sessions.
+func filterDeleted(s Sessions, includeDeleted bool) Sessions {
+	if includeDeleted {
+		return s
+	}
+	out := Sessions{}
+	for k, e := range s {
+		if e.DeletedAt == nil {
+			out[k] = e
+		}
+	}
+	return out
+}
+
+// filterOnlyDeleted returns only soft-deleted sessions.
+func filterOnlyDeleted(s Sessions) Sessions {
+	out := Sessions{}
+	for k, e := range s {
+		if e.DeletedAt != nil {
+			out[k] = e
+		}
+	}
+	return out
+}
+
+// CleanupDeleted permanently removes all soft-deleted sessions.
+func CleanupDeleted(s Sessions) Sessions {
+	for k, e := range s {
+		if e.DeletedAt != nil {
+			delete(s, k)
+		}
 	}
 	return s
 }
@@ -181,7 +236,7 @@ func FindByIDAny(s Sessions, id string) *Entry {
 		if e.ID == id {
 			entry := e
 			if entry.Provider == "" {
-				entry.Provider = defaultProvider
+				entry.Provider = defaultProviderFallback
 			}
 			return &entry
 		}

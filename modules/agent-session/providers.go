@@ -2,7 +2,9 @@ package agentsession
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -10,7 +12,45 @@ import (
 	"github.com/yurifrl/cly/pkg/session"
 )
 
-const defaultProvider = "claude"
+const defaultProviderFallback = "claude"
+
+// defaultProviderFn is overridable in tests.
+var defaultProviderFn = func() string {
+	cfg := pkgconfig.Get()
+	if cfg != nil {
+		if module, ok := cfg.Modules["agent_session"]; ok {
+			if v, ok := module["default_provider"].(string); ok {
+				if v = strings.TrimSpace(strings.ToLower(v)); v != "" && v != "all" {
+					return v
+				}
+			}
+		}
+	}
+	return defaultProviderFallback
+}
+
+func defaultProvider() string { return defaultProviderFn() }
+
+// detectProviderByID scans known session storage locations to find which
+// provider owns the given session ID. Returns "" when no match is found.
+func detectProviderByID(id string) string {
+	if id == "" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	// pi: ~/.pi/agent/sessions/<project>/*<id>.jsonl
+	if matches, _ := filepath.Glob(filepath.Join(home, ".pi", "agent", "sessions", "*", "*"+id+".jsonl")); len(matches) > 0 {
+		return "pi"
+	}
+	// claude: ~/.claude/projects/<project>/<id>.jsonl
+	if matches, _ := filepath.Glob(filepath.Join(home, ".claude", "projects", "*", id+".jsonl")); len(matches) > 0 {
+		return "claude"
+	}
+	return ""
+}
 
 // Provider defines how to resume a session for a specific agent CLI.
 type Provider struct {
@@ -25,7 +65,7 @@ var loadProvidersFn = loadProviders
 func normalizeProvider(name string) string {
 	name = strings.TrimSpace(strings.ToLower(name))
 	if name == "" {
-		return defaultProvider
+		return defaultProviderFallback
 	}
 	return name
 }

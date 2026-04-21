@@ -27,15 +27,18 @@ func upsertCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			id := args[0]
 			if normalizeProvider(providerName) == "all" {
-				providerName = defaultProvider
+				if detected := detectProviderByID(id); detected != "" {
+					providerName = detected
+				} else {
+					providerName = defaultProvider()
+				}
 			}
 			provider, err := providerByName(providerName)
 			if err != nil {
 				return err
 			}
-
-			id := args[0]
 
 			// Name from positional or flag
 			name := flagName

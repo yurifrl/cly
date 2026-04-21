@@ -14,6 +14,9 @@ import (
 // runCmd executes a cobra command tree with args and returns captured stdout.
 func runCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	origFn := defaultProviderFn
+	defaultProviderFn = func() string { return defaultProviderFallback }
+	t.Cleanup(func() { defaultProviderFn = origFn })
 	root := &cobra.Command{Use: "cly"}
 	Register(root)
 	buf := &bytes.Buffer{}

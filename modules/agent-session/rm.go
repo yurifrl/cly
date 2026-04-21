@@ -29,6 +29,12 @@ func rmCmd() *cobra.Command {
 			return names, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			filePath := filePathFn()
+			allSessions, err := Load(filePath)
+			if err != nil {
+				return err
+			}
+
 			hasName := len(args) > 0
 			hasFilter := flagFilter != ""
 
@@ -41,13 +47,6 @@ func rmCmd() *cobra.Command {
 
 			// Load scoped sessions for matching
 			sessions, err := loadScopedSessions(cmd)
-			if err != nil {
-				return err
-			}
-
-			// Load all sessions for actual deletion
-			filePath := filePathFn()
-			allSessions, err := Load(filePath)
 			if err != nil {
 				return err
 			}
@@ -96,9 +95,9 @@ func rmCmd() *cobra.Command {
 				})
 			}
 
-			// Perform deletion
+			// Soft-delete: mark as deleted, don't remove
 			for _, t := range targets {
-				allSessions = RemoveForProvider(allSessions, t.Provider, t.Name)
+				allSessions = SoftDeleteForProvider(allSessions, t.Provider, t.Name)
 			}
 
 			if err := Save(filePath, allSessions); err != nil {

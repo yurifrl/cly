@@ -3,6 +3,7 @@ package agentsession
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/list"
@@ -23,13 +24,9 @@ func (i tuiItem) FilterValue() string { return i.entry.Name }
 func (i tuiItem) headline() string {
 	sep := dimStyle.Render(" · ")
 	parts := []string{}
-	if effectiveProvider(i.entry) != "" {
-		parts = append(parts, providerTag(i.entry.Provider))
-	}
 	if !i.entry.SavedAt.IsZero() {
 		parts = append(parts, dateStyle.Render(i.entry.SavedAt.Format("2006-01-02 15:04")))
 	}
-	parts = append(parts, idStyle.Render(i.entry.ID))
 
 	name := i.entry.Name
 	if effectiveProvider(i.entry) == "pi" && !i.active {
@@ -88,6 +85,7 @@ type tuiModel struct {
 	provider  Provider
 	message   string // status message shown briefly
 	activeIDs map[string]bool // active pi session IDs
+	pathScope string // directory scope (empty = all)
 }
 
 func (m tuiModel) Init() tea.Cmd { return nil }
@@ -158,14 +156,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list.SetItems(items)
 			return m, nil
 
-		case "d", "D": // delete selected
-			count := m.selectedCount()
-			if count == 0 {
-				m.message = "No sessions selected. Use space to select."
-				return m, nil
+		case "d", "D": // delete selected or current
+			if m.selectedCount() == 0 {
+				// No selection: soft-delete just the highlighted item
+				if i, ok := m.list.SelectedItem().(tuiItem); ok {
+					m.performDeleteEntries([]Entry{i.entry})
+				}
+			} else {
+				m.performDelete()
 			}
-			m.mode = tuiModeConfirmDelete
-			m.message = fmt.Sprintf("Delete %d session(s)? (y/n)", count)
 			return m, nil
 
 		case "e": // edit selected item
@@ -206,7 +205,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshList()
 			return m, nil
 
-		case "y": // yolo toggle
+		case "y": // copy ID to clipboard
+			if i, ok := m.list.SelectedItem().(tuiItem); ok && i.entry.ID != "" {
+				if err := copyToClipboard(i.entry.ID); err != nil {
+					m.message = "Error copying: " + err.Error()
+				} else {
+					m.message = "Copied ID: " + i.entry.ID
+				}
+			}
+			return m, nil
+
+		case "Y": // yolo toggle
 			if m.allowYolo {
 				m.yolo = !m.yolo
 			}
@@ -227,18 +236,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *tuiModel) performDelete() {
+	var entries []Entry
+	for _, item := range m.list.Items() {
+		if ti, ok := item.(tuiItem); ok && ti.selected {
+			entries = append(entries, ti.entry)
+		}
+	}
+	m.performDeleteEntries(entries)
+}
+
+func (m *tuiModel) performDeleteEntries(entries []Entry) {
 	allSessions, err := Load(m.filePath)
 	if err != nil {
 		m.message = "Error: " + err.Error()
 		return
 	}
 
-	deleted := 0
-	for _, item := range m.list.Items() {
-		if ti, ok := item.(tuiItem); ok && ti.selected {
-			allSessions = RemoveForProvider(allSessions, effectiveProvider(ti.entry), ti.entry.Name)
-			deleted++
-		}
+	for _, e := range entries {
+		allSessions = SoftDeleteForProvider(allSessions, effectiveProvider(e), e.Name)
 	}
 
 	if err := Save(m.filePath, allSessions); err != nil {
@@ -248,17 +263,20 @@ func (m *tuiModel) performDelete() {
 
 	m.sessions = allSessions
 	m.refreshList()
-	m.message = fmt.Sprintf("Deleted %d session(s)", deleted)
+	m.message = fmt.Sprintf("Deleted %d session(s)", len(entries))
 }
 
 func (m *tuiModel) refreshList() {
-	providerFilter := m.provider.Name
 	sessions := m.sessions
+	if m.pathScope != "" {
+		sessions = filterByPath(sessions, m.pathScope)
+	}
+	providerFilter := m.provider.Name
 	if providerFilter != "all" {
 		sessions = filterByProvider(sessions, providerFilter)
 	}
 
-	entries := sortedEntries(sessions, m.order)
+	entries := sortedEntries(filterDeleted(sessions, false), m.order)
 	items := make([]list.Item, 0, len(entries))
 	for _, e := range entries {
 		if e.Name == "" {
@@ -285,16 +303,27 @@ func (m tuiModel) View() tea.View {
 	// Detail box for selected item
 	if i, ok := m.list.SelectedItem().(tuiItem); ok {
 		e := i.entry
+		desc := e.Description
+		if desc == "" {
+			desc = "-"
+		}
 		lines := []string{
 			dimStyle.Render("🤖 " + effectiveProvider(e)),
+			dimStyle.Render("🆔 " + e.ID),
 			dimStyle.Render("📁 " + shortenPath(e.Path)),
+			dimStyle.Render("📝 " + desc),
 		}
-		if e.Description != "" {
-			lines = append(lines, dimStyle.Render("📝 "+e.Description))
-		}
-		if len(e.Meta) > 0 {
+		if len(e.Meta) == 0 {
+			lines = append(lines, dimStyle.Render("🏷️  -"))
+		} else {
+			first := true
 			for k, v := range e.Meta {
-				lines = append(lines, dimStyle.Render(fmt.Sprintf("   %s=%s", k, v)))
+				if first {
+					lines = append(lines, dimStyle.Render(fmt.Sprintf("🏷️  %s=%s", k, v)))
+					first = false
+				} else {
+					lines = append(lines, dimStyle.Render(fmt.Sprintf("   %s=%s", k, v)))
+				}
 			}
 		}
 		b.WriteString(footerBoxStyle.Render(strings.Join(lines, "\n")))
@@ -326,12 +355,13 @@ func (m tuiModel) View() tea.View {
 		"s: " + m.order.Label(),
 		"/: filter",
 	}
+	helpParts = append(helpParts, "y: copy id")
 	if m.allowYolo {
 		yoloStatus := "off"
 		if m.yolo {
 			yoloStatus = yoloOnStyle.Render("ON")
 		}
-		helpParts = append(helpParts, "y: yolo "+yoloStatus)
+		helpParts = append(helpParts, "Y: yolo "+yoloStatus)
 	}
 	helpParts = append(helpParts, "q: quit")
 	b.WriteString(tuiHelpBarStyle.Render(strings.Join(helpParts, "  •  ")))
@@ -360,11 +390,21 @@ func runTUI(cmd *cobra.Command) error {
 		return nil
 	}
 
+	// Determine path scope for refreshList
+	var pathScope string
+	all, _ := cmd.Flags().GetBool("all")
+	directory, _ := cmd.Flags().GetString("directory")
+	if directory != "" {
+		pathScope = directory
+	} else if !all {
+		pathScope, _ = os.Getwd()
+	}
+
 	filePath := filePathFn()
 	providerFilter := providerFilterFromCmd(cmd)
 	providerName := providerFilter
 	if providerName == "" || providerName == "all" {
-		providerName = defaultProvider
+		providerName = defaultProvider()
 	}
 	provider, err := providerByName(providerName)
 	if err != nil {
@@ -400,6 +440,7 @@ func runTUI(cmd *cobra.Command) error {
 		filePath:  filePath,
 		provider:  provider,
 		activeIDs: activeIDs,
+		pathScope: pathScope,
 	}
 
 	p := tea.NewProgram(model)
