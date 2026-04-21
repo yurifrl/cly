@@ -327,7 +327,7 @@ func TestValidatePlan_Basic(t *testing.T) {
 		},
 	}
 
-	plan, err := ValidatePlan(raw, cs)
+	plan, err := ValidatePlan(raw, cs, false)
 	require.NoError(t, err)
 	require.Len(t, plan.Groups, 2)
 	assert.Equal(t, "feat: add b", plan.Groups[0].Title)
@@ -347,7 +347,7 @@ func TestValidatePlan_Dedup(t *testing.T) {
 		},
 	}
 
-	plan, err := ValidatePlan(raw, cs)
+	plan, err := ValidatePlan(raw, cs, false)
 	require.NoError(t, err)
 	// g2 becomes empty after dedup and gets dropped
 	assert.Len(t, plan.Groups, 1)
@@ -368,7 +368,7 @@ func TestValidatePlan_UncoveredFiles(t *testing.T) {
 		},
 	}
 
-	plan, err := ValidatePlan(raw, cs)
+	plan, err := ValidatePlan(raw, cs, false)
 	require.NoError(t, err)
 	// b.go should be auto-assigned to g1 (same pkg/foo prefix)
 	assert.Len(t, plan.Groups, 1)
@@ -379,7 +379,7 @@ func TestValidatePlan_Empty(t *testing.T) {
 	cs := &Changeset{Files: []FileChange{{Path: "a.go", Status: StatusModified}}}
 	raw := &RawPlan{Groups: []RawGroup{}}
 
-	_, err := ValidatePlan(raw, cs)
+	_, err := ValidatePlan(raw, cs, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "empty plan")
 }
@@ -396,7 +396,7 @@ func TestValidatePlan_RenameResolution(t *testing.T) {
 		},
 	}
 
-	plan, err := ValidatePlan(raw, cs)
+	plan, err := ValidatePlan(raw, cs, false)
 	require.NoError(t, err)
 	require.Len(t, plan.Groups, 1)
 	assert.Equal(t, "new.go", plan.Groups[0].Files[0].Path)
@@ -405,7 +405,7 @@ func TestValidatePlan_RenameResolution(t *testing.T) {
 
 func TestValidatePlan_NilPlan(t *testing.T) {
 	cs := &Changeset{Files: []FileChange{{Path: "a.go", Status: StatusModified}}}
-	_, err := ValidatePlan(nil, cs)
+	_, err := ValidatePlan(nil, cs, false)
 	assert.Error(t, err)
 }
 

@@ -30,7 +30,7 @@ type CommitFile struct {
 }
 
 // ValidatePlan validates a raw LLM plan against the changeset and auto-heals issues.
-func ValidatePlan(raw *RawPlan, cs *Changeset) (*CommitPlan, error) {
+func ValidatePlan(raw *RawPlan, cs *Changeset, skipAutoHeal bool) (*CommitPlan, error) {
 	if raw == nil || len(raw.Groups) == 0 {
 		return nil, fmt.Errorf("empty plan")
 	}
@@ -94,7 +94,8 @@ func ValidatePlan(raw *RawPlan, cs *Changeset) (*CommitPlan, error) {
 		})
 	}
 
-	// Auto-heal: assign uncovered files
+	// Auto-heal: assign uncovered files (skip when user provided custom prompt)
+	if !skipAutoHeal {
 	for i := range cs.Files {
 		f := &cs.Files[i]
 		if seen[f.Path] {
@@ -116,6 +117,7 @@ func ValidatePlan(raw *RawPlan, cs *Changeset) (*CommitPlan, error) {
 			})
 			seen[f.Path] = true
 		}
+	}
 	}
 
 	if len(groups) == 0 {

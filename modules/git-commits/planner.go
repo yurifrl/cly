@@ -23,7 +23,8 @@ GROUPING RULES (priority order):
 5. Different types (feat vs fix vs chore vs refactor vs docs) = separate groups
 
 HARD CONSTRAINTS:
-- Every file MUST appear in exactly one group UNLESS additional instructions say to exclude/ignore it (excluded files should be omitted entirely)
+- Every file should appear in exactly one group (unless user instructions say otherwise)
+- If user instructions say to ignore/skip/exclude files or directories, OMIT those files entirely from the output — do not include them in any group
 - Each group gets a conventional commit message (feat:, fix:, chore:, refactor:, docs:, test:, style:, build:, ci:, perf:)
 - Prefer fewer groups (2-5) over many tiny ones
 - Group titles must be concise conventional commit messages
@@ -79,9 +80,6 @@ func PlanSplit(ctx context.Context, batches []Batch, client llm.Client, cfg Plan
 	if cfg.Strategy == StrategyLine {
 		prompt = lineSystemPrompt
 	}
-	if cfg.CustomPrompt != "" {
-		prompt += "\n\nADDITIONAL INSTRUCTIONS:\n" + cfg.CustomPrompt
-	}
 
 	type batchResult struct {
 		plan *RawPlan
@@ -103,6 +101,9 @@ func PlanSplit(ctx context.Context, batches []Batch, client llm.Client, cfg Plan
 			if b.TotalCount > 1 {
 				userMsg = fmt.Sprintf("Batch %d of %d — plan groups for ONLY these files:\n\n%s",
 					b.Index+1, b.TotalCount, b.Text)
+			}
+			if cfg.CustomPrompt != "" {
+				userMsg = fmt.Sprintf("<user_instructions>\n%s\n</user_instructions>\n\n%s", cfg.CustomPrompt, userMsg)
 			}
 
 			resp, err := client.Complete(batchCtx, prompt, []llm.Message{

@@ -120,10 +120,11 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 
 		// Step 4: Validate and heal
 		var validateErr error
+		skipHeal := customPrompt != ""
 		if strategy == StrategyLine {
 			plan, validateErr = ValidateLinePlan(raw, cs)
 		} else {
-			plan, validateErr = ValidatePlan(raw, cs)
+			plan, validateErr = ValidatePlan(raw, cs, skipHeal)
 		}
 		if validateErr != nil {
 			fmt.Println(style.YellowStyle.Render("⚠️  Plan validation failed, falling back to single commit"))
@@ -131,7 +132,7 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 			if err != nil {
 				return fmt.Errorf("fallback also failed: %w", err)
 			}
-			plan, err = ValidatePlan(raw, cs)
+			plan, err = ValidatePlan(raw, cs, skipHeal)
 			if err != nil {
 				return fmt.Errorf("even fallback plan failed validation: %w", err)
 			}
@@ -218,9 +219,9 @@ execute:
 
 // resolveLLMConfig builds LLM config from cly config or env defaults.
 func resolveLLMConfig(cfg *config.Config) llm.Config {
-	// Default: OpenAI (override via modules.git-commits.ai.provider in config)
+	// Default: Anthropic (override via modules.git-commits.ai.provider in config)
 	llmCfg := llm.Config{
-		Provider: llm.ProviderOpenAI,
+		Provider: llm.ProviderAnthropic,
 	}
 
 	if cfg != nil {
