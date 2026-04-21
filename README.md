@@ -75,6 +75,15 @@ cly demo file-picker      # File picker
 | `scraper` | Web scraping with browser automation |
 | `scraper browser` | Launch persistent browser for scraping |
 | `scraper aliexpress` | Scrape AliExpress product data |
+| `skills install [name...]` | Install cly-bundled AI agent skills (default `~/.agents/skills/`). Cherry-pick by name; default is all. |
+| `pi extensions install` | Install cly-bundled pi extensions (default `~/.pi/agent/extensions/`). Currently ships `pi-cly` with a `/save` slash command. |
+
+Dotfiles integration:
+
+```
+@once cly-skills -- cly skills install
+@once cly-pi-ext -- cly pi extensions install
+```
 
 ### Demos (48 Total)
 

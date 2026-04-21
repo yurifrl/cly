@@ -29,6 +29,9 @@ import (
 	"github.com/yurifrl/cly/modules/uuid"
 	"github.com/yurifrl/cly/modules/zl"
 	"github.com/yurifrl/cly/modules/oi"
+	pianon "github.com/yurifrl/cly/modules/pi-anon"
+	clypi "github.com/yurifrl/cly/modules/pi"
+	"github.com/yurifrl/cly/modules/skills"
 	"github.com/yurifrl/cly/modules/zs"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
@@ -90,6 +93,9 @@ func init() {
 	update.Register(RootCmd)
 	zl.Register(RootCmd)
 	oi.Register(RootCmd)
+	pianon.Register(RootCmd)
+	clypi.Register(RootCmd)
+	skills.Register(RootCmd)
 	zs.Register(RootCmd)
 	cmd.Register(RootCmd)
 }
