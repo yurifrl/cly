@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	itemStyle         = lipgloss.NewStyle()
-	selectedItemStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
+	itemStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
+	selectedItemStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	dateStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("72"))
 	idStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))

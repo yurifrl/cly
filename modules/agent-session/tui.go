@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
@@ -22,17 +23,7 @@ type tuiItem struct {
 func (i tuiItem) FilterValue() string { return i.entry.Name }
 
 func (i tuiItem) headline() string {
-	sep := dimStyle.Render(" · ")
-	parts := []string{}
-	if !i.entry.SavedAt.IsZero() {
-		parts = append(parts, dateStyle.Render(i.entry.SavedAt.Format("2006-01-02 15:04")))
-	}
-
-	name := i.entry.Name
-	if effectiveProvider(i.entry) == "pi" && !i.active {
-		name = mutedNameStyle.Render(name)
-	}
-	return fmt.Sprintf("%s  %s", name, strings.Join(parts, sep))
+	return i.entry.Name
 }
 
 var (
@@ -58,10 +49,13 @@ func (d tuiDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 		checkbox = tuiSelectedMark.Render("●")
 	}
 
+	name := i.headline()
 	if index == m.Index() {
-		fmt.Fprint(w, selectedItemStyle.Render(fmt.Sprintf("> %s %s", checkbox, i.headline())))
+		name = selectedItemStyle.Render(name)
+		fmt.Fprint(w, fmt.Sprintf("> %s %s", checkbox, name))
 	} else {
-		fmt.Fprint(w, itemStyle.Render(fmt.Sprintf("  %s %s", checkbox, i.headline())))
+		name = itemStyle.Render(name)
+		fmt.Fprint(w, fmt.Sprintf("  %s %s", checkbox, name))
 	}
 }
 
@@ -70,6 +64,7 @@ type tuiMode int
 const (
 	tuiModeNormal tuiMode = iota
 	tuiModeConfirmDelete
+	tuiModeRename
 )
 
 type tuiModel struct {
@@ -86,6 +81,8 @@ type tuiModel struct {
 	message   string // status message shown briefly
 	activeIDs map[string]bool // active pi session IDs
 	pathScope string // directory scope (empty = all)
+	renameInput textinput.Model
+	renameEntry *Entry // entry being renamed
 }
 
 func (m tuiModel) Init() tea.Cmd { return nil }
@@ -119,6 +116,29 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		}
+
+		// In rename mode, handle text input
+		if m.mode == tuiModeRename {
+			switch msg.String() {
+			case "enter":
+				newName := strings.TrimSpace(m.renameInput.Value())
+				if newName != "" && m.renameEntry != nil {
+					m.performRename(*m.renameEntry, newName)
+				}
+				m.mode = tuiModeNormal
+				m.renameEntry = nil
+				return m, nil
+			case "esc":
+				m.mode = tuiModeNormal
+				m.message = ""
+				m.renameEntry = nil
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.renameInput, cmd = m.renameInput.Update(msg)
+				return m, cmd
+			}
 		}
 
 		// In filtering mode, let the list handle it
@@ -200,6 +220,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case "r": // rename current item inline
+			if i, ok := m.list.SelectedItem().(tuiItem); ok {
+				entry := i.entry
+				m.renameInput = textinput.New()
+				m.renameInput.SetValue(entry.Name)
+				m.renameInput.Focus()
+				m.renameEntry = &entry
+				m.mode = tuiModeRename
+				m.message = "Rename (enter to confirm, esc to cancel)"
+			}
+			return m, nil
+
 		case "s": // sort
 			m.order = m.order.Next()
 			m.refreshList()
@@ -266,6 +298,30 @@ func (m *tuiModel) performDeleteEntries(entries []Entry) {
 	m.message = fmt.Sprintf("Deleted %d session(s)", len(entries))
 }
 
+func (m *tuiModel) performRename(entry Entry, newName string) {
+	allSessions, err := Load(m.filePath)
+	if err != nil {
+		m.message = "Error: " + err.Error()
+		return
+	}
+
+	oldName := entry.Name
+	if oldName != newName {
+		allSessions = RemoveForProvider(allSessions, effectiveProvider(entry), oldName)
+	}
+	entry.Name = newName
+	upsertEntry(allSessions, entry)
+
+	if err := Save(m.filePath, allSessions); err != nil {
+		m.message = "Error saving: " + err.Error()
+		return
+	}
+
+	m.sessions = allSessions
+	m.refreshList()
+	m.message = fmt.Sprintf("Renamed %q → %q", oldName, newName)
+}
+
 func (m *tuiModel) refreshList() {
 	sessions := m.sessions
 	if m.pathScope != "" {
@@ -311,6 +367,7 @@ func (m tuiModel) View() tea.View {
 			dimStyle.Render("🤖 " + effectiveProvider(e)),
 			dimStyle.Render("🆔 " + e.ID),
 			dimStyle.Render("📁 " + shortenPath(e.Path)),
+			dimStyle.Render("📅 " + formatSavedAt(e.SavedAt)),
 			dimStyle.Render("📝 " + desc),
 		}
 		if len(e.Meta) == 0 {
@@ -331,7 +388,10 @@ func (m tuiModel) View() tea.View {
 	}
 
 	// Status message or confirm prompt
-	if m.message != "" {
+	if m.mode == tuiModeRename {
+		b.WriteString("  " + dimStyle.Render(m.message) + "\n")
+		b.WriteString("  " + m.renameInput.View() + "\n")
+	} else if m.message != "" {
 		if m.mode == tuiModeConfirmDelete {
 			b.WriteString("  " + tuiConfirmStyle.Render(m.message))
 		} else {
@@ -352,6 +412,7 @@ func (m tuiModel) View() tea.View {
 		"a: all",
 		fmt.Sprintf("d: delete (%d)", count),
 		"e: edit",
+		"r: rename",
 		"s: " + m.order.Label(),
 		"/: filter",
 	}
