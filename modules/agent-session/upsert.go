@@ -42,6 +42,7 @@ func upsertCmd() *cobra.Command {
 
 			// Name from positional or flag
 			name := flagName
+			nameFromFlag := flagName != ""
 			if name == "" && len(args) > 1 {
 				name = args[1]
 			}
@@ -90,8 +91,8 @@ func upsertCmd() *cobra.Command {
 				// Update existing
 				entry.ID = id
 				if name != "" {
-					// Only update name if entry has no name yet, or --override is set
-					if entry.Name == "" || flagOverride {
+					// Positional name always updates; --name flag requires --override or empty name
+					if !nameFromFlag || entry.Name == "" || flagOverride {
 						entry.Name = name
 					}
 				}
@@ -103,6 +104,7 @@ func upsertCmd() *cobra.Command {
 				entry.Description = desc
 			}
 			entry.SavedAt = time.Now()
+			entry.DeletedAt = nil // clear soft-delete on save
 
 			// Merge meta
 			if len(meta) > 0 {
