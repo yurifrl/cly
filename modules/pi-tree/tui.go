@@ -781,7 +781,7 @@ func (m tuiModel) View() tea.View {
 
 		for si, s := range ws.Sessions {
 			isCur := m.cur.ws == wi && m.cur.sess == si
-			sessOpen := m.openSess[s.SessionID]
+			sessOpen := s.IsOpen
 
 			branch := "├── "
 			if si == len(ws.Sessions)-1 {
