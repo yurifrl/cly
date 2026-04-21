@@ -125,4 +125,48 @@ invalid line without arrow
 		require.NoError(t, err)
 		assert.Len(t, cfg.Mappings, 1)
 	})
+
+	t.Run("expands glob pattern to individual file mappings", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		// Create source files
+		binDir := filepath.Join(tmpDir, "home", ".local", "bin")
+		require.NoError(t, os.MkdirAll(binDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(binDir, "script-a"), []byte("#!/bin/sh"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(binDir, "script-b"), []byte("#!/bin/sh"), 0755))
+		// Create a subdirectory too
+		require.NoError(t, os.MkdirAll(filepath.Join(binDir, "subdir"), 0755))
+
+		content := `./home/.local/bin/* -> ~/.local/bin/`
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+		cfg, err := ParseConfig(configPath)
+		require.NoError(t, err)
+		assert.Len(t, cfg.Mappings, 3) // script-a, script-b, subdir
+
+		// Check individual mappings
+		home, _ := os.UserHomeDir()
+		names := map[string]bool{}
+		for _, m := range cfg.Mappings {
+			name := filepath.Base(m.Source)
+			names[name] = true
+			assert.Equal(t, filepath.Join(home, ".local", "bin", name), m.Destination)
+		}
+		assert.True(t, names["script-a"])
+		assert.True(t, names["script-b"])
+		assert.True(t, names["subdir"])
+	})
+
+	t.Run("glob with no matches adds warning", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		content := `./nonexistent/* -> ~/.local/bin/`
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+		cfg, err := ParseConfig(configPath)
+		require.NoError(t, err)
+		assert.Len(t, cfg.Mappings, 0)
+		assert.Len(t, cfg.Errors, 1)
+		assert.Contains(t, cfg.Errors[0], "glob pattern matched no files")
+	})
 }

@@ -250,6 +250,30 @@ func parseMappingLine(cfg *Config, line string, lineNum int, baseDir string) err
 	source = resolvePath(source, baseDir)
 	destination = expandTilde(destination)
 
+	// Glob support: ./path/* -> ~/dest/ expands to individual file symlinks
+	if strings.Contains(source, "*") {
+		matches, err := filepath.Glob(source)
+		if err != nil {
+			return fmt.Errorf("invalid glob pattern: %w", err)
+		}
+		if len(matches) == 0 {
+			cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: glob pattern matched no files: %s", lineNum, source))
+			return nil
+		}
+		for _, match := range matches {
+			name := filepath.Base(match)
+			info, statErr := os.Stat(match)
+			matchIsDir := statErr == nil && info.IsDir()
+			cfg.Mappings = append(cfg.Mappings, Mapping{
+				Source:      match,
+				Destination: filepath.Join(destination, name),
+				IsDir:       matchIsDir,
+				LineNum:     lineNum,
+			})
+		}
+		return nil
+	}
+
 	cfg.Mappings = append(cfg.Mappings, Mapping{
 		Source:      source,
 		Destination: destination,
