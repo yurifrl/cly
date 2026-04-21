@@ -14,6 +14,7 @@ var (
 	verboseFlag   bool
 	noItFlag      bool
 	forceFlag     bool
+	upgradeFlag   bool
 	noUpdateFlag  bool
 	tapsFlag      bool
 	noCleanupFlag bool
@@ -78,6 +79,7 @@ Types:
 	cmd.Flags().BoolVar(&verboseFlag, "verbose", false, "show detailed output")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "skip interactive editor mode, just sync")
 	cmd.Flags().BoolVar(&forceFlag, "force", false, "force reinstall packages even if already installed")
+	cmd.Flags().BoolVar(&upgradeFlag, "upgrade", false, "force upgrade packages to latest (js only)")
 	cmd.Flags().BoolVar(&noUpdateFlag, "no-update", false, "skip brew upgrade (brew only)")
 	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "install taps first (brew only)")
 	cmd.Flags().BoolVar(&noCleanupFlag, "no-cleanup", false, "skip cleanup after sync")

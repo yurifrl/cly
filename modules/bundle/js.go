@@ -152,7 +152,7 @@ func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate b
 		}
 	}
 
-	// Find packages to install/upgrade
+	// Find packages to install (missing or version mismatch)
 	var toInstall []string
 	for _, pkg := range desired {
 		base := extractJsBasePkg(pkg)
@@ -181,6 +181,20 @@ func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate b
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("pnpm add failed: %s", string(output))
+		}
+	}
+
+	// --upgrade: bump all global packages to newest versions
+	if upgradeFlag {
+		printGreen("Upgrading global packages to latest...")
+		cmd := exec.Command("pnpm", "update", "-g", "--latest")
+		if verbose {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("pnpm update failed: %s", string(output))
 		}
 	}
 
