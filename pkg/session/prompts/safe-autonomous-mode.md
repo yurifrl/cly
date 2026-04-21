@@ -1,6 +1,6 @@
 # Safe Autonomous Mode Preprompt
 
-This preprompt enables `--dangerously-skip-permissions` with safety constraints for the recorder repository.
+This preprompt enables `--dangerously-skip-permissions` with safety constraints for the current repository.
 
 ## Core Principle: Clean State Operation
 
@@ -28,7 +28,7 @@ This preprompt enables `--dangerously-skip-permissions` with safety constraints 
 
 ### CANNOT EVER
 
-1. **Leave repository directory**: `/Users/yuri/Workdir/Yuri/recorder`
+1. **Leave repository directory**: The root of the current git repository
    - No operations in parent directories
    - No operations in sibling directories
    - No operations in home directory (except reading config)
@@ -50,7 +50,7 @@ This preprompt enables `--dangerously-skip-permissions` with safety constraints 
 
 3. **All git operations** (except push):
    - Create commits (never `--amend`)
-   - Create branches (`yurifrl/*` prefix)
+   - Create branches (use a personal prefix, e.g. `<username>/*`)
    - Checkout branches
    - View history, diffs, logs
 
@@ -125,7 +125,7 @@ git reset HEAD~1  # Ask user first
    - Merging branches
 
 2. **Operations outside repo**:
-   - Any filesystem operation outside `/Users/yuri/Workdir/Yuri/recorder`
+   - Any filesystem operation outside the repository root
    - Installing global tools
    - Modifying system files
 
@@ -149,13 +149,13 @@ Session starts:
   - session_modified_files = []
 
 Create new test:
-  - Write internal/recorder_test.go
-  - session_created_files = ["internal/recorder_test.go"]
+  - Write internal/example_test.go
+  - session_created_files = ["internal/example_test.go"]
   - Can edit/delete freely
 
 Edit existing file:
-  - Edit internal/recorder.go (committed in git)
-  - session_modified_files = ["internal/recorder.go"]
+  - Edit internal/example.go (committed in git)
+  - session_modified_files = ["internal/example.go"]
   - Can edit/delete freely (recoverable via git restore)
 
 User asks to delete uncommitted file from yesterday:
@@ -172,17 +172,17 @@ User asks to delete uncommitted file from yesterday:
 # Startup check passed, repo is clean
 
 # Delete committed file
-rm internal/old_recorder.go  # In git history, recoverable
+rm internal/old_module.go  # In git history, recoverable
 
 # Edit committed file
-Edit file_path="internal/recorder.go" old_string="old" new_string="new"
+Edit file_path="internal/example.go" old_string="old" new_string="new"
 
 # Create and edit new file
 Write file_path="internal/new_test.go" content="..."
 Edit file_path="internal/new_test.go" old_string="x" new_string="y"
 
 # Commit everything
-git add . && git commit -m "refactor: update recorder"
+git add . && git commit -m "refactor: update module"
 ```
 
 ### ⛔ BLOCKED AT STARTUP
@@ -190,12 +190,12 @@ git add . && git commit -m "refactor: update recorder"
 ```bash
 # git status shows uncommitted changes
 git status --porcelain
-# Output: M internal/recorder.go
+# Output: M internal/example.go
 
 # RESPONSE:
 "Repository has uncommitted changes. Choose one:
 A) Commit these changes first: git add . && git commit -m '...'
-B) Create worktree: git worktree add .worktrees/<name> -b yurifrl/feat/<name>
+B) Create worktree: git worktree add .worktrees/<name> -b <username>/feat/<name>
 
 I cannot proceed until repo is clean."
 ```
@@ -204,8 +204,8 @@ I cannot proceed until repo is clean."
 
 ```bash
 # Large refactoring
-"I need to rename the core Record() function across 8 files. This affects:
-- internal/recorder.go
+"I need to rename a core function across 8 files. This affects:
+- internal/example.go
 - internal/state.go
 - cmd/cli.go
 - (5 more files)
@@ -217,5 +217,5 @@ Proceed with this refactoring?"
 
 1. **At startup**: Check git status. If not clean → stop and ask user to commit or create worktree
 2. **During operation**: Track what you create. Everything else is committed = recoverable
-3. **Boundaries**: Never leave `/Users/yuri/Workdir/Yuri/recorder`
+3. **Boundaries**: Never leave the repository root
 4. **Simple rule**: Committed files + your own creations = full autonomy. Everything else = forbidden.
