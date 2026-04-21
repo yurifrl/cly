@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
+	itemStyle         = lipgloss.NewStyle()
+	selectedItemStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
 	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	dateStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("72"))
 	idStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
@@ -73,7 +73,7 @@ func (d simpleDelegate) Render(w io.Writer, m list.Model, index int, listItem li
 	if index == m.Index() {
 		fmt.Fprint(w, selectedItemStyle.Render("> "+i.headline()))
 	} else {
-		fmt.Fprint(w, itemStyle.Render(i.headline()))
+		fmt.Fprint(w, itemStyle.Render("  "+i.headline()))
 	}
 }
 

@@ -22,6 +22,7 @@ func Register(parent *cobra.Command) {
 
 	cmd.PersistentFlags().StringP(providerFlag, "p", "all", "Agent provider filter (e.g., claude, pi, all)")
 	cmd.PersistentFlags().BoolP("all", "a", false, "Show all sessions (not just current directory)")
+	cmd.PersistentFlags().Bool("deleted", false, "Include soft-deleted sessions")
 	cmd.PersistentFlags().String("directory", "", "Filter sessions by directory path")
 	_ = cmd.RegisterFlagCompletionFunc(providerFlag, func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return availableProviders(), cobra.ShellCompDirectiveNoFileComp
@@ -29,6 +30,7 @@ func Register(parent *cobra.Command) {
 
 	cmd.AddCommand(lsCmd())
 	cmd.AddCommand(rmCmd())
+	cmd.AddCommand(cleanupCmd())
 	cmd.AddCommand(upsertCmd())
 	cmd.AddCommand(resumeCmd())
 	cmd.AddCommand(editCmd())
@@ -44,6 +46,10 @@ func loadScopedSessions(cmd *cobra.Command) (Sessions, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Soft-delete filter: exclude deleted unless --deleted flag is set
+	showDeleted, _ := cmd.Flags().GetBool("deleted")
+	sessions = filterDeleted(sessions, showDeleted)
 
 	// Provider filter
 	providerFilter := providerFilterFromCmd(cmd)
