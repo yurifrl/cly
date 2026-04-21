@@ -88,8 +88,17 @@ func Register(parent *cobra.Command) {
 	}
 	addFlags(alias)
 
+	hAlias := &cobra.Command{
+		Use:               "h [section]",
+		Short:             "Alias for helpy",
+		RunE:              run,
+		ValidArgsFunction: headerCompletions,
+	}
+	addFlags(hAlias)
+
 	parent.AddCommand(cmd)
 	parent.AddCommand(alias)
+	parent.AddCommand(hAlias)
 }
 
 // headerCompletions returns HELP.md headers as slug completions.
