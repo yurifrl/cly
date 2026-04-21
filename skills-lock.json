@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "github-cleanup": {
+      "source": "spm1001/trousse",
+      "sourceType": "github",
+      "computedHash": "dc17ea615b289c5af7d4fa3146495e3431b213d30385183eae4211ed14d10fc5"
+    },
+    "open-source-best-practices": {
+      "source": "AndreaGriffiths11/open-source-best-practices",
+      "sourceType": "github",
+      "computedHash": "9e848b83e83be6aaf28534c89cb5b3ecfab27e0e0ac284bd95569ab487601139"
+    }
+  }
+}
