@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ANON_HOME="${PI_ANON_HOME:-$HOME/.pi-anon}"
+WORDLIST="/usr/share/dict/words"
+
+# Generate 3-word slug like monkey-car-whale
+generate_name() {
+  grep -E '^[a-z]{3,6}$' "$WORDLIST" | sort -R | head -3 | paste -sd '-'
+}
+
+# Generate a short 3-letter word
+generate_word() {
+  grep -E '^[a-z]{3}$' "$WORDLIST" | sort -R | head -1
+}
+
+usage() {
+  cat <<EOF
+Usage: pi-anon [SESSION_NAME]
+
+Manage anonymous pi sessions.
+
+  pi-anon                Create a new session (auto-generated name)
+  pi-anon monkey-car-whale   Resume or create session with that name
+  pi-anon --list         List all sessions
+
+Session config stored in ~/.pi-anon/<name>/.anon.json
+EOF
+  exit 0
+}
+
+list_sessions() {
+  if [[ ! -d "$ANON_HOME" ]]; then
+    echo "No sessions yet."
+    exit 0
+  fi
+  for d in "$ANON_HOME"/*/; do
+    [[ -f "$d/.anon.json" ]] || continue
+    name=$(basename "$d")
+    ts=$(jq -r '.timestamp' "$d/.anon.json")
+    dirs=$(jq -r '.dirs | length' "$d/.anon.json")
+    echo "  $name  (created: $ts, dirs: $dirs)"
+  done
+}
+
+prompt_toggle() {
+  local label="$1" default="${2:-true}"
+  local yn
+  if [[ "$default" == "true" ]]; then
+    read -rp "  Enable $label? [Y/n] " yn
+    [[ "$yn" =~ ^[Nn] ]] && echo "false" || echo "true"
+  else
+    read -rp "  Enable $label? [y/N] " yn
+    [[ "$yn" =~ ^[Yy] ]] && echo "true" || echo "false"
+  fi
+}
+
+create_session() {
+  local name="$1"
+  local dir="$ANON_HOME/$name"
+  mkdir -p "$dir"
+
+  echo "🆕 New anonymous session: $name"
+  echo ""
+  echo "Configure what's active in this session:"
+
+  local skills extensions prompt_templates
+  skills=$(prompt_toggle "skills" "true")
+  extensions=$(prompt_toggle "extensions" "true")
+  prompt_templates=$(prompt_toggle "prompt templates" "true")
+
+  local word
+  word=$(generate_word)
+
+  jq -n \
+    --arg sid "$name" \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg word "$word" \
+    --arg cwd "$PWD" \
+    --argjson skills "$skills" \
+    --argjson extensions "$extensions" \
+    --argjson prompt_templates "$prompt_templates" \
+    '{
+      session_id: $sid,
+      timestamp: $ts,
+      word: $word,
+      dirs: [$cwd],
+      skills: $skills,
+      extensions: $extensions,
+      prompt_templates: $prompt_templates
+    }' > "$dir/.anon.json"
+
+  echo ""
+  echo "✅ Session ready: $dir"
+  echo "   Word: $word"
+  cat "$dir/.anon.json" | jq .
+}
+
+resume_session() {
+  local name="$1"
+  local dir="$ANON_HOME/$name"
+  local json="$dir/.anon.json"
+
+  # Add current dir if not already tracked
+  local updated
+  updated=$(jq --arg cwd "$PWD" '.dirs += [$cwd] | .dirs |= unique' "$json")
+  echo "$updated" > "$json"
+
+  echo "🔄 Resumed session: $name"
+  jq . "$json"
+}
+
+# --- Main ---
+
+[[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && usage
+[[ "${1:-}" == "--list" || "${1:-}" == "-l" ]] && { list_sessions; exit 0; }
+
+SESSION_NAME="${1:-$(generate_name)}"
+
+if [[ -f "$ANON_HOME/$SESSION_NAME/.anon.json" ]]; then
+  resume_session "$SESSION_NAME"
+else
+  create_session "$SESSION_NAME"
+fi
