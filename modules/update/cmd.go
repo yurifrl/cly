@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
+	"github.com/yurifrl/cly/modules/pi"
 )
 
 const (
@@ -25,8 +26,9 @@ const (
 )
 
 var (
-	remote   bool
-	bumpFlag string
+	remote      bool
+	bumpFlag    string
+	piNoExt     bool
 )
 
 func Register(parent *cobra.Command) {
@@ -47,6 +49,7 @@ Use --remote to download the latest GitHub release instead.`,
 	}
 
 	cmd.Flags().BoolVar(&remote, "remote", false, "Download latest release from GitHub instead of building locally")
+	cmd.Flags().BoolVar(&piNoExt, "pi-no-extension", false, "Skip installing bundled pi extensions after update")
 	cmd.Flags().StringVarP(&bumpFlag, "bump", "b", "", "Cut a real release tag: patch, minor, or major")
 	cmd.Flags().Lookup("bump").NoOptDefVal = "patch"
 
@@ -62,6 +65,20 @@ Use --remote to download the latest GitHub release instead.`,
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	if err := runUpdate(cmd); err != nil {
+		return err
+	}
+	if piNoExt {
+		return nil
+	}
+	fmt.Printf("%s Installing bundled pi extensions...\n", style.BlueStyle.Render("⚡"))
+	if err := pi.InstallExtensions("", false, cmd.OutOrStdout()); err != nil {
+		fmt.Printf("%s pi extensions install failed (non-fatal): %v\n", style.YellowStyle.Render("⚠️"), err)
+	}
+	return nil
+}
+
+func runUpdate(cmd *cobra.Command) error {
 	if remote {
 		return updateRemote(cmd)
 	}
