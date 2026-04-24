@@ -665,6 +665,40 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "no changes to save"
 			}
 
+		case "e":
+			// Export currently selected view (live or snapshot) as JSON
+			var tree []WorkspaceNode
+			var label string
+			if m.showHist && m.histIdx >= 0 && m.histIdx < len(m.snapshots) {
+				snap := m.snapshots[m.histIdx]
+				tree = snap.Tree
+				label = fmt.Sprintf("v%d", snap.Version)
+			} else if m.histIdx >= 0 && m.histIdx < len(m.snapshots) {
+				snap := m.snapshots[m.histIdx]
+				tree = snap.Tree
+				label = fmt.Sprintf("v%d", snap.Version)
+			} else {
+				tree = m.allNodes
+				label = "latest"
+			}
+			if len(tree) == 0 {
+				m.message = "nothing to export"
+				break
+			}
+			data, err := MarshalJSON(tree)
+			if err != nil {
+				m.message = fmt.Sprintf("export error: %v", err)
+				break
+			}
+			cwd, _ := os.Getwd()
+			fname := fmt.Sprintf("pi-tree-%s-%s.json", label, time.Now().Format("20060102-150405"))
+			out := filepath.Join(cwd, fname)
+			if err := os.WriteFile(out, data, 0o644); err != nil {
+				m.message = fmt.Sprintf("export error: %v", err)
+				break
+			}
+			m.message = fmt.Sprintf("exported %s (%d sessions) → %s", label, countSessions(tree), fname)
+
 		case "/":
 			m.filterMode = filterSearch
 			m.searchInput.Focus()
@@ -866,6 +900,7 @@ func (m tuiModel) View() tea.View {
 			"O: open & stay",
 			"/: search",
 			"s: save",
+			"e: export json",
 			"r: refresh",
 		}
 		helpParts = append(helpParts, "h: history")
