@@ -131,11 +131,12 @@ func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate b
 		return fmt.Errorf("failed to list installed packages: %w", err)
 	}
 
-	// Build desired map (name -> version)
+	// Build desired map (name -> version). Empty version = bare name (no "@"),
+	// which means "install once, only upgrade with --upgrade".
 	desiredMap := make(map[string]string)
 	for _, pkg := range desired {
 		base := extractJsBasePkg(pkg)
-		version := "latest"
+		version := ""
 		if len(pkg) > len(base)+1 {
 			version = pkg[len(base)+1:]
 		}
@@ -159,12 +160,21 @@ func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate b
 		desiredVer := desiredMap[base]
 		installedVer, exists := installed[base]
 
-		if !exists {
+		switch {
+		case !exists:
 			toInstall = append(toInstall, pkg)
-		} else if desiredVer != "latest" && installedVer != desiredVer {
-			// Version mismatch - upgrade/downgrade
+		case desiredVer == "":
+			// Bare name — installed, don't touch unless --upgrade or --force
+			if upgradeFlag || force {
+				toInstall = append(toInstall, pkg)
+			}
+		case !isLockedVersion(desiredVer):
+			// latest, alpha, beta, next, etc. — floating tag, always update
 			toInstall = append(toInstall, pkg)
-		} else if force {
+		case installedVer != desiredVer:
+			// Locked numeric version mismatch - upgrade/downgrade
+			toInstall = append(toInstall, pkg)
+		case force:
 			toInstall = append(toInstall, pkg)
 		}
 	}
@@ -200,6 +210,18 @@ func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate b
 
 	printGreen("\nDone!")
 	return nil
+}
+
+// isLockedVersion reports true if the version spec starts with a digit or
+// the standard semver prefixes used for exact/range locks (=, v). Floating
+// dist-tags like "latest", "alpha", "beta", "next" return false and are
+// always re-installed so they track upstream.
+func isLockedVersion(v string) bool {
+	if v == "" {
+		return false
+	}
+	c := v[0]
+	return (c >= '0' && c <= '9') || c == '=' || c == 'v' || c == '~' || c == '^'
 }
 
 // extractJsBasePkg extracts base package name from spec.
