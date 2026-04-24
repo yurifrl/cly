@@ -17,6 +17,7 @@ var (
 	yoloFlag     bool
 	strategyFlag string
 	promptFlag   string
+	ignoredFlag  bool
 )
 
 func Register(parent *cobra.Command) {
@@ -48,6 +49,7 @@ AI provider: %s (configure via modules.git-commits.ai in config)`,
 	cmd.Flags().BoolVar(&yoloFlag, "yolo", false, "Stage all, auto-confirm, push to current branch")
 	cmd.Flags().StringVarP(&strategyFlag, "strategy", "s", "file", "Split strategy: file (whole files) or line (hunk-level)")
 	cmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "Custom prompt to append to system prompt")
+	cmd.Flags().BoolVar(&ignoredFlag, "ignored", false, "Include files matching modules.git-commits.ignore patterns")
 
 	parent.AddCommand(cmd)
 }
@@ -62,6 +64,7 @@ func run(cmd *cobra.Command, args []string) error {
 		Prompt:   promptFlag,
 		Push:     yoloFlag,
 		Strategy: strategyFlag,
+		Ignored:  ignoredFlag,
 	})
 }
 

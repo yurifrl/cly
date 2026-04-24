@@ -42,6 +42,10 @@ modules:
       model: gpt-4o            # Leave empty for provider default
       # api_key: ""            # Or set OPENAI_API_KEY / ANTHROPIC_API_KEY env var
       # api_key_env: ""        # Custom env var name for API key
+    # Gitignore-style patterns. Files matching these are unstaged and
+    # skipped unless --ignored is passed. Leading '/' anchors to repo root.
+    ignore:
+      - "/.pi/"
   uuid:
     default_version: v4 # Options: v4 | v7
   demo:

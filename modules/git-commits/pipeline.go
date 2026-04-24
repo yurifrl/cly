@@ -22,6 +22,7 @@ type pipelineOpts struct {
 	Push     bool
 	Strategy string
 	Prompt   string
+	Ignored  bool
 }
 
 const (
@@ -48,6 +49,7 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	batchSize := defaultBatchSize
 	timeout := defaultTimeout
 	customPrompt := opts.Prompt
+	var ignorePatterns []string
 
 	cfg := config.Get()
 	if cfg != nil {
@@ -67,6 +69,24 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 					customPrompt = v
 				}
 			}
+			if ig, ok := mod["ignore"]; ok {
+				switch v := ig.(type) {
+				case []interface{}:
+					for _, item := range v {
+						if s, ok := item.(string); ok {
+							ignorePatterns = append(ignorePatterns, s)
+						}
+					}
+				case []string:
+					ignorePatterns = append(ignorePatterns, v...)
+				case string:
+					for _, s := range strings.Split(v, ",") {
+						if s = strings.TrimSpace(s); s != "" {
+							ignorePatterns = append(ignorePatterns, s)
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -84,6 +104,22 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 		return err
 	}
 	fmt.Printf("   Found %d file(s)\n", len(cs.Files))
+
+	if !opts.Ignored && len(ignorePatterns) > 0 {
+		removed, err := filterIgnored(cs, ignorePatterns)
+		if err != nil {
+			return err
+		}
+		if len(removed) > 0 {
+			fmt.Printf("   %s %d ignored file(s) (use --ignored to include):\n", style.YellowStyle.Render("⏭"), len(removed))
+			for _, p := range removed {
+				fmt.Printf("     - %s\n", p)
+			}
+			if len(cs.Files) == 0 {
+				return fmt.Errorf("no staged changes after applying ignore patterns")
+			}
+		}
+	}
 
 	// Step 2: Batch
 	var batches []Batch
