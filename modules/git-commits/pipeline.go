@@ -99,6 +99,10 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 
 	// Step 1: Analyze changeset
 	fmt.Printf("⏳ Analyzing changes... (AI: %s)\n", activeLLMSummary())
+	preStaged, err := stagedFiles()
+	if err != nil {
+		return fmt.Errorf("failed to inspect staged files: %w", err)
+	}
 	cs, err := GetChangeset(opts.All)
 	if err != nil {
 		return err
@@ -106,7 +110,7 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	fmt.Printf("   Found %d file(s)\n", len(cs.Files))
 
 	if !opts.Ignored && len(ignorePatterns) > 0 {
-		removed, err := filterIgnored(cs, ignorePatterns)
+		removed, err := filterIgnored(cs, ignorePatterns, preStaged)
 		if err != nil {
 			return err
 		}

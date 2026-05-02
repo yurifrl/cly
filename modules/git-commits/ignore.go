@@ -71,15 +71,18 @@ func matchIgnore(path string, patterns []string) (string, bool) {
 }
 
 // filterIgnored removes files matching patterns from the changeset and
-// unstages them from git. Returns the list of removed paths.
-func filterIgnored(cs *Changeset, patterns []string) ([]string, error) {
+// unstages them from git. Files present in preStaged (staged by the user
+// before this run) are kept and committed normally even if they match an
+// ignore pattern — the filter only prevents auto-adding unwanted files.
+// Returns the list of removed paths.
+func filterIgnored(cs *Changeset, patterns []string, preStaged map[string]bool) ([]string, error) {
 	if len(patterns) == 0 || cs == nil {
 		return nil, nil
 	}
 	kept := cs.Files[:0]
 	var removed []string
 	for _, f := range cs.Files {
-		if _, hit := matchIgnore(f.Path, patterns); hit {
+		if _, hit := matchIgnore(f.Path, patterns); hit && !preStaged[f.Path] {
 			removed = append(removed, f.Path)
 			continue
 		}
@@ -93,4 +96,19 @@ func filterIgnored(cs *Changeset, patterns []string) ([]string, error) {
 		}
 	}
 	return removed, nil
+}
+
+// stagedFiles returns the set of paths currently staged (index vs HEAD).
+func stagedFiles() (map[string]bool, error) {
+	out, err := gitRawOutput("diff", "--cached", "--name-only", "-z")
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool)
+	for _, p := range strings.Split(out, "\x00") {
+		if p = strings.TrimSpace(p); p != "" {
+			set[p] = true
+		}
+	}
+	return set, nil
 }
