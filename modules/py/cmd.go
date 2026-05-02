@@ -11,6 +11,7 @@ import (
 	"github.com/yurifrl/cly/modules/dotfiles"
 	clypi "github.com/yurifrl/cly/modules/pi"
 	pianon "github.com/yurifrl/cly/modules/pi-anon"
+	pireload "github.com/yurifrl/cly/modules/pi-reload"
 	pitree "github.com/yurifrl/cly/modules/pi-tree"
 )
 
@@ -22,6 +23,7 @@ func Register(parent *cobra.Command) {
 
 	pitree.Register(cmd)
 	pianon.Register(cmd)
+	pireload.Register(cmd)
 	clypi.Register(cmd)
 	cmd.AddCommand(modelsCmd(), secCmd(), settingsCmd(), updateCmd())
 
