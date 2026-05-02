@@ -48,6 +48,25 @@ modules:
       - "/.pi/"
   uuid:
     default_version: v4 # Options: v4 | v7
+  memwatch:
+    enabled: true
+    interval: 30s              # how often to poll memory_pressure
+    threshold_percent: 20      # alert when free RAM %% <= this
+    critical_percent: 10       # critical alert when free RAM %% <= this
+    cooldown: 5m               # min time between repeat alerts (escalations bypass)
+    alert_on_pressure:         # also alert on these macOS pressure levels
+      - warn
+      - critical
+    title: "🧠 Low Memory"
+    message: "Free: ${FREE}%% — Pressure: ${PRESSURE}"
+    use_cmux: true             # prefer cmux notify + sidebar status when inside cmux
+    use_desktop: true          # macOS notification fallback (via beeep)
+    use_zellij: false          # also fire zellij notifications
+    sound: Basso
+    top_n: 5                   # number of top processes to track / show
+    process_threshold_mb: 1500 # alert when a single app uses more than this
+    process_growth_mb: 500     # alert when a process grows this much since last alert
+    include_top_in_alert: true # append top-memory list to alert message
   demo:
     show_count: true
   dotfiles:
