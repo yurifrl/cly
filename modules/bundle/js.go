@@ -33,8 +33,9 @@ func NewJsBundler(s store.Store) *JsBundler {
 }
 
 func (b *JsBundler) CheckDeps() error {
-	if !commandExists("pnpm") {
-		return fmt.Errorf("pnpm not found. Add to Brewfile: 'pnpm', then run: cly bundle brew")
+	pnpmPath := findWorkingPnpm()
+	if pnpmPath == "" {
+		return fmt.Errorf("pnpm not found or not working. Add to Brewfile: 'pnpm', then run: cly bundle brew")
 	}
 	// Ensure PNPM_HOME is set and in PATH for global installs
 	pnpmHome := os.Getenv("PNPM_HOME")
@@ -43,11 +44,38 @@ func (b *JsBundler) CheckDeps() error {
 		pnpmHome = home + "/Library/pnpm"
 		os.Setenv("PNPM_HOME", pnpmHome)
 	}
+	// Prepend the directory containing the working pnpm so all exec.Command("pnpm") calls use it
+	dir := pnpmPath[:strings.LastIndex(pnpmPath, "/")]
 	path := os.Getenv("PATH")
-	if !strings.Contains(path, pnpmHome) {
-		os.Setenv("PATH", pnpmHome+":"+path)
+	if !strings.HasPrefix(path, dir+":") {
+		os.Setenv("PATH", dir+":"+path)
 	}
 	return nil
+}
+
+// findWorkingPnpm returns the path to a pnpm binary that actually executes.
+// It prefers the one in PATH but falls back to known locations if the PATH
+// one is broken (e.g. ~/Library/pnpm/bin/pnpm pointing to a blank placeholder).
+func findWorkingPnpm() string {
+	candidates := []string{}
+	if p, err := exec.LookPath("pnpm"); err == nil {
+		candidates = append(candidates, p)
+	}
+	// Known fallback locations
+	candidates = append(candidates, "/opt/homebrew/bin/pnpm", "/usr/local/bin/pnpm")
+
+	seen := map[string]bool{}
+	for _, p := range candidates {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		cmd := exec.Command(p, "--version")
+		if err := cmd.Run(); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 func (b *JsBundler) install(pkg string, verbose bool, force bool) error {
@@ -180,17 +208,25 @@ func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate b
 	}
 
 	if len(toInstall) > 0 {
-		printGreen(fmt.Sprintf("Installing %d packages...", len(toInstall)))
-		args := append([]string{"add", "-g"}, toInstall...)
-		cmd := exec.Command("pnpm", args...)
-		if verbose {
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-		}
+		if parallelFlag {
+			// Parallel installs with TUI progress
+			if err := runParallelInstall(toInstall, force, verbose); err != nil {
+				return err
+			}
+		} else {
+			// Default: single pnpm command
+			printGreen(fmt.Sprintf("Installing %d packages...", len(toInstall)))
+			args := append([]string{"add", "-g"}, toInstall...)
+			cmd := exec.Command("pnpm", args...)
+			if verbose {
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+			}
 
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("pnpm add failed: %s", string(output))
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("pnpm add failed: %s", string(output))
+			}
 		}
 	}
 

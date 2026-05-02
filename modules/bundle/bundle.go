@@ -19,6 +19,7 @@ var (
 	tapsFlag      bool
 	noCleanupFlag bool
 	masFlag       bool
+	parallelFlag  bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -84,6 +85,7 @@ Types:
 	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "install taps first (brew only)")
 	cmd.Flags().BoolVar(&noCleanupFlag, "no-cleanup", false, "skip cleanup after sync")
 	cmd.Flags().BoolVar(&masFlag, "mas", false, "install Mac App Store apps (brew only)")
+	cmd.Flags().BoolVar(&parallelFlag, "parallel", false, "use parallel installs with TUI progress (js only)")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))
