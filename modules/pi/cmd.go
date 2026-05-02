@@ -8,7 +8,7 @@ import (
 // Register attaches the `pi` command tree to parent.
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use:   "pi",
+		Use:   "ext",
 		Short: "Manage cly-bundled pi (coding agent) integrations",
 		Long:  "Install cly-bundled pi extensions into the local pi extensions directory.",
 	}

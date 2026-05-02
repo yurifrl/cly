@@ -14,8 +14,7 @@ func Register(parent *cobra.Command) {
 	var flagSince float64
 
 	cmd := &cobra.Command{
-		Use:     "pi-tree",
-		Aliases: []string{"pt", "pitree"},
+		Use: "tree",
 		Short:   "Show open cmux workspaces and their π sessions as a tree",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTUI2(cmd, flagJSON, flagSave, flagSince)
