@@ -62,6 +62,25 @@ modules:
         zellij_event: "stop"
   uuid:
     default_version: v4
+  memwatch:
+    enabled: true
+    interval: 30s
+    threshold_percent: 20
+    critical_percent: 10
+    cooldown: 5m
+    alert_on_pressure:
+      - warn
+      - critical
+    title: "🧠 Low Memory"
+    message: "Free: ${FREE}%% — Pressure: ${PRESSURE}"
+    use_cmux: true
+    use_desktop: true
+    use_zellij: false
+    sound: Basso
+    top_n: 5
+    process_threshold_mb: 1500
+    process_growth_mb: 500
+    include_top_in_alert: true
   install:
     source_dir: /Users/yuri/Workdir/Yuri/cly
   demo:

@@ -13,10 +13,19 @@ func Available() bool {
 	return os.Getenv("CMUX_WORKSPACE_ID") != ""
 }
 
+// BinaryAvailable returns true when the `cmux` binary is on PATH. Use this for
+// commands like `cmux notify` that work outside a cmux session (they target
+// the running cmux app directly).
+func BinaryAvailable() bool {
+	_, err := exec.LookPath("cmux")
+	return err == nil
+}
+
 // Notify sends a desktop notification via `cmux notify --title … --body …`.
-// It is a no-op when not inside a cmux session.
+// Works as long as the cmux binary is on PATH and the cmux app is running —
+// does not require being inside a cmux session.
 func Notify(ctx context.Context, title, body string) error {
-	if !Available() {
+	if !BinaryAvailable() {
 		return nil
 	}
 	return exec.CommandContext(ctx, "cmux", "notify", "--title", title, "--body", body).Run()

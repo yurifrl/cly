@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
+	"github.com/yurifrl/cly/modules/memwatch"
 	"github.com/yurifrl/cly/modules/pi"
 )
 
@@ -74,6 +75,9 @@ func run(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s Installing bundled pi extensions...\n", style.BlueStyle.Render("⚡"))
 	if err := pi.InstallExtensions("", false, cmd.OutOrStdout()); err != nil {
 		fmt.Printf("%s pi extensions install failed (non-fatal): %v\n", style.YellowStyle.Render("⚠️"), err)
+	}
+	if err := memwatch.Restart(cmd.Context()); err != nil {
+		fmt.Printf("%s memwatch restart failed (non-fatal): %v\n", style.YellowStyle.Render("⚠️"), err)
 	}
 	return nil
 }
