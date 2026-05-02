@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 	agentsession "github.com/yurifrl/cly/modules/agent-session"
-	pitree "github.com/yurifrl/cly/modules/pi-tree"
 	"github.com/yurifrl/cly/modules/agents"
 	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
@@ -21,6 +20,7 @@ import (
 	"github.com/yurifrl/cly/modules/helpy"
 	llmchat "github.com/yurifrl/cly/modules/llm-chat"
 	"github.com/yurifrl/cly/modules/mcp"
+	"github.com/yurifrl/cly/modules/memwatch"
 	"github.com/yurifrl/cly/modules/notify"
 	"github.com/yurifrl/cly/modules/obsidian-tools"
 	"github.com/yurifrl/cly/modules/scraper/cmd"
@@ -29,8 +29,7 @@ import (
 	"github.com/yurifrl/cly/modules/uuid"
 	"github.com/yurifrl/cly/modules/zl"
 	"github.com/yurifrl/cly/modules/oi"
-	pianon "github.com/yurifrl/cly/modules/pi-anon"
-	clypi "github.com/yurifrl/cly/modules/pi"
+	"github.com/yurifrl/cly/modules/py"
 	"github.com/yurifrl/cly/modules/skills"
 	"github.com/yurifrl/cly/modules/zs"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
@@ -76,7 +75,6 @@ func init() {
 	backup.Register(RootCmd)
 	claude.Register(RootCmd)
 	agentsession.Register(RootCmd)
-	pitree.Register(RootCmd)
 	claudetasks.Register(RootCmd)
 	uuid.Register(RootCmd)
 	demo.Register(RootCmd)
@@ -88,13 +86,13 @@ func init() {
 	mcp.Register(RootCmd)
 	bundle.Register(RootCmd)
 	notify.Register(RootCmd)
+	memwatch.Register(RootCmd)
 	obsidiantools.Register(RootCmd)
 	statusline.Register(RootCmd)
 	update.Register(RootCmd)
 	zl.Register(RootCmd)
 	oi.Register(RootCmd)
-	pianon.Register(RootCmd)
-	clypi.Register(RootCmd)
+	py.Register(RootCmd)
 	skills.Register(RootCmd)
 	zs.Register(RootCmd)
 	cmd.Register(RootCmd)
