@@ -56,9 +56,15 @@ func CopyJsoncToJson(m Mapping) LinkResult {
 		return result
 	}
 
-	// Check if destination already exists (file or symlink)
+	// Remove existing destination (file or symlink) so WriteFile does not follow
+	// a symlink back into the source .jsonc and clobber comments.
 	if _, err := os.Lstat(m.Destination); err == nil {
 		result.RemovedExisting = true
+		if err := os.Remove(m.Destination); err != nil {
+			result.State = StateError
+			result.Error = fmt.Sprintf("failed to remove existing destination: %v", err)
+			return result
+		}
 	}
 
 	if err := os.WriteFile(m.Destination, stripped, 0644); err != nil {

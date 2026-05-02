@@ -232,6 +232,28 @@ func TestCopyJsoncToJson(t *testing.T) {
 		assert.Equal(t, true, m2["new"])
 	})
 
+	t.Run("dest is symlink back to source — source must not be clobbered", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		source := filepath.Join(tmpDir, "config.jsonc")
+		dest := filepath.Join(tmpDir, "config.json")
+
+		orig := []byte("{\n  // keep me\n  \"a\": 1\n}")
+		require.NoError(t, os.WriteFile(source, orig, 0644))
+		require.NoError(t, os.Symlink(source, dest))
+
+		m := Mapping{Source: source, Destination: dest}
+		result := CopyJsoncToJson(m)
+		require.Equal(t, StateLinked, result.State)
+
+		gotSrc, err := os.ReadFile(source)
+		require.NoError(t, err)
+		assert.Equal(t, orig, gotSrc, "source jsonc must retain comments")
+
+		info, err := os.Lstat(dest)
+		require.NoError(t, err)
+		assert.Zero(t, info.Mode()&os.ModeSymlink, "dest should be a regular file, not symlink")
+	})
+
 	t.Run("missing source", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		m := Mapping{
