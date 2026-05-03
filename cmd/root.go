@@ -9,6 +9,7 @@ import (
 	"github.com/yurifrl/cly/modules/agents"
 	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
+	"github.com/yurifrl/cly/modules/beads"
 	"github.com/yurifrl/cly/modules/bundle"
 	"github.com/yurifrl/cly/modules/claude"
 	claudetasks "github.com/yurifrl/cly/modules/claude-tasks"
@@ -73,6 +74,7 @@ func init() {
 	agents.Register(RootCmd)
 	aliases.Register(RootCmd)
 	backup.Register(RootCmd)
+	beads.Register(RootCmd)
 	claude.Register(RootCmd)
 	agentsession.Register(RootCmd)
 	claudetasks.Register(RootCmd)

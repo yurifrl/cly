@@ -111,3 +111,23 @@ func TestSkipHelpAndCompletion(t *testing.T) {
 		assert.NotEqual(t, "completion", e.Alias, "completion command should not be aliased")
 	}
 }
+
+func TestSkipAnnotationDisablesAllAliases(t *testing.T) {
+	root := &cobra.Command{Use: "cly"}
+	root.AddCommand(&cobra.Command{
+		Use:     "beads",
+		Short:   "Beads TUI",
+		Aliases: []string{"bd"},
+		Annotations: map[string]string{
+			AnnotationSkipAlias: "true",
+		},
+	})
+
+	noop := func(string) (string, error) { return "", fmt.Errorf("not found") }
+
+	entries := GenerateAliases(root, noop)
+	for _, e := range entries {
+		assert.NotEqual(t, "beads", e.Alias)
+		assert.NotEqual(t, "bd", e.Alias)
+	}
+}
