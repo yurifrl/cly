@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-05-03 Beads TUI Module and Alias Opt-Out Annotation
+- Session ID: 019dea79-4722-77c8-bc7d-a4918ba3a9ff
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-05-02T20-55-09-858Z_019dea79-4722-77c8-bc7d-a4918ba3a9ff.jsonl
+- Session Name: 2026-05-03-0021-openspec-commands-and-beads
+- Context Name: 2026-05-03-0021-openspec-commands-and-beads
+
+### Added
+- `modules/beads/cmd.go` — new Cobra module `cly beads` (alias `bd` cobra-level only; fish-alias emission suppressed via annotation). Subcommands `new`/`create`/`n`. RunE execs `bd create` with collected flags and prints the returned issue ID to stdout.
+- `modules/beads/beads.go` — inline Bubbletea v2 form. Always-visible fields: `title` (textinput), `desc` (textarea), `type` (pill picker), `prio` (pill picker P0–P4), `labels` (textinput). Details section behind `ctrl+d` adds `acceptance`, `skills`, `context`, `design`, `notes`. `ctrl+r` toggles `--dry-run` with header badge. `ctrl+enter` submits (Kitty keyboard protocol required), `esc`/`ctrl+c` cancels. Validates required title; submits non-empty flags only. Preserves current type selection by name across `bd types --json` refresh.
+- `modules/beads/picker.go` — reusable horizontal pill selector. Arrow keys + `ctrl+n/p` navigation, letter/digit quick-select with 800 ms auto-expiring buffer (tag-scoped `quickSelectExpireMsg` + generation counter so one picker's tick never clears another's buffer), backspace trims buffer, `setOptions` preserves selection by name.
+- `modules/beads/state.go` — JSON state file at `~/.config/cly/beads/state.json` with `last_type` and `last_priority`. Best-effort read/write; saved on successful non-dry-run create; dry-run never overwrites.
+- `modules/aliases/aliases.go` — new exported constant `AnnotationSkipAlias = "cly.alias.skip"`. Commands set this annotation on their cobra `Command` to suppress emission of both their primary and cobra aliases in `cly completion fish`, preventing shadowing of external binaries (e.g. the real `bd` beads CLI).
+- `modules/aliases/aliases_test.go` — `TestSkipAnnotationDisablesAllAliases` covering the opt-out path.
+
+### Changed
+- `cmd/root.go` — registers the new `beads` module.
+- `modules/beads/beads.go` — initial iteration used `textinput.ShowSuggestions` for type autocomplete; replaced with the custom pill picker after verifying in bubbles v2 source that suggestions only render when the current value is a strict prefix of a candidate (pre-filled defaults broke the UX). Type options filtered through an `allowedTypes` set so `bd types --json` cannot expand the picker past the curated 6 core types; custom types pass through.
+
+### Removed
+- `modules/beads/beads.go` — dropped `fNoInherit` field, `noInherit` model flag, `--no-inherit-labels` submission wiring, `boolView` helper, and `toggleBool` keybind. The toggle was dead weight without a `--parent` field (tier 3, intentionally out of scope).
+
 ## 2026-04-05 Charm Stack Skill Rewrite for v2
 - Session ID: 2df1782c-6f24-4bc6-8be4-a3d56292c3c1
 - Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-04-01T12-47-00-611Z_2df1782c-6f24-4bc6-8be4-a3d56292c3c1.jsonl
