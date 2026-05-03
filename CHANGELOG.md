@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-03 New Bead Modal Tab Order and Context Default Fixes
+- Session ID: 019def1e-761b-7709-8f77-64687de34bec
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-05-03T18-34-04-187Z_019def1e-761b-7709-8f77-64687de34bec.jsonl
+- Session Name: 2026-05-03-1927-opsx-commands-and-beads
+- Context Name: 2026-05-03-1927-opsx-commands-and-beads
+
+### Changed
+- `.agents/tmp/cly-diff-mockup.html` — added `tabindex="0"` to `#bf-file-btn` (context picker). Root cause: macOS Chromium/Safari with default keyboard-access settings skip `<button>` elements during Tab traversal unless they carry an explicit `tabindex="0"`. Every other button in the modal already had it; only the picker button relied on the default and was therefore skipped.
+- `.agents/tmp/cly-diff-mockup.html` — `openBeadForm()` now defaults `bf.filePath` to the currently-viewed diff event's path (`events.find(e => e.id === currentId)?.path`) instead of always `null`. Falls back to `null` (global — no context) when no diff event is active. Context picker opens with the current file pre-selected.
+
 ## 2026-05-03 Beads TUI Module and Alias Opt-Out Annotation
 - Session ID: 019dea79-4722-77c8-bc7d-a4918ba3a9ff
 - Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-05-02T20-55-09-858Z_019dea79-4722-77c8-bc7d-a4918ba3a9ff.jsonl
