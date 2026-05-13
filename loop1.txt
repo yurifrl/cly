@@ -1,9 +1,0 @@
-Nothing is working. Nothing. Nothing.
-
-/Users/yuri/Library/Application\ Support/CleanShot/media/media_aAbRR495s8/CleanShot\ 2026-03-29\ at\ 17.02.46.png
-
-Write tests and open the UI with VHS to test.
-
-You stop when you choose a history, close, and go back — and the container for that is loaded as first, and the correct number of sessions is showing.
-
-The open one — and if you save, it creates a new version of the open one. AND only on that, no other way to save sessions. If you open or close a session, you open an unsaved session.
