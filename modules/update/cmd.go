@@ -166,6 +166,12 @@ func updateLocal(cmd *cobra.Command) error {
 	tmpFile.Close()
 	os.Remove(tmpPath)
 
+	// Build embedded web frontends (e.g. modules/diff2/web).
+	// Keeps `cly u` a single command for source builds.
+	if err := buildWebBundles(sourceDir); err != nil {
+		return fmt.Errorf("web build failed: %w", err)
+	}
+
 	buildCmd := exec.Command("go", "build",
 		fmt.Sprintf("-ldflags=%s", ldflags),
 		"-o", tmpPath,
