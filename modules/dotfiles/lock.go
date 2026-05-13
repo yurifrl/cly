@@ -1,6 +1,7 @@
 package dotfiles
 
 import (
+	"github.com/yurifrl/cly/pkg/mut"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -61,7 +62,7 @@ func loadLock(path string) (*DotfilesLock, error) {
 
 // saveLock writes the lock file to disk.
 func saveLock(path string, lock *DotfilesLock) error {
-	if err := mutMkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := mut.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(lock, "", "  ")
@@ -69,7 +70,7 @@ func saveLock(path string, lock *DotfilesLock) error {
 		return err
 	}
 	data = append(data, '\n')
-	return mutWriteFile(path, data, 0644)
+	return mut.WriteFile(path, data, 0644)
 }
 
 // buildLock creates a new lock snapshot from the current config.

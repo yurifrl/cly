@@ -1,6 +1,7 @@
 package dotfiles
 
 import (
+	"github.com/yurifrl/cly/pkg/mut"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +14,7 @@ var opInjectRun = func(account, source, destination string) error {
 	if account != "" {
 		args = []string{"inject", "-f", "--account", account, "-i", source, "-o", destination}
 	}
-	return mutExec("op", args...)
+	return mut.Exec("op", args...)
 }
 
 var opReadRun = func(account, reference, destination string) error {
@@ -22,13 +23,13 @@ var opReadRun = func(account, reference, destination string) error {
 		args = []string{"read", "-f", "--account", account, "--out-file", destination}
 	}
 	args = append(args, reference)
-	return mutExec("op", args...)
+	return mut.Exec("op", args...)
 }
 
 // RemoveOpMapping deletes the generated destination file for an op mapping.
 // Returns true if the file was removed, false otherwise.
 func RemoveOpMapping(m OpMapping) bool {
-	if err := mutRemove(m.Destination); err != nil {
+	if err := mut.Remove(m.Destination); err != nil {
 		return false
 	}
 	return true
@@ -47,7 +48,7 @@ func ApplyOpMappings(cfg *Config) error {
 			account = defaultAccount
 		}
 
-		if err := mutMkdirAll(filepath.Dir(m.Destination), 0755); err != nil {
+		if err := mut.MkdirAll(filepath.Dir(m.Destination), 0755); err != nil {
 			return fmt.Errorf("create parent dir for %s: %w", m.Destination, err)
 		}
 
