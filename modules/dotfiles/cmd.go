@@ -1,6 +1,7 @@
 package dotfiles
 
 import (
+	"github.com/yurifrl/cly/pkg/mut"
 	"bufio"
 	"fmt"
 	"os"
@@ -59,7 +60,7 @@ Use --cache to run only @cache jobs (skips everything else).`,
 	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions (rerun @once jobs)")
 	cmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Verbose output (show overwrites, intermediate steps)")
 	cmd.PersistentFlags().BoolVarP(&dryRunFlag, "dry-run", "n", false, "Dry run: log every mutation (fs writes, shell commands) without executing")
-	cmd.PersistentPreRun = func(c *cobra.Command, args []string) { SetDryRun(dryRunFlag) }
+	cmd.PersistentPreRun = func(c *cobra.Command, args []string) { mut.SetDryRun(dryRunFlag) }
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
 
@@ -469,11 +470,11 @@ func executeCommand(cmdStr, baseDir string) error {
 	if strings.HasPrefix(cmdStr, "zellij_plugin ") {
 		url := strings.TrimPrefix(cmdStr, "zellij_plugin ")
 		url = strings.TrimSpace(url)
-		if dryRun {
+		if mut.DryRun() {
 			fmt.Printf("%s zellij-plugin %s\n", style.YellowStyle.Render("[dry-run]"), url)
 			return nil
 		}
 		return downloadZellijPlugin(url)
 	}
-	return mutExecDir(baseDir, "fish", "-c", cmdStr)
+	return mut.ExecDir(baseDir, "fish", "-c", cmdStr)
 }

@@ -1,6 +1,7 @@
 package dotfiles
 
 import (
+	"github.com/yurifrl/cly/pkg/mut"
 	"fmt"
 	"io"
 	"net/http"
@@ -63,12 +64,12 @@ func downloadZellijPlugin(githubURL string) error {
 	destDir = expandTilde(destDir)
 	destPath := filepath.Join(destDir, repo.repo+".wasm")
 
-	if dryRun {
-		logDry("download", fmt.Sprintf("%s -> %s", downloadURL, destPath))
+	if mut.DryRun() {
+		fmt.Printf("[dry-run] download %s -> %s\n", downloadURL, destPath)
 		return nil
 	}
 
-	if err := mutMkdirAll(destDir, 0755); err != nil {
+	if err := mut.MkdirAll(destDir, 0755); err != nil {
 		return fmt.Errorf("failed to create plugins directory: %w", err)
 	}
 
