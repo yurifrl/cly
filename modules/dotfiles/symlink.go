@@ -51,13 +51,13 @@ func CreateSymlink(m Mapping) LinkResult {
 		// Force override: remove whatever exists (symlink, file, or directory)
 		result.RemovedExisting = true
 		if destInfo.IsDir() && destInfo.Mode()&os.ModeSymlink == 0 {
-			if err := os.RemoveAll(m.Destination); err != nil {
+			if err := mutRemoveAll(m.Destination); err != nil {
 				result.State = StateError
 				result.Error = fmt.Sprintf("failed to remove existing directory: %v", err)
 				return result
 			}
 		} else {
-			if err := os.Remove(m.Destination); err != nil {
+			if err := mutRemove(m.Destination); err != nil {
 				result.State = StateError
 				result.Error = fmt.Sprintf("failed to remove existing file: %v", err)
 				return result
@@ -73,13 +73,13 @@ func CreateSymlink(m Mapping) LinkResult {
 	if _, err := os.Stat(destDir); os.IsNotExist(err) {
 		result.CreatedDir = true
 	}
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := mutMkdirAll(destDir, 0755); err != nil {
 		result.State = StateError
 		result.Error = fmt.Sprintf("failed to create parent directory: %v", err)
 		return result
 	}
 
-	if err := os.Symlink(m.Source, m.Destination); err != nil {
+	if err := mutSymlink(m.Source, m.Destination); err != nil {
 		result.State = StateError
 		result.Error = fmt.Sprintf("failed to create symlink: %v", err)
 		return result
@@ -148,7 +148,7 @@ func RemoveSymlink(m Mapping) bool {
 		return false
 	}
 
-	if err := os.Remove(m.Destination); err != nil {
+	if err := mutRemove(m.Destination); err != nil {
 		return false
 	}
 

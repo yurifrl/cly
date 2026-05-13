@@ -12,7 +12,7 @@ import (
 // RemoveJsoncCopy deletes the generated JSON destination file for a JSONC mapping.
 // Returns true if the file was removed, false if it didn't exist or couldn't be removed.
 func RemoveJsoncCopy(m Mapping) bool {
-	if err := os.Remove(m.Destination); err != nil {
+	if err := mutRemove(m.Destination); err != nil {
 		return false
 	}
 	return true
@@ -50,7 +50,7 @@ func CopyJsoncToJson(m Mapping) LinkResult {
 	if _, err := os.Stat(destDir); os.IsNotExist(err) {
 		result.CreatedDir = true
 	}
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := mutMkdirAll(destDir, 0755); err != nil {
 		result.State = StateError
 		result.Error = fmt.Sprintf("failed to create parent directory: %v", err)
 		return result
@@ -60,14 +60,14 @@ func CopyJsoncToJson(m Mapping) LinkResult {
 	// a symlink back into the source .jsonc and clobber comments.
 	if _, err := os.Lstat(m.Destination); err == nil {
 		result.RemovedExisting = true
-		if err := os.Remove(m.Destination); err != nil {
+		if err := mutRemove(m.Destination); err != nil {
 			result.State = StateError
 			result.Error = fmt.Sprintf("failed to remove existing destination: %v", err)
 			return result
 		}
 	}
 
-	if err := os.WriteFile(m.Destination, stripped, 0644); err != nil {
+	if err := mutWriteFile(m.Destination, stripped, 0644); err != nil {
 		result.State = StateError
 		result.Error = fmt.Sprintf("failed to write JSON: %v", err)
 		return result

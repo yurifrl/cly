@@ -63,7 +63,12 @@ func downloadZellijPlugin(githubURL string) error {
 	destDir = expandTilde(destDir)
 	destPath := filepath.Join(destDir, repo.repo+".wasm")
 
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if dryRun {
+		logDry("download", fmt.Sprintf("%s -> %s", downloadURL, destPath))
+		return nil
+	}
+
+	if err := mutMkdirAll(destDir, 0755); err != nil {
 		return fmt.Errorf("failed to create plugins directory: %w", err)
 	}
 

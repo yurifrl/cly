@@ -3,7 +3,6 @@ package dotfiles
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/yurifrl/cly/pkg/style"
@@ -14,10 +13,7 @@ var opInjectRun = func(account, source, destination string) error {
 	if account != "" {
 		args = []string{"inject", "-f", "--account", account, "-i", source, "-o", destination}
 	}
-	cmd := exec.Command("op", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return mutExec("op", args...)
 }
 
 var opReadRun = func(account, reference, destination string) error {
@@ -26,16 +22,13 @@ var opReadRun = func(account, reference, destination string) error {
 		args = []string{"read", "-f", "--account", account, "--out-file", destination}
 	}
 	args = append(args, reference)
-	cmd := exec.Command("op", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return mutExec("op", args...)
 }
 
 // RemoveOpMapping deletes the generated destination file for an op mapping.
 // Returns true if the file was removed, false otherwise.
 func RemoveOpMapping(m OpMapping) bool {
-	if err := os.Remove(m.Destination); err != nil {
+	if err := mutRemove(m.Destination); err != nil {
 		return false
 	}
 	return true
@@ -54,7 +47,7 @@ func ApplyOpMappings(cfg *Config) error {
 			account = defaultAccount
 		}
 
-		if err := os.MkdirAll(filepath.Dir(m.Destination), 0755); err != nil {
+		if err := mutMkdirAll(filepath.Dir(m.Destination), 0755); err != nil {
 			return fmt.Errorf("create parent dir for %s: %w", m.Destination, err)
 		}
 

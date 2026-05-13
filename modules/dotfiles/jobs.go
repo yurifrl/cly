@@ -53,10 +53,7 @@ type JobStatus struct {
 var (
 	jobUserHomeDir = os.UserHomeDir
 	launchctlRun   = func(args ...string) error {
-		cmd := exec.Command("launchctl", args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		return mutExec("launchctl", args...)
 	}
 )
 
@@ -73,13 +70,13 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(paths.ScriptsDir, 0755); err != nil {
+	if err := mutMkdirAll(paths.ScriptsDir, 0755); err != nil {
 		return fmt.Errorf("create scripts dir: %w", err)
 	}
-	if err := os.MkdirAll(paths.LaunchAgentsDir, 0755); err != nil {
+	if err := mutMkdirAll(paths.LaunchAgentsDir, 0755); err != nil {
 		return fmt.Errorf("create launch agents dir: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(paths.StateFile), 0755); err != nil {
+	if err := mutMkdirAll(filepath.Dir(paths.StateFile), 0755); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
 	}
 
@@ -148,11 +145,11 @@ func RemoveJobs(cfg *Config) error {
 
 	for _, job := range cfg.Jobs {
 		delete(state.Jobs, job.Name)
-		_ = os.Remove(jobScriptPath(paths, job.Name))
+		_ = mutRemove(jobScriptPath(paths, job.Name))
 		if job.Run == JobRunStartup || job.Run == JobRunInterval {
 			plistPath := jobPlistPath(paths, job.Name)
 			unloadJob(paths, job.Name, plistPath)
-			_ = os.Remove(plistPath)
+			_ = mutRemove(plistPath)
 		}
 	}
 
@@ -172,10 +169,10 @@ func RemoveJobByName(name string) error {
 	}
 
 	delete(state.Jobs, name)
-	_ = os.Remove(jobScriptPath(paths, name))
+	_ = mutRemove(jobScriptPath(paths, name))
 	plistPath := jobPlistPath(paths, name)
 	unloadJob(paths, name, plistPath)
-	_ = os.Remove(plistPath)
+	_ = mutRemove(plistPath)
 
 	return saveOnceState(paths.StateFile, state)
 }
@@ -228,7 +225,7 @@ func cleanupStaleManagedJobs(paths jobPaths, desired map[string]bool, state *onc
 			if desired[name] {
 				continue
 			}
-			_ = os.Remove(filepath.Join(paths.ScriptsDir, entry.Name()))
+			_ = mutRemove(filepath.Join(paths.ScriptsDir, entry.Name()))
 			delete(state.Jobs, name)
 		}
 	}
@@ -246,7 +243,7 @@ func cleanupStaleManagedJobs(paths jobPaths, desired map[string]bool, state *onc
 			}
 			plistPath := filepath.Join(paths.LaunchAgentsDir, entry.Name())
 			unloadJob(paths, name, plistPath)
-			_ = os.Remove(plistPath)
+			_ = mutRemove(plistPath)
 		}
 	}
 
@@ -277,11 +274,7 @@ func writeLaunchAgent(paths jobPaths, job Job, scriptPath string) (string, error
 }
 
 func runScript(scriptPath, baseDir string) error {
-	cmd := exec.Command(scriptPath)
-	cmd.Dir = baseDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return mutExecDir(baseDir, scriptPath)
 }
 
 func renderJobScript(job Job, baseDir string, retryCfg JobRetryConfig) string {
@@ -474,10 +467,10 @@ func saveOnceState(path string, state *onceState) error {
 	if err != nil {
 		return fmt.Errorf("marshal jobs state: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := mutMkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("create jobs state dir: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := mutWriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write jobs state: %w", err)
 	}
 	return nil
@@ -570,15 +563,15 @@ func durationSeconds(d time.Duration) int {
 
 func writeFileIfChanged(path string, content []byte, mode os.FileMode) error {
 	if existing, err := os.ReadFile(path); err == nil && string(existing) == string(content) {
-		if err := os.Chmod(path, mode); err != nil {
+		if err := mutChmod(path, mode); err != nil {
 			return err
 		}
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := mutMkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, content, mode); err != nil {
+	if err := mutWriteFile(path, content, mode); err != nil {
 		return err
 	}
 	return nil

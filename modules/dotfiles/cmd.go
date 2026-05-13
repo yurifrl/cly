@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -23,6 +22,7 @@ var (
 	cacheFlag   bool
 	forceFlag   bool
 	verboseFlag bool
+	dryRunFlag  bool
 	configFlag  string
 	noItFlag    bool
 )
@@ -58,6 +58,8 @@ Use --cache to run only @cache jobs (skips everything else).`,
 	cmd.Flags().BoolVar(&cacheFlag, "cache", false, "Run all @cache jobs (bypass the 'already installed' check; during normal sync the check is honored)")
 	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions (rerun @once jobs)")
 	cmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Verbose output (show overwrites, intermediate steps)")
+	cmd.PersistentFlags().BoolVarP(&dryRunFlag, "dry-run", "n", false, "Dry run: log every mutation (fs writes, shell commands) without executing")
+	cmd.PersistentPreRun = func(c *cobra.Command, args []string) { SetDryRun(dryRunFlag) }
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
 
@@ -467,12 +469,11 @@ func executeCommand(cmdStr, baseDir string) error {
 	if strings.HasPrefix(cmdStr, "zellij_plugin ") {
 		url := strings.TrimPrefix(cmdStr, "zellij_plugin ")
 		url = strings.TrimSpace(url)
+		if dryRun {
+			fmt.Printf("%s zellij-plugin %s\n", style.YellowStyle.Render("[dry-run]"), url)
+			return nil
+		}
 		return downloadZellijPlugin(url)
 	}
-
-	cmd := exec.Command("fish", "-c", cmdStr)
-	cmd.Dir = baseDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return mutExecDir(baseDir, "fish", "-c", cmdStr)
 }
