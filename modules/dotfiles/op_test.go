@@ -63,4 +63,34 @@ func TestParseConfig_Op(t *testing.T) {
 		assert.Empty(t, cfg.OpMappings[0].Account)
 		assert.Equal(t, "my.1password.com", cfg.OpMappings[1].Account)
 	})
+
+	t.Run("parses @op with op:// secret reference", func(t *testing.T) {
+		content := `@op account=my.1password.com op://Private/Item/field.json -> ~/.config/thing.json`
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+		cfg, err := ParseConfig(configPath)
+		require.NoError(t, err)
+		require.Len(t, cfg.OpMappings, 1)
+		m := cfg.OpMappings[0]
+		assert.True(t, m.IsReference)
+		assert.Equal(t, "op://Private/Item/field.json", m.Source)
+		assert.Equal(t, "my.1password.com", m.Account)
+		assert.Contains(t, m.Destination, ".config/thing.json")
+	})
+
+	t.Run("parses @op with quoted op:// reference containing spaces", func(t *testing.T) {
+		content := `@op "op://Private/Some Item/field" -> ~/out.txt`
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+		cfg, err := ParseConfig(configPath)
+		require.NoError(t, err)
+		require.Len(t, cfg.OpMappings, 1)
+		m := cfg.OpMappings[0]
+		assert.True(t, m.IsReference)
+		assert.Equal(t, "op://Private/Some Item/field", m.Source)
+	})
 }

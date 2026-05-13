@@ -19,7 +19,10 @@ var (
 	jobsFlag    bool
 	opFlag      bool
 	allFlag     bool
+	onceFlag    bool
+	cacheFlag   bool
 	forceFlag   bool
+	verboseFlag bool
 	configFlag  string
 	noItFlag    bool
 )
@@ -34,11 +37,16 @@ Config syntax (dotfiles.conf):
   ./src -> ~/dst                        symlink (dirs need trailing /)
   !cmd                                  run shell command (-i flag)
   @once name -- cmd                     run once ever (-f to rerun)
+  @cache name -- cmd                    run unless 'command -v name' exists
   @startup name -- cmd                  run every time (-j flag)
   @startup name keepalive -- cmd        run and keep alive
   @interval name every=1h -- cmd        run if interval elapsed
   @op account=x ./s.op -> ~/d           1Password inject (-o flag)
-  .jsonc -> .json                       comments stripped automatically`,
+  @op account=x op://vault/item/field -> ~/d  1Password read secret (-o flag)
+  .jsonc -> .json                       comments stripped automatically
+
+Use --once to run only @once jobs (skips everything else).
+Use --cache to run only @cache jobs (skips everything else).`,
 		RunE:  runSync,
 	}
 
@@ -46,7 +54,10 @@ Config syntax (dotfiles.conf):
 	cmd.Flags().BoolVarP(&jobsFlag, "jobs", "j", false, "Apply declarative jobs (@startup/@interval/@once)")
 	cmd.Flags().BoolVarP(&opFlag, "op", "o", false, "Inject 1Password templates")
 	cmd.Flags().BoolVarP(&allFlag, "all", "a", false, "Run everything (install, jobs, 1Password)")
+	cmd.Flags().BoolVar(&onceFlag, "once", false, "Run only @once jobs (skips symlinks, install, op, startup, interval)")
+	cmd.Flags().BoolVar(&cacheFlag, "cache", false, "Run all @cache jobs (bypass the 'already installed' check; during normal sync the check is honored)")
 	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions (rerun @once jobs)")
+	cmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Verbose output (show overwrites, intermediate steps)")
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
 
@@ -147,6 +158,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	for _, e := range cfg.Errors {
 		fmt.Printf("⚠️  %s\n", e)
+	}
+
+	// --once short-circuits everything else: only @once jobs are applied.
+	if onceFlag {
+		return runJobsSubset(cmd, cfg, JobRunOnce, "@once", forceFlag)
+	}
+	if cacheFlag {
+		// Explicit --cache means the user wants to (re)run cache jobs regardless
+		// of whether the binary is already on PATH. During a normal sync (-j/-a)
+		// the cache check is honored.
+		return runJobsSubset(cmd, cfg, JobRunCache, "@cache", true)
 	}
 
 	for _, m := range cfg.Mappings {
@@ -320,25 +342,26 @@ func printResult(m Mapping, r LinkResult) {
 	src := shortenPath(m.Source)
 	dest := shortenPath(m.Destination)
 
-	// Print processing line
-	fmt.Printf("%s %s -> %s\n",
-		style.BlueStyle.Render("🔗 Processing:"),
-		src, dest)
+	if verboseFlag {
+		fmt.Printf("%s %s -> %s\n",
+			style.BlueStyle.Render("🔗 Processing:"),
+			src, dest)
+	}
 
 	switch r.State {
 	case StateLinked:
-		if r.CreatedDir {
+		if r.CreatedDir && verboseFlag {
 			fmt.Printf("  %s %s\n",
 				style.BlueStyle.Render("📁 Creating directory:"),
 				filepath.Dir(dest))
 		}
-		if r.RemovedExisting {
+		if r.RemovedExisting && verboseFlag {
 			fmt.Printf("  %s %s\n",
 				style.YellowStyle.Render("🗑️  Removing existing:"),
 				dest)
 		}
-		fmt.Printf("  %s %s -> %s\n",
-			style.GreenStyle.Render("✅ Creating symlink:"),
+		fmt.Printf("%s %s -> %s\n",
+			style.GreenStyle.Render("✅ Symlink:"),
 			src, dest)
 	case StateMissing:
 		fmt.Printf("  %s Source '%s' does not exist, skipping\n",
@@ -359,24 +382,26 @@ func printJsoncResult(m Mapping, r LinkResult) {
 	src := shortenPath(m.Source)
 	dest := shortenPath(m.Destination)
 
-	fmt.Printf("%s %s -> %s\n",
-		style.BlueStyle.Render("📄 Copying (jsonc→json):"),
-		src, dest)
+	if verboseFlag {
+		fmt.Printf("%s %s -> %s\n",
+			style.BlueStyle.Render("📄 Copying (jsonc→json):"),
+			src, dest)
+	}
 
 	switch r.State {
 	case StateLinked:
-		if r.CreatedDir {
+		if r.CreatedDir && verboseFlag {
 			fmt.Printf("  %s %s\n",
 				style.BlueStyle.Render("📁 Creating directory:"),
 				filepath.Dir(dest))
 		}
-		if r.RemovedExisting {
+		if r.RemovedExisting && verboseFlag {
 			fmt.Printf("  %s %s\n",
 				style.YellowStyle.Render("🗑️  Overwriting:"),
 				dest)
 		}
-		fmt.Printf("  %s %s -> %s\n",
-			style.GreenStyle.Render("✅ Copied:"),
+		fmt.Printf("%s %s -> %s\n",
+			style.GreenStyle.Render("✅ Copied (jsonc→json):"),
 			src, dest)
 	case StateMissing:
 		fmt.Printf("  %s Source '%s' does not exist, skipping\n",
@@ -415,6 +440,27 @@ func shortenPath(path string) string {
 		return "~" + path[len(home):]
 	}
 	return path
+}
+
+func runJobsSubset(cmd *cobra.Command, cfg *Config, run JobRun, label string, force bool) error {
+	filtered := make([]Job, 0, len(cfg.Jobs))
+	for _, j := range cfg.Jobs {
+		if j.Run == run {
+			filtered = append(filtered, j)
+		}
+	}
+	if len(filtered) == 0 {
+		fmt.Printf("No %s jobs declared.\n", label)
+		return nil
+	}
+	subset := *cfg
+	subset.Jobs = filtered
+	fmt.Printf("%s Applying %d %s job(s)\n", style.BlueStyle.Render("⚙️"), len(filtered), label)
+	if err := ApplyJobs(&subset, JobApplyOptions{Force: force}); err != nil {
+		return err
+	}
+	cmux.Notify(cmd.Context(), "Dotfiles", fmt.Sprintf("Ran %d %s job(s)", len(filtered), label))
+	return nil
 }
 
 func executeCommand(cmdStr, baseDir string) error {

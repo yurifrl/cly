@@ -24,6 +24,7 @@ const (
 	JobRunStartup  JobRun = "startup"
 	JobRunInterval JobRun = "interval"
 	JobRunOnce     JobRun = "once"
+	JobRunCache    JobRun = "cache"
 )
 
 type Job struct {
@@ -31,6 +32,7 @@ type Job struct {
 	Run       JobRun
 	Command   string
 	Every     string
+	Check     string // reserved for future use
 	KeepAlive bool
 	LineNum   int
 }
@@ -39,6 +41,11 @@ type OpMapping struct {
 	Source      string
 	Destination string
 	Account     string
+	// IsReference is true when Source is a raw 1Password secret reference
+	// (e.g. op://Vault/Item/field). In that case the destination is written
+	// with `op read --out-file`. Otherwise Source is a template file path and
+	// `op inject` is used.
+	IsReference bool
 	LineNum     int
 }
 
@@ -154,6 +161,11 @@ func parseJobLine(cfg *Config, line string, lineNum int) error {
 			return fmt.Errorf("once job only supports '@once name -- command'")
 		}
 		job.Run = JobRunOnce
+	case "@cache":
+		if len(meta) > 2 {
+			return fmt.Errorf("cache job only supports '@cache name -- command'")
+		}
+		job.Run = JobRunCache
 	default:
 		return fmt.Errorf("unknown job directive %q", meta[0])
 	}
@@ -332,13 +344,20 @@ func parseOpLine(cfg *Config, line string, lineNum int, baseDir string) error {
 		return fmt.Errorf("@op source or destination is empty")
 	}
 
-	source = resolvePath(source, baseDir)
+	// Strip surrounding quotes on the source (useful for op:// refs with spaces).
+	source = strings.Trim(source, "\"'")
+
+	isRef := strings.HasPrefix(source, "op://")
+	if !isRef {
+		source = resolvePath(source, baseDir)
+	}
 	destination = expandTilde(destination)
 
 	cfg.OpMappings = append(cfg.OpMappings, OpMapping{
 		Source:      source,
 		Destination: destination,
 		Account:     account,
+		IsReference: isRef,
 		LineNum:     lineNum,
 	})
 

@@ -78,6 +78,14 @@ func runJobsStatus(cmd *cobra.Command, args []string) error {
 				state = "done"
 			}
 			fmt.Printf("%s %-18s %-8s %s\n", icon, status.Name, status.Run, state)
+		case JobRunCache:
+			icon := style.SubtleStyle.Render("○")
+			state := "missing"
+			if status.Completed {
+				icon = style.GreenStyle.Render("✓")
+				state = "cached"
+			}
+			fmt.Printf("%s %-18s %-8s %s\n", icon, status.Name, status.Run, state)
 		default:
 			icon := style.SubtleStyle.Render("○")
 			state := "not registered"

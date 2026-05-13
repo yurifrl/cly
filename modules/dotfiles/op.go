@@ -12,8 +12,20 @@ import (
 var opInjectRun = func(account, source, destination string) error {
 	args := []string{"inject", "-f", "-i", source, "-o", destination}
 	if account != "" {
-		args = append([]string{"inject", "-f", "--account", account, "-i", source, "-o", destination})
+		args = []string{"inject", "-f", "--account", account, "-i", source, "-o", destination}
 	}
+	cmd := exec.Command("op", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+var opReadRun = func(account, reference, destination string) error {
+	args := []string{"read", "-f", "--out-file", destination}
+	if account != "" {
+		args = []string{"read", "-f", "--account", account, "--out-file", destination}
+	}
+	args = append(args, reference)
 	cmd := exec.Command("op", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -42,14 +54,26 @@ func ApplyOpMappings(cfg *Config) error {
 			account = defaultAccount
 		}
 
+		if err := os.MkdirAll(filepath.Dir(m.Destination), 0755); err != nil {
+			return fmt.Errorf("create parent dir for %s: %w", m.Destination, err)
+		}
+
+		if m.IsReference {
+			fmt.Printf("%s %s -> %s\n",
+				style.BlueStyle.Render("🔑 op read:"),
+				m.Source, shortenPath(m.Destination))
+
+			if err := opReadRun(account, m.Source, m.Destination); err != nil {
+				fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
+				continue
+			}
+			continue
+		}
+
 		if _, err := os.Stat(m.Source); os.IsNotExist(err) {
 			fmt.Printf("  %s Source '%s' does not exist, skipping\n",
 				style.YellowStyle.Render("⚠️  Warning:"), shortenPath(m.Source))
 			continue
-		}
-
-		if err := os.MkdirAll(filepath.Dir(m.Destination), 0755); err != nil {
-			return fmt.Errorf("create parent dir for %s: %w", m.Destination, err)
 		}
 
 		fmt.Printf("%s %s -> %s\n",

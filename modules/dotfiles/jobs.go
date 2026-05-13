@@ -13,6 +13,7 @@ import (
 	"time"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/style"
 )
 
 type JobRetryConfig struct {
@@ -115,6 +116,15 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 				return fmt.Errorf("run once job %s: %w", job.Name, err)
 			}
 			state.Jobs[job.Name] = hash
+		case JobRunCache:
+			if !opts.Force && cacheCheckPasses(job.Name) {
+				fmt.Printf("  %s @cache %s (already installed)\n", style.SubtleStyle.Render("○"), job.Name)
+				continue
+			}
+			fmt.Printf("  %s @cache %s\n", style.BlueStyle.Render("⚙️"), job.Name)
+			if err := runScript(scriptPath, cfg.BaseDir); err != nil {
+				return fmt.Errorf("run cache job %s: %w", job.Name, err)
+			}
 		}
 	}
 
@@ -170,6 +180,11 @@ func RemoveJobByName(name string) error {
 	return saveOnceState(paths.StateFile, state)
 }
 
+var cacheCheckPasses = func(name string) bool {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("command -v %s >/dev/null 2>&1", name))
+	return cmd.Run() == nil
+}
+
 func StatusJobs(cfg *Config) ([]JobStatus, error) {
 	paths, err := loadJobPaths()
 	if err != nil {
@@ -191,6 +206,8 @@ func StatusJobs(cfg *Config) ([]JobStatus, error) {
 		switch job.Run {
 		case JobRunOnce:
 			status.Completed = state.Jobs[job.Name] == jobDefinitionHash(job, cfg.BaseDir)
+		case JobRunCache:
+			status.Completed = cacheCheckPasses(job.Name)
 		default:
 			_, err := os.Stat(jobPlistPath(paths, job.Name))
 			status.Registered = err == nil
