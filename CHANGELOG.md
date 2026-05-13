@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-05-03 Cly Diff Mockup Iterations (reader, progress bar, bead modal)
+- Session ID: 019debac-3ef8-7350-a9d5-f44d32468028
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-05-03T02-30-27-320Z_019debac-3ef8-7350-a9d5-f44d32468028.jsonl
+- Session Name: 2026-05-03-1927-opsx-commands-and-beads
+- Context Name: 2026-05-03-1927-opsx-commands-and-beads
+
+### Added
+- `.agents/tmp/cly-diff-mockup.html` — single self-contained interactive mockup of `cly diff`. Slideshow reader (one diff card at a time), loading-bar progress with tick-per-event and cursor, left “old” / right “now” labels, clickable seek. Footer: `[⇤] [◀] [▶] [⇥]`. `⇥` gets blue fill + red count badge + pulse when unread-newer exists (replaces prior separate catch-up pill). Swipe gestures, keyboard arrows/Home/End/Space, demo drawer behind `⚙` with simulate buttons and auto-demo script.
+- Bead-creation modal opened by `◆ bead` header button / `n` shortcut. Fields: title, description, type (bug/feature/task/chore/decision with mobile overflow menu), priority (P0–P4). Submit logs payload + toast. Maps to `bd create` flags (`bd -h` confirmed).
+- Roving `tabindex` on segmented controls (`bf-type`, `bf-priority`) with explicit `tabindex="0"` on the selected option; arrow-left/right change selection and move focus within the group.
+- Visible focus rings: white inset + dark gap + outer blue ring on selected seg buttons (so focus is visible against blue background); outer blue ring on picker button and other interactive elements.
+- Context file `.agents/contexts/2026-05-03-1927-opsx-commands-and-beads.md` documenting the full design trajectory (rejected shapes, accepted shapes, WKWebView gotchas, dead code list, next steps).
+
+### Changed
+- Reader orientation flipped so left=oldest, right=newest (loading bar metaphor). `go(+1)` = older, `go(-1)` = newer; Home=oldest, End=newest; swipe-left=newer; nav-button disable conditions corrected (btnNewer/btnOlder IDs are historical, inverted from the arrow direction they now carry).
+- `ensureDropdownVisible()` uses `setTimeout(…, 32)` instead of `requestAnimationFrame` because cmux’s WKWebView backgrounds the surface and throttles rAF, so the scroll callback never ran.
+- Explicit `tabindex="0"` added on `modal-close`, `bf-file-btn`, `cancel`, `create` because WKWebView (cmux browser) skips native `<button>` in Tab order by default.
+
+### Removed
+- `▸ more` progressive-disclosure toggle in bead form. Triggered a broken DOM edit (dangling `</div>` from the removed wrapper was closing `.modal-body` prematurely and spilling `.modal-foot` outside the modal card); fixed.
+- Context (file picker) and labels (chip input with autocomplete) fields from the bead form. Arrow-key navigation for these dropdowns could not be made to work reliably in WKWebView across attempts (document delegation, direct listeners on inputs, rAF vs setTimeout); user asked to delete the fields rather than keep debugging. JS helpers (`renderLabelSuggest`, `moveSuggestHl`, `renderFileList`, `moveFileHl`, `pickFile`, `toggleFilePicker`, `KNOWN_LABELS`, etc.) are still in the file but unreferenced.
+- Floating keyboard-hint pill and standalone catch-up pill (replaced by the `⇥` button’s contextual blue/badge state + subtle bottom-right dim hint).
+
 ## 2026-05-03 New Bead Modal Tab Order and Context Default Fixes
 - Session ID: 019def1e-761b-7709-8f77-64687de34bec
 - Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-05-03T18-34-04-187Z_019def1e-761b-7709-8f77-64687de34bec.jsonl
