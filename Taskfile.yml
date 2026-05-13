@@ -17,8 +17,24 @@ tasks:
     cmds:
       - task --list
 
+  build:web:
+    desc: Build the diff2 React frontend
+    dir: modules/diff2/web
+    cmds:
+      - npm install
+      - npm run build
+    sources:
+      - src/**/*
+      - package.json
+      - tsconfig.json
+      - vite.config.ts
+      - index.html
+    generates:
+      - dist/**/*
+
   build:
     desc: Build cly for current platform
+    deps: [build:web]
     cmds:
       - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
     sources:
