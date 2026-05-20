@@ -15,17 +15,18 @@ import (
 )
 
 var (
-	installFlag bool
-	jobsFlag    bool
-	opFlag      bool
-	allFlag     bool
-	onceFlag    bool
-	cacheFlag   bool
-	forceFlag   bool
-	verboseFlag bool
-	dryRunFlag  bool
-	configFlag  string
-	noItFlag    bool
+	installFlag  bool
+	jobsFlag     bool
+	opFlag       bool
+	allFlag      bool
+	onceFlag     bool
+	cacheFlag    bool
+	forceFlag    bool
+	verboseFlag  bool
+	dryRunFlag   bool
+	failFastFlag bool
+	configFlag   string
+	noItFlag     bool
 )
 
 func Register(parent *cobra.Command) {
@@ -38,7 +39,8 @@ Config syntax (dotfiles.conf):
   ./src -> ~/dst                        symlink (dirs need trailing /)
   !cmd                                  run shell command (-i flag)
   @once name -- cmd                     run once ever (-f to rerun)
-  @cache name -- cmd                    run unless 'command -v name' exists
+  @cache name -- cmd                    run unless 'command -v name' succeeds
+  @cache foo -v -- cmd                  run unless 'command -v foo' AND 'foo -v' both exit 0
   @startup name -- cmd                  run every time (-j flag)
   @startup name keepalive -- cmd        run and keep alive
   @interval name every=1h -- cmd        run if interval elapsed
@@ -60,6 +62,7 @@ Use --cache to run only @cache jobs (skips everything else).`,
 	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions (rerun @once jobs)")
 	cmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Verbose output (show overwrites, intermediate steps)")
 	cmd.PersistentFlags().BoolVarP(&dryRunFlag, "dry-run", "n", false, "Dry run: log every mutation (fs writes, shell commands) without executing")
+	cmd.PersistentFlags().BoolVar(&failFastFlag, "fail-fast", false, "Abort sync on the first error (default: print the error and continue)")
 	cmd.PersistentPreRun = func(c *cobra.Command, args []string) { mut.SetDryRun(dryRunFlag) }
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
@@ -175,12 +178,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, m := range cfg.Mappings {
+		var result LinkResult
 		if IsJsoncToJson(m) {
-			result := CopyJsoncToJson(m)
+			result = CopyJsoncToJson(m)
 			printJsoncResult(m, result)
 		} else {
-			result := CreateSymlink(m)
+			result = CreateSymlink(m)
 			printResult(m, result)
+		}
+		if failFastFlag && (result.State == StateError || result.State == StateConflict) {
+			return fmt.Errorf("%s: %s", m.Destination, result.Error)
 		}
 	}
 
@@ -190,6 +197,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 				fmt.Printf("%s %s\n", style.BlueStyle.Render("⚡ Executing:"), cmdStr)
 				if err := executeCommand(cmdStr, cfg.BaseDir); err != nil {
 					fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
+					if failFastFlag {
+						return fmt.Errorf("install command failed: %w", err)
+					}
 				}
 			}
 		} else {
@@ -201,7 +211,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if len(cfg.OpMappings) > 0 {
 		if opFlag || allFlag {
 			fmt.Printf("\n%s Injecting %d 1Password template(s)\n", style.BlueStyle.Render("🔑"), len(cfg.OpMappings))
-			if err := ApplyOpMappings(cfg); err != nil {
+			if err := ApplyOpMappings(cfg, failFastFlag); err != nil {
 				return err
 			}
 		} else {
@@ -213,7 +223,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if len(cfg.Jobs) > 0 {
 		if jobsFlag || allFlag {
 			fmt.Printf("\n%s Applying %d job(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Jobs))
-			if err := ApplyJobs(cfg, JobApplyOptions{Force: forceFlag}); err != nil {
+			if err := ApplyJobs(cfg, JobApplyOptions{Force: forceFlag, FailFast: failFastFlag}); err != nil {
 				return err
 			}
 		} else {
@@ -459,7 +469,7 @@ func runJobsSubset(cmd *cobra.Command, cfg *Config, run JobRun, label string, fo
 	subset := *cfg
 	subset.Jobs = filtered
 	fmt.Printf("%s Applying %d %s job(s)\n", style.BlueStyle.Render("⚙️"), len(filtered), label)
-	if err := ApplyJobs(&subset, JobApplyOptions{Force: force}); err != nil {
+	if err := ApplyJobs(&subset, JobApplyOptions{Force: force, FailFast: failFastFlag}); err != nil {
 		return err
 	}
 	cmux.Notify(cmd.Context(), "Dotfiles", fmt.Sprintf("Ran %d %s job(s)", len(filtered), label))

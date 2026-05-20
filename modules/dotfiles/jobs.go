@@ -1,10 +1,10 @@
 package dotfiles
 
 import (
-	"github.com/yurifrl/cly/pkg/mut"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/mut"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -28,7 +29,8 @@ type JobRetryConfig struct {
 }
 
 type JobApplyOptions struct {
-	Force bool
+	Force    bool
+	FailFast bool
 }
 
 type jobPaths struct {
@@ -87,23 +89,43 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 	}
 
 	desired := make(map[string]bool)
+	var jobErrs []error
+	record := func(err error) bool {
+		if opts.FailFast {
+			return true // caller should return
+		}
+		fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
+		jobErrs = append(jobErrs, err)
+		return false
+	}
+
 	for _, job := range cfg.Jobs {
 		desired[job.Name] = true
 
 		scriptPath, err := writeJobScript(paths, job, cfg.BaseDir, retryCfg)
 		if err != nil {
-			return err
+			if record(err) {
+				return err
+			}
+			continue
 		}
 
 		switch job.Run {
 		case JobRunStartup, JobRunInterval:
 			plistPath, err := writeLaunchAgent(paths, job, scriptPath)
 			if err != nil {
-				return err
+				if record(err) {
+					return err
+				}
+				continue
 			}
 			unloadJob(paths, job.Name, plistPath)
 			if err := launchctlRun("load", plistPath); err != nil {
-				return fmt.Errorf("load launch agent %s: %w", job.Name, err)
+				wrapped := fmt.Errorf("load launch agent %s: %w", job.Name, err)
+				if record(wrapped) {
+					return wrapped
+				}
+				continue
 			}
 		case JobRunOnce:
 			hash := jobDefinitionHash(job, cfg.BaseDir)
@@ -111,17 +133,27 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 				continue
 			}
 			if err := runScript(scriptPath, cfg.BaseDir); err != nil {
-				return fmt.Errorf("run once job %s: %w", job.Name, err)
+				wrapped := fmt.Errorf("run once job %s: %w", job.Name, err)
+				diagnoseJobFailure(job, cfg, paths, scriptPath, err)
+				if record(wrapped) {
+					return wrapped
+				}
+				continue
 			}
 			state.Jobs[job.Name] = hash
 		case JobRunCache:
-			if !opts.Force && cacheCheckPasses(job.Name) {
+			if !opts.Force && cacheCheckPasses(job) {
 				fmt.Printf("  %s @cache %s (already installed)\n", style.SubtleStyle.Render("○"), job.Name)
 				continue
 			}
 			fmt.Printf("  %s @cache %s\n", style.BlueStyle.Render("⚙️"), job.Name)
 			if err := runScript(scriptPath, cfg.BaseDir); err != nil {
-				return fmt.Errorf("run cache job %s: %w", job.Name, err)
+				wrapped := fmt.Errorf("run cache job %s: %w", job.Name, err)
+				diagnoseJobFailure(job, cfg, paths, scriptPath, err)
+				if record(wrapped) {
+					return wrapped
+				}
+				continue
 			}
 		}
 	}
@@ -130,7 +162,15 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 		return err
 	}
 
-	return cleanupStaleManagedJobs(paths, desired, state)
+	if err := cleanupStaleManagedJobs(paths, desired, state); err != nil {
+		return err
+	}
+
+	if len(jobErrs) > 0 {
+		fmt.Printf("%s %d job(s) failed (continuing without --fail-fast)\n",
+			style.YellowStyle.Render("⚠️ "), len(jobErrs))
+	}
+	return nil
 }
 
 func RemoveJobs(cfg *Config) error {
@@ -178,9 +218,82 @@ func RemoveJobByName(name string) error {
 	return saveOnceState(paths.StateFile, state)
 }
 
-var cacheCheckPasses = func(name string) bool {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("command -v %s >/dev/null 2>&1", name))
+var cacheCheckPasses = func(job Job) bool {
+	check := job.Check
+	if check == "" {
+		check = job.Name
+	}
+	fields := strings.Fields(check)
+	if len(fields) == 0 {
+		return false
+	}
+	var shellCheck string
+	if len(fields) == 1 {
+		// Single word: `command -v <word>` (PATH lookup only).
+		shellCheck = fmt.Sprintf("command -v %s >/dev/null 2>&1", fields[0])
+	} else {
+		// Multi-word: first ensure the binary exists on PATH, then execute
+		// the full expression. Both must succeed (exit 0) to count as installed.
+		shellCheck = fmt.Sprintf("command -v %s >/dev/null 2>&1 && %s >/dev/null 2>&1", fields[0], check)
+	}
+	cmd := exec.Command("sh", "-c", shellCheck)
 	return cmd.Run() == nil
+}
+
+// diagnoseJobFailure prints a structured diagnostic block after a job fails.
+// The subprocess stdout/stderr was already streamed live; this block adds
+// metadata (config line, script path, launchd log paths, exit code) so the
+// user can jump straight to the right file or tail the right log.
+func diagnoseJobFailure(job Job, cfg *Config, paths jobPaths, scriptPath string, err error) {
+	sep := strings.Repeat("─", 64)
+	fmt.Fprintln(os.Stderr, style.RedStyle.Render(sep))
+	fmt.Fprintf(os.Stderr, "%s @%s %q failed\n", style.RedStyle.Render("❌ job:"), job.Run, job.Name)
+	fmt.Fprintln(os.Stderr, style.RedStyle.Render(sep))
+
+	kv := func(k, v string) {
+		if v == "" {
+			return
+		}
+		fmt.Fprintf(os.Stderr, "  %-14s %s\n", style.SubtleStyle.Render(k), v)
+	}
+
+	kv("source:", fmt.Sprintf("dotfiles.conf:%d", job.LineNum))
+	kv("command:", job.Command)
+	kv("cwd:", cfg.BaseDir)
+	kv("script:", scriptPath)
+	if job.Run == JobRunCache {
+		check := job.Check
+		if check == "" {
+			check = job.Name
+		}
+		fields := strings.Fields(check)
+		var rendered string
+		switch {
+		case len(fields) == 1:
+			rendered = fmt.Sprintf("command -v %s", fields[0])
+		case len(fields) > 1:
+			rendered = fmt.Sprintf("command -v %s && %s", fields[0], check)
+		}
+		kv("cache check:", rendered)
+	}
+	if job.Run == JobRunInterval {
+		kv("every:", job.Every)
+	}
+	if job.Run == JobRunStartup || job.Run == JobRunInterval {
+		kv("plist:", jobPlistPath(paths, job.Name))
+		kv("stdout log:", filepath.Join(os.TempDir(), "cly-dotfiles-"+job.Name+".log"))
+		kv("stderr log:", filepath.Join(os.TempDir(), "cly-dotfiles-"+job.Name+".error.log"))
+	}
+	if job.Run == JobRunStartup {
+		kv("keepalive:", fmt.Sprintf("%t", job.KeepAlive))
+	}
+
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		kv("exit code:", strconv.Itoa(exit.ExitCode()))
+	}
+	kv("error:", err.Error())
+	fmt.Fprintln(os.Stderr, style.RedStyle.Render(sep))
 }
 
 func StatusJobs(cfg *Config) ([]JobStatus, error) {
@@ -205,7 +318,7 @@ func StatusJobs(cfg *Config) ([]JobStatus, error) {
 		case JobRunOnce:
 			status.Completed = state.Jobs[job.Name] == jobDefinitionHash(job, cfg.BaseDir)
 		case JobRunCache:
-			status.Completed = cacheCheckPasses(job.Name)
+			status.Completed = cacheCheckPasses(job)
 		default:
 			_, err := os.Stat(jobPlistPath(paths, job.Name))
 			status.Registered = err == nil

@@ -47,7 +47,7 @@ func runJobsApply(cmd *cobra.Command, args []string) error {
 	for _, e := range cfg.Errors {
 		fmt.Printf("⚠️  %s\n", e)
 	}
-	if err := ApplyJobs(cfg, JobApplyOptions{Force: forceFlag}); err != nil {
+	if err := ApplyJobs(cfg, JobApplyOptions{Force: forceFlag, FailFast: failFastFlag}); err != nil {
 		return err
 	}
 	fmt.Printf("%s Applied %d job(s)\n", style.GreenStyle.Render("✅"), len(cfg.Jobs))

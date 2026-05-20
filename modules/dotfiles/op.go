@@ -35,7 +35,7 @@ func RemoveOpMapping(m OpMapping) bool {
 	return true
 }
 
-func ApplyOpMappings(cfg *Config) error {
+func ApplyOpMappings(cfg *Config, failFast bool) error {
 	if len(cfg.OpMappings) == 0 {
 		return nil
 	}
@@ -59,6 +59,9 @@ func ApplyOpMappings(cfg *Config) error {
 
 			if err := opReadRun(account, m.Source, m.Destination); err != nil {
 				fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
+				if failFast {
+					return fmt.Errorf("op read %s: %w", m.Source, err)
+				}
 				continue
 			}
 			continue
@@ -76,6 +79,9 @@ func ApplyOpMappings(cfg *Config) error {
 
 		if err := opInjectRun(account, m.Source, m.Destination); err != nil {
 			fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
+			if failFast {
+				return fmt.Errorf("op inject %s: %w", m.Source, err)
+			}
 			continue
 		}
 	}
