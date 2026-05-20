@@ -37,8 +37,14 @@ type pickerItem struct {
 
 func (i pickerItem) FilterValue() string { return i.entry.Name }
 
+// piProviderTagStyle is a muted color for pi sessions.
+var piProviderTagStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+
 func providerTag(provider string) string {
 	provider = effectiveProvider(Entry{Provider: provider})
+	if provider == "pi" {
+		return piProviderTagStyle.Render(provider)
+	}
 	return providerTagStyle.Render(provider)
 }
 
