@@ -57,7 +57,7 @@ func GetChangeset(all bool) (*Changeset, error) {
 	}
 
 	// Get staged diff with rename detection and binary support
-	diffOutput, err := gitRawOutput("diff", "--cached", "-M", "--no-color", "--binary")
+	diffOutput, err := gitRawOutput("-c", "diff.submodule=short", "diff", "--cached", "-M", "--no-color", "--binary")
 	if err != nil {
 		return nil, fmt.Errorf("git diff failed: %w", err)
 	}

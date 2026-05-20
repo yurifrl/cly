@@ -24,7 +24,7 @@ func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
 	}
 
 	// Save the full staged diff for recovery (--binary for binary files like .gif)
-	savedDiff, err := gitRawOutput("diff", "--cached", "--binary")
+	savedDiff, err := gitRawOutput("-c", "diff.submodule=short", "diff", "--cached", "--binary")
 	if err != nil {
 		return nil, fmt.Errorf("failed to save diff: %w", err)
 	}

@@ -23,6 +23,7 @@ type pipelineOpts struct {
 	Strategy string
 	Prompt   string
 	Ignored  bool
+	NoSubmodule bool
 }
 
 const (
@@ -43,6 +44,40 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	// Verify git binary exists
 	if _, err := exec.LookPath("git"); err != nil {
 		return fmt.Errorf("git not found in PATH — install git first")
+	}
+
+	// Submodules: if any have uncommitted changes, optionally commit them first.
+	if !opts.NoSubmodule {
+		if statuses := submoduleStatuses(); len(statuses) > 0 {
+			var commitable []string
+			for _, s := range statuses {
+				if !s.HasStaged && !opts.All {
+					fmt.Println(style.SubtleStyle.Render(fmt.Sprintf("⏭  submodule %s: nothing staged, skipping (%d unstaged/untracked)", s.Path, len(s.Unstaged))))
+					continue
+				}
+				commitable = append(commitable, s.Path)
+			}
+			if len(commitable) > 0 {
+				commit := opts.Yes || confirmSubmoduleCommit(commitable)
+				if commit {
+					if err := commitSubmodules(commitable, opts); err != nil {
+						return fmt.Errorf("committing submodules: %w", err)
+					}
+				} else {
+					fmt.Println(style.SubtleStyle.Render("   skipping submodule commits"))
+				}
+			}
+		}
+
+		// Stage any submodule whose pointer is unstaged in the parent so it
+		// gets included in the parent commit plan. Covers the case where the
+		// submodule was already committed (by us or another session) but its
+		// new pointer was never `git add`-ed in the parent.
+		if staged, err := stageUnstagedSubmodulePointers(); err == nil && len(staged) > 0 {
+			for _, p := range staged {
+				fmt.Println(style.SubtleStyle.Render(fmt.Sprintf("   staged submodule pointer: %s", p)))
+			}
+		}
 	}
 
 	// Load config

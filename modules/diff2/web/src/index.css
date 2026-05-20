@@ -275,7 +275,7 @@
     transition: opacity 0.1s;
     z-index: 5;
   }
-  // swipe hint colors: OLD (amber) left, NEW (accent) right
+  /* swipe hint colors: OLD (amber) left, NEW (accent) right */
 .swipe-hint.left { left: 16px; color: #ffb347; border: 3px solid #ffb347; }
 .swipe-hint.right { right: 16px; color: var(--accent); border: 3px solid var(--accent); }
 

@@ -331,7 +331,7 @@ func ExecuteLine(plan *CommitPlan, cs *Changeset, noVerify bool) ([]CommitResult
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
-	savedDiff, err := gitRawOutput("diff", "--cached", "--binary")
+	savedDiff, err := gitRawOutput("-c", "diff.submodule=short", "diff", "--cached", "--binary")
 	if err != nil {
 		return nil, fmt.Errorf("failed to save diff: %w", err)
 	}

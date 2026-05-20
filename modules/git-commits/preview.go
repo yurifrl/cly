@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -69,18 +71,92 @@ type ConfirmResult struct {
 	Prompt string // Non-empty when Action == ConfirmRevise
 }
 
-// Confirm prompts the user for confirmation with 3 options.
-// Returns the action chosen and an optional re-plan prompt.
+// Confirm prompts the user with single-keypress controls.
+// Y / Enter = yes, n = no, r = revise (asks for guidance),
+// p = prompt (asks for a free-form preprompt).
 func Confirm() ConfirmResult {
 	fmt.Println(style.SubtleStyle.Render("  [Y]es  [n]o  [r]evise split  [p]rompt"))
 	fmt.Print("→ ")
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
+
+	ch, ok := readSingleKey()
+	if !ok {
+		// Fall back to line-mode read (non-tty stdin, e.g. piped input)
+		reader := bufio.NewReader(os.Stdin)
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return ConfirmResult{Action: ConfirmNo}
+		}
+		return classifyConfirmInput(strings.TrimSpace(input), reader)
+	}
+
+	// Echo the chosen key so the user sees what they pressed.
+	switch ch {
+	case '\r', '\n':
+		fmt.Println("y")
+	case 3, 4: // Ctrl-C / Ctrl-D
+		fmt.Println()
+		return ConfirmResult{Action: ConfirmNo}
+	default:
+		fmt.Printf("%c\n", ch)
+	}
+
+	switch ch {
+	case '\r', '\n', 'y', 'Y':
+		return ConfirmResult{Action: ConfirmYes}
+	case 'n', 'N':
+		return ConfirmResult{Action: ConfirmNo}
+	case 'p', 'P':
+		fmt.Print(style.BlueStyle.Render("Preprompt: "))
+		reader := bufio.NewReader(os.Stdin)
+		prompt, err := reader.ReadString('\n')
+		if err != nil {
+			return ConfirmResult{Action: ConfirmNo}
+		}
+		prompt = strings.TrimSpace(prompt)
+		if prompt == "" {
+			return ConfirmResult{Action: ConfirmNo}
+		}
+		return ConfirmResult{Action: ConfirmRevise, Prompt: prompt}
+	case 'r', 'R':
+		fmt.Print(style.BlueStyle.Render("Guide the split: "))
+		reader := bufio.NewReader(os.Stdin)
+		prompt, err := reader.ReadString('\n')
+		if err != nil {
+			return ConfirmResult{Action: ConfirmNo}
+		}
+		prompt = strings.TrimSpace(prompt)
+		if prompt == "" {
+			return ConfirmResult{Action: ConfirmNo}
+		}
+		return ConfirmResult{Action: ConfirmRevise, Prompt: prompt}
+	default:
 		return ConfirmResult{Action: ConfirmNo}
 	}
-	input = strings.TrimSpace(input)
+}
 
+// readSingleKey reads a single byte from stdin in raw mode.
+// Returns ok=false when stdin is not a TTY.
+func readSingleKey() (byte, bool) {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return 0, false
+	}
+	old, err := term.MakeRaw(fd)
+	if err != nil {
+		return 0, false
+	}
+	defer term.Restore(fd, old) //nolint:errcheck
+	var buf [1]byte
+	n, err := os.Stdin.Read(buf[:])
+	if err != nil || n != 1 {
+		return 0, false
+	}
+	return buf[0], true
+}
+
+// classifyConfirmInput handles the legacy line-mode path used when stdin
+// is not a TTY (e.g. tests or piped input).
+func classifyConfirmInput(input string, reader *bufio.Reader) ConfirmResult {
 	lower := strings.ToLower(input)
 	switch {
 	case lower == "" || lower == "y" || lower == "yes":
@@ -88,7 +164,6 @@ func Confirm() ConfirmResult {
 	case lower == "n" || lower == "no":
 		return ConfirmResult{Action: ConfirmNo}
 	case lower == "p" || lower == "prompt":
-		// Ask for a preprompt to guide the AI on the next attempt
 		fmt.Print(style.BlueStyle.Render("Preprompt: "))
 		prompt, err := reader.ReadString('\n')
 		if err != nil {
@@ -100,7 +175,6 @@ func Confirm() ConfirmResult {
 		}
 		return ConfirmResult{Action: ConfirmRevise, Prompt: prompt}
 	case lower == "r" || lower == "revise":
-		// Ask for the guidance prompt
 		fmt.Print(style.BlueStyle.Render("Guide the split: "))
 		prompt, err := reader.ReadString('\n')
 		if err != nil {
@@ -112,8 +186,6 @@ func Confirm() ConfirmResult {
 		}
 		return ConfirmResult{Action: ConfirmRevise, Prompt: prompt}
 	default:
-		// Treat anything else as a revision prompt directly
-		// e.g. user typed "combine commits 1 and 3" without pressing 'r' first
 		return ConfirmResult{Action: ConfirmRevise, Prompt: input}
 	}
 }
