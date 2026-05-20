@@ -110,7 +110,7 @@ func parseJobLine(cfg *Config, line string, lineNum int) error {
 		return fmt.Errorf("invalid job format, expected '@startup name -- command'")
 	}
 
-	meta := strings.Fields(parts[0])
+	meta := parseKVTokens(parts[0])
 	if len(meta) < 2 {
 		return fmt.Errorf("job name is required")
 	}
@@ -162,16 +162,55 @@ func parseJobLine(cfg *Config, line string, lineNum int) error {
 		}
 		job.Run = JobRunOnce
 	case "@cache":
-		if len(meta) > 2 {
-			return fmt.Errorf("cache job only supports '@cache name -- command'")
-		}
 		job.Run = JobRunCache
+		// Re-split parts[0] with plain Fields so quoting doesn't collapse the
+		// check into a single token. For @cache we treat the whole text between
+		// `@cache` and ` -- ` as the check expression.
+		fields := strings.Fields(parts[0])
+		if len(fields) < 2 {
+			return fmt.Errorf("@cache requires at least a name")
+		}
+		job.Name = fields[1]
+		if len(fields) > 2 {
+			// Multi-word check: the first word doubles as the job name AND is
+			// included in the shell check (e.g. `@cache foo -v` -> sh -c 'foo -v').
+			job.Check = strings.Join(fields[1:], " ")
+		}
 	default:
 		return fmt.Errorf("unknown job directive %q", meta[0])
 	}
 
 	cfg.Jobs = append(cfg.Jobs, job)
 	return nil
+}
+
+// parseKVTokens splits a whitespace-separated header like
+//   @cache hermes check="gh enhance -v"
+// into tokens (`@cache`, `hermes`, `check=gh enhance -v`) respecting
+// double-quoted values. Quotes are consumed and the inside is kept verbatim.
+func parseKVTokens(s string) []string {
+	var tokens []string
+	var cur strings.Builder
+	inQuote := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if (c == ' ' || c == '\t') && !inQuote {
+			if cur.Len() > 0 {
+				tokens = append(tokens, cur.String())
+				cur.Reset()
+			}
+			continue
+		}
+		cur.WriteByte(c)
+	}
+	if cur.Len() > 0 {
+		tokens = append(tokens, cur.String())
+	}
+	return tokens
 }
 
 func hasJobName(jobs []Job, name string) bool {
