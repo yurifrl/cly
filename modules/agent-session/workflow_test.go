@@ -173,7 +173,7 @@ func TestWorkflow_RmByName(t *testing.T) {
 
 	sessions, err := Load(filePathFn())
 	require.NoError(t, err)
-	assert.Len(t, sessions, 0)
+	assert.Len(t, filterDeleted(sessions, false), 0)
 }
 
 func TestWorkflow_RmByFilter(t *testing.T) {
@@ -195,8 +195,9 @@ func TestWorkflow_RmByFilter(t *testing.T) {
 
 	sessions, err := Load(filePathFn())
 	require.NoError(t, err)
-	assert.Len(t, sessions, 1)
-	assert.NotNil(t, FindByNameForProvider(sessions, "claude", "new-session"))
+	active := filterDeleted(sessions, false)
+	assert.Len(t, active, 1)
+	assert.NotNil(t, FindByNameForProvider(active, "claude", "new-session"))
 }
 
 func TestWorkflow_RmDryRun(t *testing.T) {
