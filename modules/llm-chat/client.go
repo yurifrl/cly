@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/yurifrl/cly/pkg/ai"
 	"github.com/yurifrl/cly/pkg/llm"
 )
 
@@ -12,34 +13,46 @@ type Client struct {
 	llmClient llm.Client
 }
 
-// NewClient creates a new LLM client using the direct SDK
+// NewClient builds an LLM client honoring (in priority order):
+//   1. Per-call flags (`api`, `model`, `api_key`) supplied by the caller.
+//   2. Module overrides under `modules.llm-chat.ai` in cly config.
+//   3. Global `ai:` defaults from cly config.
+//
+// Flags are translated into the same shape as a config override block so
+// `pkg/ai` does the merge in exactly one place.
 func NewClient(flags map[string]interface{}) (*Client, error) {
-	provider := "anthropic"
-	model := ""
-	apiKey := ""
-
-	if p, ok := flags["api"].(string); ok && p != "" {
-		provider = p
-	}
-	if m, ok := flags["model"].(string); ok && m != "" {
-		model = m
-	}
-	if k, ok := flags["api_key"].(string); ok && k != "" {
-		apiKey = k
-	}
-
-	cfg := llm.Config{
-		Provider: llm.Provider(provider),
-		Model:    model,
-		APIKey:   apiKey,
-	}
-
-	client, err := llm.NewClient(cfg)
+	override := flagsAsAIOverride(flags)
+	client, err := ai.NewClientWith(override)
 	if err != nil {
 		return nil, err
 	}
-
+	if client == nil {
+		return nil, ai.ErrDisabled
+	}
 	return &Client{llmClient: client}, nil
+}
+
+// flagsAsAIOverride remaps the historical `api`/`model`/`api_key` flag
+// names onto the shape `pkg/ai` expects. Empty/missing flags are dropped
+// so the override does not clobber config values with zero strings.
+func flagsAsAIOverride(flags map[string]interface{}) map[string]interface{} {
+	if len(flags) == 0 {
+		return nil
+	}
+	o := map[string]interface{}{}
+	if v, ok := flags["api"].(string); ok && v != "" {
+		o["provider"] = v
+	}
+	if v, ok := flags["model"].(string); ok && v != "" {
+		o["model"] = v
+	}
+	if v, ok := flags["api_key"].(string); ok && v != "" {
+		o["api_key"] = v
+	}
+	if len(o) == 0 {
+		return nil
+	}
+	return o
 }
 
 // SendMessage sends a message and returns the full response (non-streaming).

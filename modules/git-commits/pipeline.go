@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/pkg/ai"
 	"github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/llm"
 	"github.com/yurifrl/cly/pkg/style"
@@ -292,35 +293,20 @@ execute:
 	return err
 }
 
-// resolveLLMConfig builds LLM config from cly config or env defaults.
-func resolveLLMConfig(cfg *config.Config) llm.Config {
-	// Default: Anthropic (override via modules.git-commits.ai.provider in config)
-	llmCfg := llm.Config{
-		Provider: llm.ProviderAnthropic,
+// resolveLLMConfig delegates to `pkg/ai`. The `cfg` arg is kept for
+// back-compat but ignored; pkg/ai always reads the live process config.
+// commit-specific AI overrides live under `modules.git-commits.ai`.
+func resolveLLMConfig(_ *config.Config) llm.Config {
+	r := ai.LoadConfigWith(ai.LookupModuleOverride("git-commits"))
+	if r == nil {
+		return llm.Config{}
 	}
-
-	if cfg != nil {
-		if mod, ok := cfg.Modules["git-commits"]; ok {
-			if ai, ok := mod["ai"]; ok {
-				if aiMap, ok := ai.(map[string]interface{}); ok {
-					if p, ok := aiMap["provider"].(string); ok {
-						llmCfg.Provider = llm.Provider(p)
-					}
-					if m, ok := aiMap["model"].(string); ok {
-						llmCfg.Model = m
-					}
-					if k, ok := aiMap["api_key"].(string); ok {
-						llmCfg.APIKey = k
-					}
-					if ke, ok := aiMap["api_key_env"].(string); ok {
-						llmCfg.APIKeyEnv = ke
-					}
-				}
-			}
-		}
+	return llm.Config{
+		Provider:  llm.Provider(r.Provider),
+		Model:     r.Model,
+		APIKey:    r.APIKey,
+		APIKeyEnv: r.APIKeyEnv,
 	}
-
-	return llmCfg
 }
 
 // buildRevisionPrompt creates a new custom prompt that includes the previous plan

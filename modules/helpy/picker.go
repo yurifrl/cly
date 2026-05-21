@@ -9,7 +9,6 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/yurifrl/cly/pkg/llm"
 )
 
 // docEntry represents a discovered markdown doc file.
@@ -240,13 +239,10 @@ func (m pickerModel) openDoc(doc docEntry) (tea.Model, tea.Cmd) {
 	}
 
 	// Set up AI chat if configured
-	aiCfg := loadAIConfig()
-	if aiCfg != nil {
-		client, clientErr := llm.NewClient(*aiCfg)
-		if clientErr == nil {
-			viewer.chat = newChatModel(client, aiCfg.SystemPrompt, content, meta)
-			viewer.chatEnabled = true
-		}
+	client, clientErr := helpyClient()
+	if clientErr == nil && client != nil {
+		viewer.chat = newChatModel(client, helpySystemPrompt(), content, meta)
+		viewer.chatEnabled = true
 	}
 
 	// Resize viewer to current dimensions

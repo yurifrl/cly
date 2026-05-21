@@ -14,7 +14,7 @@ var verbosity int
 
 func Register(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use:   "oi [word or phrase]",
+		Use:   "spell-checker [word or phrase]",
 		Short: "Spell checker with explanations (pt-BR & English)",
 		Long: `AI-powered spell checker for English and Brazilian Portuguese.
 
@@ -24,13 +24,13 @@ For phrases: detects if you're asking about a word or want the phrase fixed.
 Uses LLM for rich explanations — like having a dictionary that also roasts your spelling.
 
 Name inspired by Homer Simpson: "I am so smart, S-M-R-T!"`,
-		Example: `  cly oi "laxante"
-  cly oi "definately"
-  cly oi "eu tenho um problma com isso"
-  cly oi -V 0 "speling"              # just the corrected word
-  echo "becuase" | cly oi            # pipe mode
-  cly oi                              # interactive mode`,
-		Aliases: []string{"wi"},
+		Example: `  cly spell-checker "laxante"
+  cly spell-checker "definately"
+  cly spell-checker "eu tenho um problma com isso"
+  cly spell-checker -V 0 "speling"              # just the corrected word
+  echo "becuase" | cly spell-checker            # pipe mode
+  cly spell-checker                              # interactive mode`,
+		Aliases: []string{"oi"},
 		RunE:    run,
 	}
 	cmd.Flags().IntVarP(&verbosity, "verbosity", "V", 1, "0=corrected word only, 1=colorful+explanation (default), 2=full dictionary")

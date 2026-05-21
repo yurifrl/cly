@@ -1,6 +1,7 @@
 package helpy
 
 import (
+	"github.com/yurifrl/cly/pkg/ai"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -188,13 +189,10 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	aiCfg := loadAIConfig()
-	if aiCfg != nil {
-		client, clientErr := llm.NewClient(*aiCfg)
-		if clientErr == nil {
-			m.chat = newChatModel(client, aiCfg.SystemPrompt, content, meta)
-			m.chatEnabled = true
-		}
+	client, clientErr := helpyClient()
+	if clientErr == nil && client != nil {
+		m.chat = newChatModel(client, helpySystemPrompt(), content, meta)
+		m.chatEnabled = true
 	}
 
 	p := tea.NewProgram(m)
@@ -394,15 +392,13 @@ func runPrompt(prompt string) error {
 
 // runChat opens a full-screen interactive AI chat TUI with the current doc as context.
 func runChat() error {
-	aiCfg := loadAIConfig()
-	if aiCfg == nil {
-		fmt.Println(errorStyle.Render("AI chat is disabled in config"))
-		return nil
-	}
-
-	client, err := llm.NewClient(*aiCfg)
+	client, err := helpyClient()
 	if err != nil {
 		fmt.Println(errorStyle.Render(fmt.Sprintf("Failed to create AI client: %v", err)))
+		return nil
+	}
+	if client == nil {
+		fmt.Println(errorStyle.Render("AI chat is disabled in config"))
 		return nil
 	}
 
@@ -416,7 +412,7 @@ func runChat() error {
 		meta, docContent = parseFrontmatter(rawContent)
 	}
 
-	chat := newStandaloneChatModel(client, aiCfg.SystemPrompt, docContent, meta)
+	chat := newStandaloneChatModel(client, helpySystemPrompt(), docContent, meta)
 	p := tea.NewProgram(chat)
 	if _, err := p.Run(); err != nil {
 		return err
@@ -450,54 +446,23 @@ func runDocsPicker() error {
 	return nil
 }
 
-// loadAIConfig reads the AI configuration from helpy config.
-// Falls back to sensible defaults if the user config doesn't have the ai section.
-func loadAIConfig() *llm.Config {
-	cfg := config.Get()
+// helpyClient builds the LLM client from global `ai:` config plus helpy's
+// own override under `modules.helpy.ai`.
+func helpyClient() (llm.Client, error) {
+	return ai.NewClientFor("helpy")
+}
 
-	// Defaults
-	provider := "anthropic"
-	model := "claude-sonnet-4-20250514"
-	apiKey := ""
-	apiKeyEnv := "ANTHROPIC_API_KEY"
-	systemPrompt := "You are a helpful assistant. Answer questions about the document provided. Be concise and reference specific sections when possible."
-	enabled := true
-
-	helpyConfig, ok := cfg.Modules["helpy"]
-	if ok {
-		if aiRaw, ok := helpyConfig["ai"]; ok {
-			if aiMap, ok := aiRaw.(map[string]interface{}); ok {
-				if v, ok := aiMap["enabled"].(bool); ok {
-					enabled = v
-				}
-				if v, ok := aiMap["provider"].(string); ok && v != "" {
-					provider = v
-				}
-				if v, ok := aiMap["model"].(string); ok && v != "" {
-					model = v
-				}
-				if v, ok := aiMap["api_key"].(string); ok && v != "" {
-					apiKey = v
-				}
-				if v, ok := aiMap["api_key_env"].(string); ok && v != "" {
-					apiKeyEnv = v
-				}
-				if v, ok := aiMap["system_prompt"].(string); ok && v != "" {
-					systemPrompt = v
-				}
-			}
-		}
+// helpySystemPrompt returns the system prompt configured under
+// `modules.helpy.ai.system_prompt`, or a sensible default. Per-module
+// prompts intentionally live with their module, not in `pkg/ai`.
+func helpySystemPrompt() string {
+	defaultPrompt := "You are a helpful assistant. Answer questions about the document provided. Be concise and reference specific sections when possible."
+	o := ai.LookupModuleOverride("helpy")
+	if o == nil {
+		return defaultPrompt
 	}
-
-	if !enabled {
-		return nil
+	if v, ok := o["system_prompt"].(string); ok && v != "" {
+		return v
 	}
-
-	return &llm.Config{
-		Provider:     llm.Provider(provider),
-		Model:        model,
-		APIKey:       apiKey,
-		APIKeyEnv:    apiKeyEnv,
-		SystemPrompt: systemPrompt,
-	}
+	return defaultPrompt
 }

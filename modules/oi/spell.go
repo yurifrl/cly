@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/yurifrl/cly/pkg/ai"
 	"github.com/yurifrl/cly/pkg/llm"
 )
 
@@ -101,11 +102,11 @@ ALWAYS respond with valid JSON matching this schema:
 
 Respond ONLY with JSON. No markdown, no code fences, no extra text.`
 
+// newLLMClient builds the spell-check LLM client via the shared `pkg/ai`
+// config tree. Module-level overrides (provider/model/api_key) live under
+// `modules.oi.ai` if needed; otherwise the global `ai:` defaults apply.
 func newLLMClient() (llm.Client, error) {
-	return llm.NewClient(llm.Config{
-		Provider: llm.ProviderAnthropic,
-		Model:    "claude-sonnet-4-20250514",
-	})
+	return ai.NewClient()
 }
 
 func check(input string) error {
