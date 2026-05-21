@@ -65,6 +65,9 @@ func resumeEntry(entry *Entry, provider Provider, yolo bool) error {
 		return err
 	}
 
+	if entry.Path == "" {
+		return fmt.Errorf("session %s has no recorded path; run `cly as save` from the project dir or `cly as search --refresh` to re-index", entry.ID)
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
