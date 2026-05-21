@@ -173,6 +173,11 @@ type Config struct {
 	Theme struct {
 		Style string `yaml:"style" mapstructure:"style"`
 	} `yaml:"theme" mapstructure:"theme"`
+	// AI is top-level core config consumed by `pkg/ai`. Modules that use AI
+	// reference these defaults; their own per-module overrides live under
+	// `modules.<name>.ai`. AI is intentionally NOT a module — it's shared
+	// infrastructure, on the same level as App and Theme.
+	AI      map[string]interface{}            `yaml:"ai" mapstructure:"ai"`
 	Modules map[string]map[string]interface{} `yaml:"modules" mapstructure:"modules"`
 }
 
