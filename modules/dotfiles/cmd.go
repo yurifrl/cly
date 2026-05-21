@@ -177,6 +177,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return runJobsSubset(cmd, cfg, JobRunCache, "@cache", true)
 	}
 
+	if !mut.DryRun() && !noItFlag {
+		if err := confirmBackups(cfg, oldLock); err != nil {
+			return err
+		}
+	}
+
 	for _, m := range cfg.Mappings {
 		var result LinkResult
 		if IsJsoncToJson(m) {
@@ -369,9 +375,15 @@ func printResult(m Mapping, r LinkResult) {
 				filepath.Dir(dest))
 		}
 		if r.RemovedExisting && verboseFlag {
-			fmt.Printf("  %s %s\n",
-				style.YellowStyle.Render("🗑️  Removing existing:"),
-				dest)
+			if r.BackupPath != "" {
+				fmt.Printf("  %s %s -> %s\n",
+					style.YellowStyle.Render("📦 Backed up:"),
+					dest, shortenPath(r.BackupPath))
+			} else {
+				fmt.Printf("  %s %s\n",
+					style.YellowStyle.Render("🗑️  Removing existing:"),
+					dest)
+			}
 		}
 		fmt.Printf("%s %s -> %s\n",
 			style.GreenStyle.Render("✅ Symlink:"),
@@ -409,9 +421,15 @@ func printJsoncResult(m Mapping, r LinkResult) {
 				filepath.Dir(dest))
 		}
 		if r.RemovedExisting && verboseFlag {
-			fmt.Printf("  %s %s\n",
-				style.YellowStyle.Render("🗑️  Overwriting:"),
-				dest)
+			if r.BackupPath != "" {
+				fmt.Printf("  %s %s -> %s\n",
+					style.YellowStyle.Render("📦 Backed up:"),
+					dest, shortenPath(r.BackupPath))
+			} else {
+				fmt.Printf("  %s %s\n",
+					style.YellowStyle.Render("🗑️  Overwriting:"),
+					dest)
+			}
 		}
 		fmt.Printf("%s %s -> %s\n",
 			style.GreenStyle.Render("✅ Copied (jsonc→json):"),

@@ -23,6 +23,7 @@ type LinkResult struct {
 	State          LinkState
 	Error          string
 	RemovedExisting bool
+	BackupPath     string
 	CreatedDir     bool
 }
 
@@ -49,21 +50,25 @@ func CreateSymlink(m Mapping) LinkResult {
 
 	destInfo, err := os.Lstat(m.Destination)
 	if err == nil {
-		// Force override: remove whatever exists (symlink, file, or directory)
-		result.RemovedExisting = true
-		if destInfo.IsDir() && destInfo.Mode()&os.ModeSymlink == 0 {
-			if err := mut.RemoveAll(m.Destination); err != nil {
-				result.State = StateError
-				result.Error = fmt.Sprintf("failed to remove existing directory: %v", err)
-				return result
-			}
-		} else {
-			if err := mut.Remove(m.Destination); err != nil {
-				result.State = StateError
-				result.Error = fmt.Sprintf("failed to remove existing file: %v", err)
+		// Already-correct symlink? No-op. Don't move, don't recreate — we
+		// would only end up briefly removing it and putting it right back.
+		if destInfo.Mode()&os.ModeSymlink != 0 {
+			if target, lerr := os.Readlink(m.Destination); lerr == nil && target == m.Source {
+				result.State = StateLinked
 				return result
 			}
 		}
+		// Otherwise force override: move whatever exists (file, dir, or
+		// symlink pointing somewhere else) into the per-run backup dir.
+		result.RemovedExisting = true
+		_ = destInfo // kept for potential future per-type handling
+		backupPath, berr := BackupExisting(m.Destination)
+		if berr != nil {
+			result.State = StateError
+			result.Error = fmt.Sprintf("failed to back up existing destination: %v", berr)
+			return result
+		}
+		result.BackupPath = backupPath
 	} else if !os.IsNotExist(err) {
 		result.State = StateError
 		result.Error = err.Error()

@@ -132,8 +132,8 @@ func settingsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			dotfiles.CopyJsoncToJson(m)
-			return nil
+			_, err = dotfiles.ApplyJsoncMapping(m)
+			return err
 		},
 	}
 }

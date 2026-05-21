@@ -57,15 +57,25 @@ func CopyJsoncToJson(m Mapping) LinkResult {
 		return result
 	}
 
-	// Remove existing destination (file or symlink) so WriteFile does not follow
-	// a symlink back into the source .jsonc and clobber comments.
+	// If the existing destination already has identical content, this is a
+	// pure no-op: don't move the file into the backup dir, don't rewrite it.
+	if existing, err := os.ReadFile(m.Destination); err == nil && bytes.Equal(existing, stripped) {
+		result.State = StateLinked
+		return result
+	}
+
+	// Move the existing destination (file, dir, or symlink) into the per-run
+	// backup directory so we never silently clobber user content. WriteFile
+	// would otherwise follow a symlink back into the source .jsonc.
 	if _, err := os.Lstat(m.Destination); err == nil {
 		result.RemovedExisting = true
-		if err := mut.Remove(m.Destination); err != nil {
+		backupPath, berr := BackupExisting(m.Destination)
+		if berr != nil {
 			result.State = StateError
-			result.Error = fmt.Sprintf("failed to remove existing destination: %v", err)
+			result.Error = fmt.Sprintf("failed to back up existing destination: %v", berr)
 			return result
 		}
+		result.BackupPath = backupPath
 	}
 
 	if err := mut.WriteFile(m.Destination, stripped, 0644); err != nil {
