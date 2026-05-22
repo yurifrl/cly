@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/pflag"
+	"github.com/yurifrl/cly/pkg/envs"
 )
 
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -25,7 +26,7 @@ type SwitchOpts struct {
 
 // IsInsideZellij checks if running inside a Zellij session.
 func IsInsideZellij() bool {
-	return os.Getenv("ZELLIJ") != ""
+	return envs.InZellij()
 }
 
 // BuildPluginArgs builds the argument string for the zellij-switch plugin.

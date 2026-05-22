@@ -21,7 +21,6 @@ type indexedSession struct {
 	SavedAt        time.Time `json:"saved_at,omitempty"`
 	FirstUserMsg   string    `json:"first_user_msg,omitempty"`
 	SearchableText string    `json:"searchable_text,omitempty"`
-	Cwd            string    `json:"cwd,omitempty"`
 }
 
 type searchIndex struct {
@@ -133,12 +132,6 @@ func rebuildSearchIndex(idx *searchIndex, catalog Sessions) error {
 					existing.SavedAt = cat.SavedAt
 				}
 			}
-			if existing.Cwd == "" {
-				existing.Cwd = extractCwd(f.Path)
-			}
-			if existing.Path == "" {
-				existing.Path = existing.Cwd
-			}
 			continue
 		}
 		entry := &indexedSession{
@@ -153,10 +146,7 @@ func rebuildSearchIndex(idx *searchIndex, catalog Sessions) error {
 			entry.Path = cat.Path
 			entry.SavedAt = cat.SavedAt
 		}
-		entry.FirstUserMsg, entry.SearchableText, entry.Cwd = extractExcerpt(f.Path)
-		if entry.Path == "" {
-			entry.Path = entry.Cwd
-		}
+		entry.FirstUserMsg, entry.SearchableText = extractExcerpt(f.Path)
 		idx.Sessions[id] = entry
 	}
 
@@ -176,10 +166,10 @@ func extractIDFromJsonlPath(p string) string {
 	return base
 }
 
-func extractExcerpt(path string) (firstUser, searchable, cwd string) {
+func extractExcerpt(path string) (firstUser, searchable string) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", "", ""
+		return "", ""
 	}
 	defer f.Close()
 
@@ -192,9 +182,6 @@ func extractExcerpt(path string) (firstUser, searchable, cwd string) {
 		if len(raw) == 0 {
 			continue
 		}
-		if cwd == "" {
-			cwd = parseJsonlCwd(raw)
-		}
 		role, text := parseJsonlMessage(raw)
 		if role == "" || text == "" {
 			continue
@@ -206,40 +193,11 @@ func extractExcerpt(path string) (firstUser, searchable, cwd string) {
 			blob.WriteString(text)
 			blob.WriteString("\n")
 		}
-		if blob.Len() >= searchExcerptMaxBytes && cwd != "" {
+		if blob.Len() >= searchExcerptMaxBytes {
 			break
 		}
 	}
-	return firstUser, truncateText(blob.String(), searchExcerptMaxBytes), cwd
-}
-
-// extractCwd reads the jsonl just enough to recover the recorded cwd.
-// Both pi and claude write `"cwd":"..."` in the first session/user line.
-func extractCwd(path string) string {
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 4*1024*1024)
-	for i := 0; i < 5 && scanner.Scan(); i++ {
-		if cwd := parseJsonlCwd(scanner.Bytes()); cwd != "" {
-			return cwd
-		}
-	}
-	return ""
-}
-
-func parseJsonlCwd(line []byte) string {
-	var v map[string]any
-	if err := json.Unmarshal(line, &v); err != nil {
-		return ""
-	}
-	if s, _ := v["cwd"].(string); s != "" {
-		return s
-	}
-	return ""
+	return firstUser, truncateText(blob.String(), searchExcerptMaxBytes)
 }
 
 func parseJsonlMessage(line []byte) (role, text string) {

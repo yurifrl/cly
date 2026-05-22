@@ -62,6 +62,7 @@ func TestInitialize_ExplicitName(t *testing.T) {
 }
 
 func TestInitialize_EnvVar(t *testing.T) {
+	os.Unsetenv("CLY_SESSION_NAME")
 	os.Setenv("CLAUDE_SESSION_NAME", "EnvProject")
 	defer os.Unsetenv("CLAUDE_SESSION_NAME")
 
@@ -71,7 +72,20 @@ func TestInitialize_EnvVar(t *testing.T) {
 	assert.Equal(t, "EnvProject", sess.Name)
 }
 
+func TestInitialize_CLYEnvVar(t *testing.T) {
+	os.Setenv("CLY_SESSION_NAME", "CLYProject")
+	os.Setenv("CLAUDE_SESSION_NAME", "LegacyProject")
+	defer os.Unsetenv("CLY_SESSION_NAME")
+	defer os.Unsetenv("CLAUDE_SESSION_NAME")
+
+	sess, err := Initialize("")
+
+	require.NoError(t, err)
+	assert.Equal(t, "CLYProject", sess.Name)
+}
+
 func TestInitialize_AutoGenerate(t *testing.T) {
+	os.Unsetenv("CLY_SESSION_NAME")
 	os.Unsetenv("CLAUDE_SESSION_NAME")
 
 	sess, err := Initialize("")

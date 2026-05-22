@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/yurifrl/cly/pkg/envs"
 )
 
 // isSoundEnabled checks if sound is enabled with priority:
@@ -19,7 +21,7 @@ func isSoundEnabled(soundFilePath string, configValue bool) bool {
 	}
 
 	// Priority 2: Check env var
-	if envValue := os.Getenv("SOUND"); envValue != "" {
+	if envValue := envs.Sound().Or(""); envValue != "" {
 		return envValue == "on"
 	}
 

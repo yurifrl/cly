@@ -8,12 +8,14 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+
+	"github.com/yurifrl/cly/pkg/envs"
 )
 
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func IsInsideZellij() bool {
-	return os.Getenv("ZELLIJ") != ""
+	return envs.InZellij()
 }
 
 func ListSessionNames() ([]string, error) {

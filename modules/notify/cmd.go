@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/envs"
 	"github.com/yurifrl/cly/pkg/notify"
 	"github.com/yurifrl/cly/pkg/style"
 )
@@ -41,9 +42,10 @@ func createHookCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hookName := args[0]
 
-			// Check CLAUDE_VERBOSE env (default 1)
-			if os.Getenv("CLAUDE_VERBOSE") == "0" {
-				return nil // Silent mode
+			// CLAUDE_VERBOSE=0 (or any falsy value) silences notifications.
+			// Empty/Error fall through to verbose-by-default behavior.
+			if v, _ := envs.ClaudeVerbose().Unwrap(); envs.ClaudeVerbose().IsOk() && !v {
+				return nil
 			}
 
 			// Load config

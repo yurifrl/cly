@@ -8,7 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/envs"
 	"github.com/yurifrl/cly/pkg/notify"
+	"github.com/yurifrl/cly/pkg/result"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -30,11 +32,11 @@ func createDebugCmd() *cobra.Command {
 
 			// Environment checks
 			fmt.Println(style.YellowStyle.Render("Environment:"))
-			fmt.Printf("  CLAUDE_VERBOSE: %s\n", getEnvOrDefault("CLAUDE_VERBOSE", "1"))
-			fmt.Printf("  ZELLIJ: %s\n", getEnvOrDefault("ZELLIJ", "(not set)"))
-			fmt.Printf("  ZELLIJ_SESSION_NAME: %s\n", getEnvOrDefault("ZELLIJ_SESSION_NAME", "(not set)"))
-			fmt.Printf("  CLAUDE_SESSION_NAME: %s\n", getEnvOrDefault("CLAUDE_SESSION_NAME", "(not set)"))
-			fmt.Printf("  SOUND: %s\n", getEnvOrDefault("SOUND", "(not set)"))
+			fmt.Printf("  CLAUDE_VERBOSE: %s\n", displayBool(envs.ClaudeVerbose(), "1"))
+			fmt.Printf("  ZELLIJ: %s\n", display(envs.Zellij()))
+			fmt.Printf("  ZELLIJ_SESSION_NAME: %s\n", display(envs.ZellijSession()))
+			fmt.Printf("  Session name: %s\n", display(envs.SessionName()))
+			fmt.Printf("  SOUND: %s\n", display(envs.Sound()))
 			fmt.Println()
 
 			// Configuration
@@ -104,7 +106,7 @@ func createDebugCmd() *cobra.Command {
 			// Test Zellij
 			if zellijAvail {
 				fmt.Println(style.YellowStyle.Render("Testing Zellij:"))
-				paneID := os.Getenv("ZELLIJ_PANE_ID")
+				paneID := envs.ZellijPane().Or("")
 				fmt.Printf("  Status Bar: zellij pipe \"zjstatus::notify::%s\"\n", testNotification.Title)
 				fmt.Printf("  Attention: zellij pipe --name \"zellij-attention::waiting::%s\"\n", paneID)
 				fmt.Printf("  Sending... ")
@@ -139,12 +141,36 @@ func availStatus(available bool) string {
 	return style.RedStyle.Render("✗ Unavailable")
 }
 
-func getEnvOrDefault(key, defaultVal string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
+// display formats a Result[string] for the debug environment table.
+// Empty and Error fall through to a human-readable marker so the user
+// can tell them apart at a glance.
+func display(r result.Result[string]) string {
+	if err := r.Error(); err != nil {
+		return fmt.Sprintf("(invalid: %v)", err)
 	}
-	return defaultVal
+	if r.Empty() {
+		return "(not set)"
+	}
+	v, _ := r.Unwrap()
+	return v
 }
+
+// displayBool formats a Result[bool] for debug output. When the
+// underlying var is unset, def is shown verbatim (preserves legacy
+// behavior of CLAUDE_VERBOSE defaulting to "1").
+func displayBool(r result.Result[bool], def string) string {
+	if err := r.Error(); err != nil {
+		return fmt.Sprintf("(invalid: %v)", err)
+	}
+	if r.Empty() {
+		return def
+	}
+	v, _ := r.Unwrap()
+	return fmt.Sprintf("%t", v)
+}
+
+// rawCLAUDE_SESSION_NAME removed: pkg/envs.SessionName() is the
+// canonical accessor and already covers the legacy alias.
 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)

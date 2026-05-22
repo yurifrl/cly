@@ -3,8 +3,9 @@ package notify
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
+
+	"github.com/yurifrl/cly/pkg/envs"
 )
 
 // ZellijNotifier sends notifications to Zellij status bar and tabs
@@ -57,7 +58,7 @@ func (z *ZellijNotifier) Send(ctx context.Context, n Notification) error {
 
 // Available returns true if we're in a Zellij session
 func (z *ZellijNotifier) Available() bool {
-	return os.Getenv("ZELLIJ") != ""
+	return envs.InZellij()
 }
 
 // sendToStatusBar sends notification to zjstatus plugin (fire-and-forget)
@@ -69,8 +70,8 @@ func (z *ZellijNotifier) sendToStatusBar(_ context.Context, n Notification) erro
 
 // sendNotifyTabUpdate sends tab emoji update to old notify plugin (fire-and-forget)
 func (z *ZellijNotifier) sendNotifyTabUpdate(_ context.Context) error {
-	paneID := os.Getenv("ZELLIJ_PANE_ID")
-	sessionName := os.Getenv("ZELLIJ_SESSION_NAME")
+	paneID := envs.ZellijPane().Or("")
+	sessionName := envs.ZellijSession().Or("")
 	args := buildNotifyArgs(z.eventType, paneID, sessionName)
 	cmd := exec.Command("zellij", args...)
 	return cmd.Start()
@@ -91,7 +92,7 @@ func buildNotifyArgs(eventType, paneID, sessionName string) []string {
 
 // sendAttentionTabUpdate sends tab update to zellij-attention plugin (fire-and-forget)
 func (z *ZellijNotifier) sendAttentionTabUpdate(_ context.Context) error {
-	paneID := os.Getenv("ZELLIJ_PANE_ID")
+	paneID := envs.ZellijPane().Or("")
 	pipeName := buildAttentionPipeName(z.eventType, paneID)
 	cmd := exec.Command("zellij", "pipe", "--name", pipeName)
 	return cmd.Start()

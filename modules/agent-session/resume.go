@@ -1,8 +1,11 @@
 package agentsession
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -66,7 +69,12 @@ func resumeEntry(entry *Entry, provider Provider, yolo bool) error {
 	}
 
 	if entry.Path == "" {
-		return fmt.Errorf("session %s has no recorded path; run `cly as save` from the project dir or `cly as search --refresh` to re-index", entry.ID)
+		if p := lookupCwdForSession(entry.ID, provider.Name); p != "" {
+			entry.Path = p
+		}
+	}
+	if entry.Path == "" {
+		return fmt.Errorf("session %s has no recorded path; run `cly as save` from the project dir", entry.ID)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -78,4 +86,52 @@ func resumeEntry(entry *Entry, provider Provider, yolo bool) error {
 		}
 	}
 	return execProvider(entry, provider, yolo)
+}
+
+// lookupCwdForSession finds the jsonl file for a session and reads the
+// recorded cwd from its first lines. Both pi and claude write
+// `"cwd":"..."` near the top of the file.
+func lookupCwdForSession(id, provider string) string {
+	if id == "" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	var candidates []string
+	if provider == "" || provider == "pi" {
+		m, _ := filepath.Glob(filepath.Join(home, ".pi", "agent", "sessions", "*", "*"+id+".jsonl"))
+		candidates = append(candidates, m...)
+	}
+	if provider == "" || provider == "claude" {
+		m, _ := filepath.Glob(filepath.Join(home, ".claude", "projects", "*", id+".jsonl"))
+		candidates = append(candidates, m...)
+	}
+	for _, p := range candidates {
+		if cwd := readCwdFromJsonl(p); cwd != "" {
+			return cwd
+		}
+	}
+	return ""
+}
+
+func readCwdFromJsonl(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), 4*1024*1024)
+	for i := 0; i < 5 && scanner.Scan(); i++ {
+		var v map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &v); err != nil {
+			continue
+		}
+		if s, _ := v["cwd"].(string); s != "" {
+			return s
+		}
+	}
+	return ""
 }

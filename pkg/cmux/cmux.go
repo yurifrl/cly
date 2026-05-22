@@ -4,13 +4,14 @@ package cmux
 
 import (
 	"context"
-	"os"
 	"os/exec"
+
+	"github.com/yurifrl/cly/pkg/envs"
 )
 
 // Available returns true when the process is running inside a cmux session.
 func Available() bool {
-	return os.Getenv("CMUX_WORKSPACE_ID") != ""
+	return envs.InCmux()
 }
 
 // BinaryAvailable returns true when the `cmux` binary is on PATH. Use this for
