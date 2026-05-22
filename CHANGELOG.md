@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-05-22 Piwrap Pre-Creates Named Pi Session File
+- Session ID: 019e5057-19ae-7ddc-a9e2-42abd19c8053
+- Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-05-22T15-39-06-030Z_019e5057-19ae-7ddc-a9e2-42abd19c8053.jsonl
+- Session Name: 2026-05-22-1255-pkg-result-and-envs
+- Context Name: 2026-05-22-1255-pkg-result-and-envs
+
+### Added
+- `modules/piwrap/piwrap.go` — when `--name`/`-n` is set and the user didn't already pass `--session`/`--session=`, piwrap now computes `~/.pi/agent/sessions/<encodeCwd(cwd)>/cly-<kebab(name)>.jsonl`, `MkdirAll`s the parent, and prepends `--session <path>` to the args forwarded to `pi`. This makes `cly -n foo` reopen the same session every time in the same cwd. Bare UUIDs can't be used because pi treats `--session <id>` as a lookup that errors with `No session found matching '<id>'` when the id doesn't exist; only path-shaped values trigger create-on-miss.
+- Helpers in the same file: `kebabCase` (ASCII lowercase, non-alnum runs collapse to `-`, trimmed), `encodeCwd` (mirrors pi's dir naming: strip leading `/`, replace `/`→`-`, wrap `--...--`), `buildSessionPath`, and `hasSessionFlag` (so user-supplied `--session` is respected).
+- `modules/piwrap/piwrap_test.go` — `TestKebabCase`, `TestEncodeCwd`, `TestBuildSessionPath`, `TestHasSessionFlag` covering the new helpers. Existing `TestExtractName` left intact.
+
 ## 2026-05-03 Cly Diff Mockup Iterations (reader, progress bar, bead modal)
 - Session ID: 019debac-3ef8-7350-a9d5-f44d32468028
 - Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-05-03T02-30-27-320Z_019debac-3ef8-7350-a9d5-f44d32468028.jsonl
