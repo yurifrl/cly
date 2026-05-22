@@ -52,6 +52,16 @@ tasks:
     generates:
       - "{{.BUILD_DIR}}/mcp"
 
+  build:pi:
+    desc: Build pi wrapper binary for current platform
+    cmds:
+      - go build -ldflags="-s -w" -o {{.BUILD_DIR}}/pi ./cmd/pi
+    sources:
+      - cmd/pi/**/*.go
+      - modules/piwrap/**/*.go
+    generates:
+      - "{{.BUILD_DIR}}/pi"
+
   build:all:
     desc: Build both cly and mcp
     deps: [build, build:mcp]
@@ -68,6 +78,13 @@ tasks:
       - go build -ldflags="-s -w -X main.version={{.VERSION}}" -o {{.BUILD_DIR}}/mcp ./cmd/mcp
       - sudo mv {{.BUILD_DIR}}/mcp /usr/local/bin/mcp
       - go run ./cmd/mcp completion fish > ~/.cache/fish_completions/mcp.fish
+
+  install:pi:
+    desc: Install pi wrapper to /usr/local/bin (with `p` symlink alias)
+    cmds:
+      - go build -ldflags="-s -w" -o {{.BUILD_DIR}}/pi ./cmd/pi
+      - sudo mv {{.BUILD_DIR}}/pi /usr/local/bin/pi
+      - sudo ln -sf /usr/local/bin/pi /usr/local/bin/p
 
   install:all:
     desc: Install both cly and mcp
