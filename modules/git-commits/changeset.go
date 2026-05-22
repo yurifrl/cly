@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // FileStatus represents the type of change to a file.
@@ -291,9 +292,34 @@ func repoRoot() string {
 }
 
 // gitExec runs a git command from the repo root and returns stdout+stderr.
+// Retries transient index.lock contention (concurrent git hooks, IDEs, etc.)
+// with exponential backoff so a stale or briefly-held lock doesn't fail the
+// whole commit pipeline mid-loop.
 func gitExec(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = repoRoot()
-	out, err := cmd.CombinedOutput()
+	const maxAttempts = 6
+	var (
+		out []byte
+		err error
+	)
+	backoff := 100 * time.Millisecond
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoRoot()
+		out, err = cmd.CombinedOutput()
+		if err == nil {
+			return string(out), nil
+		}
+		if !isLockContention(string(out)) || attempt == maxAttempts {
+			return string(out), err
+		}
+		time.Sleep(backoff)
+		backoff *= 2
+	}
 	return string(out), err
+}
+
+// isLockContention reports whether a git error is a transient index.lock race.
+func isLockContention(output string) bool {
+	return strings.Contains(output, "index.lock") &&
+		strings.Contains(output, "File exists")
 }

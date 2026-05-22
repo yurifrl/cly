@@ -26,8 +26,12 @@ HARD CONSTRAINTS:
 - Every file should appear in exactly one group (unless user instructions say otherwise)
 - If user instructions say to ignore/skip/exclude files or directories, OMIT those files entirely from the output — do not include them in any group
 - Each group gets a conventional commit message (feat:, fix:, chore:, refactor:, docs:, test:, style:, build:, ci:, perf:)
-- Prefer fewer groups (2-5) over many tiny ones
+- Use AS FEW groups as possible. One group is fine — even ideal — when all files belong to a single logical change. Only split when files are clearly unrelated (different feature, different type, different scope). Hard ceiling: 5 groups.
 - Group titles must be concise conventional commit messages
+- EVERY group MUST include a stable "scope" key: a short kebab-case identifier of the area touched (e.g. "graphify-cache", "agent-session", "git-commits-planner", "docs"). Groups across different LLM calls that share the same scope+type WILL be merged into one commit, so use consistent scope names — derive from top-level directory or feature area, never include file counts or batch numbers.
+
+BATCH AWARENESS:
+- If the user message says "Batch X of Y" with Y > 1, you are seeing only a SUBSET of a larger changeset. Strongly prefer ONE group for the whole batch. Only split if the batch itself contains clearly unrelated changes. Hard ceiling: 3 groups per batch. A downstream pass merges across batches by scope, so picking broad consistent scopes is more important than splitting.
 
 OUTPUT FORMAT: Respond with ONLY a JSON object (no markdown fences, no explanation):
 {
@@ -35,6 +39,7 @@ OUTPUT FORMAT: Respond with ONLY a JSON object (no markdown fences, no explanati
     {
       "title": "feat: add session management",
       "type": "feat",
+      "scope": "agent-session",
       "summary": "Brief explanation of what this group covers",
       "items": [
         { "file": "path/to/file.go" }
@@ -52,6 +57,7 @@ type RawPlan struct {
 type RawGroup struct {
 	Title   string    `json:"title"`
 	Type    string    `json:"type"`
+	Scope   string    `json:"scope,omitempty"`
 	Summary string    `json:"summary"`
 	Body    string    `json:"body,omitempty"`
 	Items   []RawItem `json:"items"`
@@ -68,6 +74,7 @@ type PlannerConfig struct {
 	Timeout      time.Duration
 	CustomPrompt string
 	Strategy     string // "file" or "line"
+	MaxGroups    int    // hard cap on final group count (0 = no cap)
 }
 
 // PlanSplit sends batches to the LLM in parallel and returns a merged plan.
@@ -147,7 +154,102 @@ func PlanSplit(ctx context.Context, batches []Batch, client llm.Client, cfg Plan
 		return nil, fmt.Errorf("planning produced no groups")
 	}
 
+	// Cross-batch consolidation: cheap scope+type merge first, then optional
+	// LLM consolidation if still over the cap. Single-batch runs trust the LLM.
+	if len(batches) > 1 {
+		merged.Groups = mergeByScope(merged.Groups)
+		if cfg.MaxGroups > 0 && len(merged.Groups) > cfg.MaxGroups {
+			if consolidated, err := consolidateViaLLM(ctx, merged, client, prompt, cfg); err == nil {
+				merged = consolidated
+			}
+		}
+	}
+
 	return merged, nil
+}
+
+// mergeByScope collapses groups that share the same (type, scope) key.
+// This is the cheap, deterministic consolidator: when each batch tags its
+// groups with stable scopes (per the system prompt), N batches each emitting
+// `chore` + `graphify-cache` collapse into one commit with no extra LLM call.
+func mergeByScope(groups []RawGroup) []RawGroup {
+	if len(groups) <= 1 {
+		return groups
+	}
+	type key struct{ typ, scope string }
+	index := make(map[key]int)
+	var out []RawGroup
+	for _, g := range groups {
+		scope := strings.TrimSpace(g.Scope)
+		typ := strings.TrimSpace(g.Type)
+		if scope == "" || typ == "" {
+			// Can't safely merge without both keys — keep as-is.
+			out = append(out, g)
+			continue
+		}
+		k := key{typ, scope}
+		if idx, ok := index[k]; ok {
+			out[idx].Items = append(out[idx].Items, g.Items...)
+			if out[idx].Summary != "" && g.Summary != "" && !strings.Contains(out[idx].Summary, g.Summary) {
+				out[idx].Summary = out[idx].Summary + "; " + g.Summary
+			}
+			continue
+		}
+		index[k] = len(out)
+		out = append(out, g)
+	}
+	return out
+}
+
+const consolidatorPrompt = `You are a git commit consolidation assistant. You will receive a list of proposed commit groups produced by independent planning passes over a single changeset. Your job is to merge them into AT MOST the requested number of groups.
+
+MERGE RULES:
+- Prefer merging groups with the same conventional-commit type and the same or related scope.
+- Keep distinct types separate when possible (don't fold feat into chore).
+- Preserve every file: every "file" entry in the input MUST appear in exactly one output group.
+- Output titles must remain concise conventional commit messages.
+- Output every group with a stable kebab-case "scope" field.
+
+OUTPUT FORMAT: Respond with ONLY a JSON object (no markdown fences, no explanation):
+{
+  "groups": [
+    { "title": "...", "type": "...", "scope": "...", "summary": "...", "items": [{"file": "..."}] }
+  ]
+}`
+
+// consolidateViaLLM asks the model to fold an over-cap plan into <= MaxGroups.
+// Falls back to the original plan on any error so we never make things worse.
+func consolidateViaLLM(ctx context.Context, plan *RawPlan, client llm.Client, _ string, cfg PlannerConfig) (*RawPlan, error) {
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = defaultTimeout
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	payload, err := json.Marshal(plan)
+	if err != nil {
+		return nil, fmt.Errorf("marshal plan: %w", err)
+	}
+
+	userMsg := fmt.Sprintf("Consolidate the following %d groups into AT MOST %d groups. Preserve every file.\n\n%s",
+		len(plan.Groups), cfg.MaxGroups, string(payload))
+	if cfg.CustomPrompt != "" {
+		userMsg = fmt.Sprintf("<user_instructions>\n%s\n</user_instructions>\n\n%s", cfg.CustomPrompt, userMsg)
+	}
+
+	resp, err := client.Complete(cctx, consolidatorPrompt, []llm.Message{
+		{Role: llm.RoleUser, Content: userMsg},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("consolidator call: %w", err)
+	}
+
+	out, err := extractPlan(resp)
+	if err != nil {
+		return nil, fmt.Errorf("consolidator parse: %w", err)
+	}
+	return out, nil
 }
 
 // GenerateFallbackMessage creates a single conventional commit message.

@@ -5,7 +5,10 @@ import (
 	"strings"
 )
 
-const defaultBatchSize = 40000
+// defaultBatchSize is the per-batch character budget sent to the LLM.
+// Sized for modern context windows so most changesets fit in a single batch,
+// avoiding fragmentation across independent planning calls.
+const defaultBatchSize = 150000
 
 // Batch represents a subset of files to send to the LLM in one request.
 type Batch struct {

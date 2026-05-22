@@ -84,6 +84,7 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	// Load config
 	batchSize := defaultBatchSize
 	timeout := defaultTimeout
+	maxGroups := 8
 	customPrompt := opts.Prompt
 	var ignorePatterns []string
 
@@ -98,6 +99,11 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 			if t, ok := mod["timeout"]; ok {
 				if v, ok := t.(int); ok && v > 0 {
 					timeout = time.Duration(v) * time.Millisecond
+				}
+			}
+			if mg, ok := mod["max_groups"]; ok {
+				if v, ok := mg.(int); ok && v > 0 {
+					maxGroups = v
 				}
 			}
 			if sp, ok := mod["split_prompt"]; ok {
@@ -178,6 +184,7 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 		Timeout:      timeout,
 		CustomPrompt: customPrompt,
 		Strategy:     strategy,
+		MaxGroups:    maxGroups,
 	}
 
 	var plan *CommitPlan

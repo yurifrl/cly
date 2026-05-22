@@ -17,9 +17,14 @@ type CommitResult struct {
 }
 
 // Execute creates git commits according to the plan.
+//
+// Atomicity: if any group fails, all commits made by this Execute call are
+// rolled back and the original staged diff is restored. The caller sees the
+// repo exactly as it was before Execute ran.
 func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
-	// Precondition: at least one existing commit
-	if _, err := gitExec("rev-parse", "HEAD"); err != nil {
+	// Precondition: at least one existing commit. Capture HEAD for rollback.
+	originalHead, err := gitOutput("rev-parse", "HEAD")
+	if err != nil {
 		return nil, fmt.Errorf("no initial commit found — create one first")
 	}
 
@@ -39,12 +44,10 @@ func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
 	}
 
 	var results []CommitResult
-	var firstErr error
 
 	for i, group := range plan.Groups {
-		err := executeGroup(group, noVerify)
-		if err != nil {
-			// Unstage any partially staged files for this group, then continue
+		if err := executeGroup(group, noVerify); err != nil {
+			// Unstage anything partially staged for this group.
 			gitExec("reset") //nolint:errcheck
 			results = append(results, CommitResult{
 				Title:   group.Title,
@@ -52,10 +55,12 @@ func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
 				Skipped: true,
 				Err:     fmt.Errorf("commit %d failed: %w", i+1, err),
 			})
-			if firstErr == nil {
-				firstErr = fmt.Errorf("commit %d (%s) failed: %w", i+1, group.Title, err)
+			// Roll back: restore HEAD and original staged diff.
+			if rbErr := rollback(originalHead, savedDiff); rbErr != nil {
+				return results, fmt.Errorf("commit %d (%s) failed: %w; rollback also failed: %v",
+					i+1, group.Title, err, rbErr)
 			}
-			continue
+			return results, fmt.Errorf("commit %d (%s) failed: %w (rolled back)", i+1, group.Title, err)
 		}
 
 		sha, _ := gitOutput("rev-parse", "--short", "HEAD")
@@ -66,7 +71,7 @@ func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
 		})
 	}
 
-	return results, firstErr
+	return results, nil
 }
 
 func executeGroup(group CommitGroup, noVerify bool) error {
