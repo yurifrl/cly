@@ -48,6 +48,11 @@ modules:
       - "/.pi/"
   uuid:
     default_version: v4 # Options: v4 | v7
+  piwrap:
+    # Filename prefix for pre-created pi session files. The full name is
+    # "<session_file_name_prefix>-<kebab(name)>.jsonl" stored under
+    # ~/.pi/agent/sessions/<encoded-cwd>/.
+    session_file_name_prefix: cly-custom-session
   memwatch:
     enabled: true
     interval: 30s              # how often to poll memory_pressure

@@ -138,6 +138,23 @@ function notify(ctx: any, msg: string, level: "info" | "success" | "error"): voi
 }
 
 export default function piClyExtension(pi: ExtensionAPI): void {
+	// Auto-apply session name from $CLY_SESSION_NAME on session start.
+	// Set by `cly pi -n NAME` (or any caller of pkg/envs.SetSessionName).
+	// Skips silently when the env var is empty or already matches.
+	pi.on("session_start", async (_event, ctx) => {
+		try {
+			const desired = (process.env.CLY_SESSION_NAME ?? process.env.CLAUDE_SESSION_NAME ?? "").trim();
+			if (!desired) return;
+			const current = typeof pi.getSessionName === "function" ? (pi.getSessionName() ?? "").trim() : "";
+			if (current === desired) return;
+			if (typeof pi.setSessionName === "function") {
+				pi.setSessionName(desired);
+			}
+		} catch {
+			// best-effort; never block session startup
+		}
+	});
+
 	pi.registerCommand("save", {
 		description: 'Save the current agent session. Usage: /save [name] [description="..."]. Invokes `cly as save`. Does not forward to the agent.',
 		handler: async (args: string, ctx: any) => {
