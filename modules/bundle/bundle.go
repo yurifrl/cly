@@ -20,6 +20,7 @@ var (
 	noCleanupFlag bool
 	masFlag       bool
 	parallelFlag  bool
+	updateFlag    bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -69,7 +70,7 @@ Types:
 			if len(args) > 0 {
 				bundleType = args[0]
 			}
-			if noItFlag {
+			if noItFlag || updateFlag {
 				return runSync(bundlers, bundleType)
 			}
 			return runIterative(bundlers, bundleType)
@@ -86,6 +87,7 @@ Types:
 	cmd.Flags().BoolVar(&noCleanupFlag, "no-cleanup", false, "skip cleanup after sync")
 	cmd.Flags().BoolVar(&masFlag, "mas", false, "install Mac App Store apps (brew only)")
 	cmd.Flags().BoolVar(&parallelFlag, "parallel", false, "use parallel installs with TUI progress (js only)")
+	cmd.Flags().BoolVarP(&updateFlag, "update", "u", false, "sync without opening the editor")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))
