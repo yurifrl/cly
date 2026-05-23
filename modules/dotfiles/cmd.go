@@ -25,6 +25,7 @@ var (
 	verboseFlag  bool
 	dryRunFlag   bool
 	failFastFlag bool
+	bypassAIFlag bool
 	configFlag   string
 	noItFlag     bool
 )
@@ -38,6 +39,7 @@ func Register(parent *cobra.Command) {
 Config syntax (dotfiles.conf):
   ./src -> ~/dst                        symlink (dirs need trailing /)
   !cmd                                  run shell command (-i flag)
+  @install <url>                        fetch+analyze install script (-i flag)
   @once name -- cmd                     run once ever (-f to rerun)
   @cache name -- cmd                    run unless 'command -v name' succeeds
   @cache foo -v -- cmd                  run unless 'command -v foo' AND 'foo -v' both exit 0
@@ -66,6 +68,7 @@ Use --cache to run only @cache jobs (skips everything else).`,
 	cmd.PersistentPreRun = func(c *cobra.Command, args []string) { mut.SetDryRun(dryRunFlag) }
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
+	cmd.Flags().BoolVar(&bypassAIFlag, "bypass-ai", false, "Skip LLM analysis for @install directives (no uninstall manifest)")
 
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -197,7 +200,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(cfg.InstallCommands) > 0 {
+	if len(cfg.InstallCommands) > 0 || len(cfg.Installs) > 0 {
 		if installFlag || allFlag {
 			for _, cmdStr := range cfg.InstallCommands {
 				fmt.Printf("%s %s\n", style.BlueStyle.Render("⚡ Executing:"), cmdStr)
@@ -208,9 +211,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 					}
 				}
 			}
+			if len(cfg.Installs) > 0 {
+				fmt.Printf("\n%s Applying %d @install directive(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Installs))
+				if err := ApplyInstalls(cfg, InstallOptions{
+					BypassAI: bypassAIFlag,
+					FailFast: failFastFlag,
+				}); err != nil {
+					return err
+				}
+			}
 		} else {
-			fmt.Printf("\n%s %d install command(s) skipped (use -i to execute)\n",
-				style.YellowStyle.Render("⏭️ "), len(cfg.InstallCommands))
+			skipped := len(cfg.InstallCommands) + len(cfg.Installs)
+			fmt.Printf("\n%s %d install command(s)/@install directive(s) skipped (use -i to execute)\n",
+				style.YellowStyle.Render("⏭️ "), skipped)
 		}
 	}
 
@@ -238,8 +251,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Reload lock to pick up hashes written by ApplyJobs / ApplyInstalls.
+	postApplyLock, _ := loadLock(lockFile)
+
 	// Build new lock and diff against previous.
-	newLock := buildLock(cfg)
+	newLock := buildLock(cfg, postApplyLock)
 	diff := diffLocks(oldLock, newLock)
 	applyDiff(diff)
 
@@ -270,6 +286,10 @@ func applyDiff(diff LockDiff) {
 		if err := RemoveJobByName(name); err == nil {
 			fmt.Printf("%s %s\n", style.YellowStyle.Render("🗑️  Removed job:"), name)
 		}
+	}
+
+	for _, e := range diff.RemovedInstalls {
+		RemoveInstallArtifacts(e)
 	}
 
 	for _, e := range diff.RemovedOpMappings {

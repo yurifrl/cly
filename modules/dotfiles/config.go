@@ -49,11 +49,17 @@ type OpMapping struct {
 	LineNum     int
 }
 
+type Install struct {
+	URL     string
+	LineNum int
+}
+
 type Config struct {
 	BaseDir         string
 	Mappings        []Mapping
 	InstallCommands []string
 	Jobs            []Job
+	Installs        []Install
 	OpMappings      []OpMapping
 	Errors          []string
 }
@@ -82,6 +88,11 @@ func ParseConfig(configPath string) (*Config, error) {
 		case strings.HasPrefix(line, "!"):
 			cmd := strings.TrimSpace(line[1:])
 			cfg.InstallCommands = append(cfg.InstallCommands, cmd)
+		case strings.HasPrefix(line, "@install "):
+			url := strings.TrimSpace(strings.TrimPrefix(line, "@install "))
+			if url != "" {
+				cfg.Installs = append(cfg.Installs, Install{URL: url, LineNum: lineNum})
+			}
 		case strings.HasPrefix(line, "@op "):
 			if err := parseOpLine(cfg, line, lineNum, baseDir); err != nil {
 				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))

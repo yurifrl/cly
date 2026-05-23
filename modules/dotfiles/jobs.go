@@ -3,7 +3,6 @@ package dotfiles
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -35,13 +34,8 @@ type JobApplyOptions struct {
 
 type jobPaths struct {
 	ScriptsDir      string
-	StateFile       string
 	LaunchAgentsDir string
 	LabelPrefix     string
-}
-
-type onceState struct {
-	Jobs map[string]string `json:"jobs"`
 }
 
 type JobStatus struct {
@@ -79,20 +73,22 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 	if err := mut.MkdirAll(paths.LaunchAgentsDir, 0755); err != nil {
 		return fmt.Errorf("create launch agents dir: %w", err)
 	}
-	if err := mut.MkdirAll(filepath.Dir(paths.StateFile), 0755); err != nil {
-		return fmt.Errorf("create state dir: %w", err)
-	}
 
-	state, err := loadOnceState(paths.StateFile)
+	lockFile, err := lockFilePath()
 	if err != nil {
 		return err
 	}
+	lock, err := loadLock(lockFile)
+	if err != nil {
+		return err
+	}
+	hashes := lockJobsToMap(lock.Jobs)
 
 	desired := make(map[string]bool)
 	var jobErrs []error
 	record := func(err error) bool {
 		if opts.FailFast {
-			return true // caller should return
+			return true
 		}
 		fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
 		jobErrs = append(jobErrs, err)
@@ -129,7 +125,7 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 			}
 		case JobRunOnce:
 			hash := jobDefinitionHash(job, cfg.BaseDir)
-			if !opts.Force && state.Jobs[job.Name] == hash {
+			if !opts.Force && hashes[job.Name] == hash {
 				continue
 			}
 			if err := runScript(scriptPath, cfg.BaseDir); err != nil {
@@ -140,7 +136,7 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 				}
 				continue
 			}
-			state.Jobs[job.Name] = hash
+			hashes[job.Name] = hash
 		case JobRunCache:
 			if !opts.Force && cacheCheckPasses(job) {
 				fmt.Printf("  %s @cache %s (already installed)\n", style.SubtleStyle.Render("○"), job.Name)
@@ -158,11 +154,9 @@ func ApplyJobs(cfg *Config, opts JobApplyOptions) error {
 		}
 	}
 
-	if err := saveOnceState(paths.StateFile, state); err != nil {
-		return err
-	}
-
-	if err := cleanupStaleManagedJobs(paths, desired, state); err != nil {
+	cleanupStaleManagedJobs(paths, desired, hashes)
+	lock.Jobs = mapToLockJobs(hashes)
+	if err := saveLock(lockFile, lock); err != nil {
 		return err
 	}
 
@@ -179,13 +173,18 @@ func RemoveJobs(cfg *Config) error {
 		return err
 	}
 
-	state, err := loadOnceState(paths.StateFile)
+	lockFile, err := lockFilePath()
 	if err != nil {
 		return err
 	}
+	lock, err := loadLock(lockFile)
+	if err != nil {
+		return err
+	}
+	hashes := lockJobsToMap(lock.Jobs)
 
 	for _, job := range cfg.Jobs {
-		delete(state.Jobs, job.Name)
+		delete(hashes, job.Name)
 		_ = mut.Remove(jobScriptPath(paths, job.Name))
 		if job.Run == JobRunStartup || job.Run == JobRunInterval {
 			plistPath := jobPlistPath(paths, job.Name)
@@ -194,28 +193,35 @@ func RemoveJobs(cfg *Config) error {
 		}
 	}
 
-	return saveOnceState(paths.StateFile, state)
+	lock.Jobs = mapToLockJobs(hashes)
+	return saveLock(lockFile, lock)
 }
 
-// RemoveJobByName removes a single managed job by name (script + plist + once-state entry).
+// RemoveJobByName removes a single managed job by name (script + plist + lock entry).
 func RemoveJobByName(name string) error {
 	paths, err := loadJobPaths()
 	if err != nil {
 		return err
 	}
 
-	state, err := loadOnceState(paths.StateFile)
+	lockFile, err := lockFilePath()
 	if err != nil {
 		return err
 	}
+	lock, err := loadLock(lockFile)
+	if err != nil {
+		return err
+	}
+	hashes := lockJobsToMap(lock.Jobs)
 
-	delete(state.Jobs, name)
+	delete(hashes, name)
 	_ = mut.Remove(jobScriptPath(paths, name))
 	plistPath := jobPlistPath(paths, name)
 	unloadJob(paths, name, plistPath)
 	_ = mut.Remove(plistPath)
 
-	return saveOnceState(paths.StateFile, state)
+	lock.Jobs = mapToLockJobs(hashes)
+	return saveLock(lockFile, lock)
 }
 
 var cacheCheckPasses = func(job Job) bool {
@@ -301,10 +307,16 @@ func StatusJobs(cfg *Config) ([]JobStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	state, err := loadOnceState(paths.StateFile)
+
+	lockFile, err := lockFilePath()
 	if err != nil {
 		return nil, err
 	}
+	lock, err := loadLock(lockFile)
+	if err != nil {
+		return nil, err
+	}
+	hashes := lockJobsToMap(lock.Jobs)
 
 	statuses := make([]JobStatus, 0, len(cfg.Jobs))
 	for _, job := range cfg.Jobs {
@@ -316,7 +328,7 @@ func StatusJobs(cfg *Config) ([]JobStatus, error) {
 		}
 		switch job.Run {
 		case JobRunOnce:
-			status.Completed = state.Jobs[job.Name] == jobDefinitionHash(job, cfg.BaseDir)
+			status.Completed = hashes[job.Name] == jobDefinitionHash(job, cfg.BaseDir)
 		case JobRunCache:
 			status.Completed = cacheCheckPasses(job)
 		default:
@@ -328,7 +340,7 @@ func StatusJobs(cfg *Config) ([]JobStatus, error) {
 	return statuses, nil
 }
 
-func cleanupStaleManagedJobs(paths jobPaths, desired map[string]bool, state *onceState) error {
+func cleanupStaleManagedJobs(paths jobPaths, desired map[string]bool, hashes map[string]string) {
 	entries, err := os.ReadDir(paths.ScriptsDir)
 	if err == nil {
 		for _, entry := range entries {
@@ -340,7 +352,7 @@ func cleanupStaleManagedJobs(paths jobPaths, desired map[string]bool, state *onc
 				continue
 			}
 			_ = mut.Remove(filepath.Join(paths.ScriptsDir, entry.Name()))
-			delete(state.Jobs, name)
+			delete(hashes, name)
 		}
 	}
 
@@ -360,8 +372,6 @@ func cleanupStaleManagedJobs(paths jobPaths, desired map[string]bool, state *onc
 			_ = mut.Remove(plistPath)
 		}
 	}
-
-	return saveOnceState(paths.StateFile, state)
 }
 
 func writeJobScript(paths jobPaths, job Job, baseDir string, retryCfg JobRetryConfig) (string, error) {
@@ -549,47 +559,6 @@ func jobDefinitionHash(job Job, baseDir string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func loadOnceState(path string) (*onceState, error) {
-	state := &onceState{Jobs: map[string]string{}}
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return state, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read jobs state: %w", err)
-	}
-	if len(data) == 0 {
-		return state, nil
-	}
-	if err := json.Unmarshal(data, state); err != nil {
-		return nil, fmt.Errorf("parse jobs state: %w", err)
-	}
-	if state.Jobs == nil {
-		state.Jobs = map[string]string{}
-	}
-	return state, nil
-}
-
-func saveOnceState(path string, state *onceState) error {
-	if state == nil {
-		state = &onceState{Jobs: map[string]string{}}
-	}
-	if state.Jobs == nil {
-		state.Jobs = map[string]string{}
-	}
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal jobs state: %w", err)
-	}
-	if err := mut.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("create jobs state dir: %w", err)
-	}
-	if err := mut.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("write jobs state: %w", err)
-	}
-	return nil
-}
-
 func loadJobPaths() (jobPaths, error) {
 	home, err := jobUserHomeDir()
 	if err != nil {
@@ -604,7 +573,6 @@ func loadJobPaths() (jobPaths, error) {
 
 	return jobPaths{
 		ScriptsDir:      filepath.Join(dataDir, "dotfiles/jobs"),
-		StateFile:       filepath.Join(dataDir, "dotfiles/jobs-state.json"),
 		LaunchAgentsDir: filepath.Join(home, "Library/LaunchAgents"),
 		LabelPrefix:     "com.yurifrl.dotfiles",
 	}, nil

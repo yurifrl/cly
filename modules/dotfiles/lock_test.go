@@ -1,6 +1,7 @@
 package dotfiles
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +25,7 @@ func TestBuildLock(t *testing.T) {
 		},
 	}
 
-	lock := buildLock(cfg)
+	lock := buildLock(cfg, nil)
 
 	require.Len(t, lock.Symlinks, 1)
 	assert.Equal(t, "/dotfiles/.zshrc", lock.Symlinks[0].Source)
@@ -35,7 +36,8 @@ func TestBuildLock(t *testing.T) {
 	assert.Equal(t, "/home/user/settings.json", lock.JsoncCopies[0].Destination)
 
 	require.Len(t, lock.Jobs, 1)
-	assert.Equal(t, "sync-dotfiles", lock.Jobs[0])
+	assert.Equal(t, "sync-dotfiles", lock.Jobs[0].Name)
+	assert.Empty(t, lock.Jobs[0].Hash)
 
 	require.Len(t, lock.InstallCommands, 2)
 	assert.Equal(t, "brew install fzf", lock.InstallCommands[0])
@@ -44,10 +46,35 @@ func TestBuildLock(t *testing.T) {
 	assert.Equal(t, "/home/user/.env", lock.OpMappings[0].Destination)
 }
 
+func TestBuildLock_PreservesHashes(t *testing.T) {
+	cfg := &Config{
+		Jobs: []Job{
+			{Name: "job-a", Run: JobRunOnce},
+			{Name: "job-b", Run: JobRunStartup},
+		},
+	}
+	prev := &DotfilesLock{
+		Jobs: []JobLockEntry{
+			{Name: "job-a", Hash: "abc123"},
+			{Name: "stale-job", Hash: "def456"},
+		},
+	}
+	lock := buildLock(cfg, prev)
+
+	require.Len(t, lock.Jobs, 2)
+	byName := make(map[string]string)
+	for _, e := range lock.Jobs {
+		byName[e.Name] = e.Hash
+	}
+	assert.Equal(t, "abc123", byName["job-a"])
+	assert.Empty(t, byName["job-b"])
+	assert.Empty(t, byName["stale-job"], "stale job should not appear in new lock")
+}
+
 func TestDiffLocks_NoChanges(t *testing.T) {
 	lock := &DotfilesLock{
 		Symlinks:        []LockEntry{{Source: "/src/.zshrc", Destination: "/dst/.zshrc"}},
-		Jobs:            []string{"my-job"},
+		Jobs:            []JobLockEntry{{Name: "my-job", Hash: "abc"}},
 		InstallCommands: []string{"brew install fzf"},
 	}
 
@@ -79,8 +106,8 @@ func TestDiffLocks_RemovedSymlink(t *testing.T) {
 }
 
 func TestDiffLocks_RemovedJob(t *testing.T) {
-	old := &DotfilesLock{Jobs: []string{"job-a", "job-b"}}
-	new := &DotfilesLock{Jobs: []string{"job-a"}}
+	old := &DotfilesLock{Jobs: []JobLockEntry{{Name: "job-a"}, {Name: "job-b"}}}
+	new := &DotfilesLock{Jobs: []JobLockEntry{{Name: "job-a"}}}
 
 	diff := diffLocks(old, new)
 
@@ -123,7 +150,7 @@ func TestSaveLock_RoundTrip(t *testing.T) {
 
 	original := &DotfilesLock{
 		Symlinks:        []LockEntry{{Source: "/src/.zshrc", Destination: "/dst/.zshrc"}},
-		Jobs:            []string{"my-job"},
+		Jobs:            []JobLockEntry{{Name: "my-job", Hash: "abc123"}},
 		InstallCommands: []string{"brew install fzf"},
 	}
 
@@ -147,4 +174,47 @@ func TestSaveLock_CreatesDirectory(t *testing.T) {
 
 	_, err = os.Stat(path)
 	assert.NoError(t, err)
+}
+
+func TestJobsLock_LegacyStringUnmarshal(t *testing.T) {
+	raw := `{"jobs": ["job-a", "job-b"], "symlinks": []}`
+	var lock DotfilesLock
+	require.NoError(t, json.Unmarshal([]byte(raw), &lock))
+
+	require.Len(t, lock.Jobs, 2)
+	assert.Equal(t, "job-a", lock.Jobs[0].Name)
+	assert.Empty(t, lock.Jobs[0].Hash)
+	assert.Equal(t, "job-b", lock.Jobs[1].Name)
+}
+
+func TestJobsLock_NewFormatUnmarshal(t *testing.T) {
+	raw := `{"jobs": [{"name": "job-a", "hash": "abc123"}]}`
+	var lock DotfilesLock
+	require.NoError(t, json.Unmarshal([]byte(raw), &lock))
+
+	require.Len(t, lock.Jobs, 1)
+	assert.Equal(t, "job-a", lock.Jobs[0].Name)
+	assert.Equal(t, "abc123", lock.Jobs[0].Hash)
+}
+
+func TestLoadLock_MigratesLegacyJobsState(t *testing.T) {
+	tmpHome := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	require.NoError(t, os.Setenv("HOME", tmpHome))
+	defer os.Setenv("HOME", oldHome)
+
+	// Write a legacy jobs-state.json in the default data dir.
+	stateDir := filepath.Join(tmpHome, ".local/share/cly/dotfiles")
+	require.NoError(t, os.MkdirAll(stateDir, 0755))
+	stateData := `{"jobs": {"once-job": "hashABC"}}`
+	require.NoError(t, os.WriteFile(filepath.Join(stateDir, "jobs-state.json"), []byte(stateData), 0644))
+
+	lock, err := loadLock("/nonexistent/path/dotfiles.lock")
+	require.NoError(t, err)
+
+	hashes := lockJobsToMap(lock.Jobs)
+	assert.Equal(t, "hashABC", hashes["once-job"])
+
+	_, statErr := os.Stat(filepath.Join(stateDir, "jobs-state.json"))
+	assert.True(t, os.IsNotExist(statErr))
 }

@@ -1,7 +1,6 @@
 package dotfiles
 
 import (
-	"github.com/yurifrl/cly/pkg/mut"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,11 +8,9 @@ import (
 	"path/filepath"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/mut"
 )
 
-// hashFile returns the hex-encoded SHA-256 of the file at `path`. Returns an
-// empty string when the file cannot be read — callers treat that as "no
-// hash available" rather than an error.
 func hashFile(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -24,36 +21,86 @@ func hashFile(path string) string {
 }
 
 // LockEntry represents a source→destination pair that was applied.
-// SourceHash is the SHA-256 of the source file at apply time and is currently
-// only populated for .jsonc -> .json copies, where it lets us decide whether
-// the generated JSON is still in sync without re-parsing the source.
 type LockEntry struct {
 	Source      string `json:"source"`
 	Destination string `json:"destination"`
 	SourceHash  string `json:"source_hash,omitempty"`
 }
 
-// DotfilesLock records everything applied during the last dotfiles run.
-type DotfilesLock struct {
-	Symlinks        []LockEntry `json:"symlinks"`
-	JsoncCopies     []LockEntry `json:"jsonc_copies"`
-	Jobs            []string    `json:"jobs"`
-	InstallCommands []string    `json:"install_commands"`
-	OpMappings      []LockEntry `json:"op_mappings"`
+// JobLockEntry stores a job name and its definition hash (used to detect reruns).
+type JobLockEntry struct {
+	Name string `json:"name"`
+	Hash string `json:"hash,omitempty"`
 }
 
-// LockDiff holds items that exist in the old lock but not in the new one.
+// ScriptManifest records what an install script installs so it can be reversed.
+type ScriptManifest struct {
+	Binaries       []string `json:"binaries,omitempty"`
+	Dirs           []string `json:"dirs,omitempty"`
+	Files          []string `json:"files,omitempty"`
+	ShellRCChanges []string `json:"shell_rc_changes,omitempty"`
+	FetchesOther   bool     `json:"fetches_other_scripts,omitempty"`
+	NeedsSudo      bool     `json:"needs_sudo,omitempty"`
+}
+
+// InstallManifest is the lock entry for an @install directive.
+type InstallManifest struct {
+	URL      string          `json:"url"`
+	SHA      string          `json:"sha"`
+	Bypassed bool            `json:"bypassed,omitempty"`
+	Manifest *ScriptManifest `json:"manifest,omitempty"`
+}
+
+// DotfilesLock records everything applied during the last dotfiles run.
+type DotfilesLock struct {
+	Symlinks        []LockEntry       `json:"symlinks"`
+	JsoncCopies     []LockEntry       `json:"jsonc_copies"`
+	Jobs            []JobLockEntry    `json:"jobs"`
+	InstallCommands []string          `json:"install_commands"`
+	Installs        []InstallManifest `json:"installs,omitempty"`
+	OpMappings      []LockEntry       `json:"op_mappings"`
+}
+
+// UnmarshalJSON handles the legacy []string format for the Jobs field.
+func (d *DotfilesLock) UnmarshalJSON(data []byte) error {
+	type Alias DotfilesLock
+	aux := &struct {
+		Jobs json.RawMessage `json:"jobs"`
+		*Alias
+	}{Alias: (*Alias)(d)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if len(aux.Jobs) == 0 || string(aux.Jobs) == "null" {
+		return nil
+	}
+	var entries []JobLockEntry
+	if err := json.Unmarshal(aux.Jobs, &entries); err == nil {
+		d.Jobs = entries
+		return nil
+	}
+	// Legacy: ["name", ...]
+	var names []string
+	if err := json.Unmarshal(aux.Jobs, &names); err != nil {
+		return err
+	}
+	d.Jobs = make([]JobLockEntry, len(names))
+	for i, n := range names {
+		d.Jobs[i] = JobLockEntry{Name: n}
+	}
+	return nil
+}
+
+// LockDiff holds items present in the old lock but absent from the new one.
 type LockDiff struct {
 	RemovedSymlinks        []LockEntry
 	RemovedJsoncCopies     []LockEntry
 	RemovedJobs            []string
 	RemovedInstallCommands []string
+	RemovedInstalls        []InstallManifest
 	RemovedOpMappings      []LockEntry
 }
 
-// lockFilePath returns the path for the dotfiles lock file. The lock lives
-// next to dotfiles.conf inside the user's dotfiles repo. Contents are JSON;
-// the filename uses the conventional `.lock` suffix.
 func lockFilePath() (string, error) {
 	configPath, err := getConfigPath()
 	if err != nil {
@@ -62,8 +109,6 @@ func lockFilePath() (string, error) {
 	return filepath.Join(filepath.Dir(configPath), "dotfiles.lock"), nil
 }
 
-// legacyLockPaths returns previous filenames in priority order so we can
-// migrate them on first read. Order matters: the first existing file wins.
 func legacyLockPaths() []string {
 	dataDir := pkgconfig.GetString("app.data_dir")
 	if dataDir == "" {
@@ -76,17 +121,23 @@ func legacyLockPaths() []string {
 		filepath.Join(dir, "dotfiles.lock"),
 		filepath.Join(dir, "dotfiles.json"),
 	}
-	// Also migrate from a repo-side `dotfiles.lock.json` that an interim
-	// version of this binary may have written.
 	if configPath, err := getConfigPath(); err == nil {
 		paths = append(paths, filepath.Join(filepath.Dir(configPath), "dotfiles.lock.json"))
 	}
 	return paths
 }
 
+// legacyJobsStatePath returns the path for the old jobs-state.json file.
+func legacyJobsStatePath() string {
+	dataDir := pkgconfig.GetString("app.data_dir")
+	if dataDir == "" {
+		dataDir = "~/.local/share/cly"
+	}
+	return filepath.Join(expandTilde(dataDir), "dotfiles/jobs-state.json")
+}
+
 // loadLock reads the lock file. Returns an empty lock if the file does not
-// exist. Migrates legacy filenames (dotfiles.lock, dotfiles.json) to the
-// current `.lock.json` location on first read.
+// exist. Migrates legacy filenames and merges the old jobs-state.json.
 func loadLock(path string) (*DotfilesLock, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		for _, legacy := range legacyLockPaths() {
@@ -102,20 +153,48 @@ func loadLock(path string) (*DotfilesLock, error) {
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &DotfilesLock{}, nil
+		lock := &DotfilesLock{}
+		migrateJobsState(lock)
+		return lock, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	var lock DotfilesLock
 	if err := json.Unmarshal(data, &lock); err != nil {
-		// Corrupt lock — start fresh rather than failing hard.
-		return &DotfilesLock{}, nil
+		lock = DotfilesLock{}
 	}
+	migrateJobsState(&lock)
 	return &lock, nil
 }
 
-// saveLock writes the lock file to disk.
+// migrateJobsState merges hashes from the legacy jobs-state.json into the lock
+// and deletes the legacy file.
+func migrateJobsState(lock *DotfilesLock) {
+	path := legacyJobsStatePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var legacy struct {
+		Jobs map[string]string `json:"jobs"`
+	}
+	if json.Unmarshal(data, &legacy) != nil || len(legacy.Jobs) == 0 {
+		_ = os.Remove(path)
+		return
+	}
+	existing := make(map[string]bool, len(lock.Jobs))
+	for _, e := range lock.Jobs {
+		existing[e.Name] = true
+	}
+	for name, hash := range legacy.Jobs {
+		if !existing[name] {
+			lock.Jobs = append(lock.Jobs, JobLockEntry{Name: name, Hash: hash})
+		}
+	}
+	_ = os.Remove(path)
+}
+
 func saveLock(path string, lock *DotfilesLock) error {
 	if err := mut.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
@@ -129,8 +208,8 @@ func saveLock(path string, lock *DotfilesLock) error {
 }
 
 // buildLock creates a new lock snapshot from the current config.
-// It only records entries that were actually applied (all mappings present in config).
-func buildLock(cfg *Config) *DotfilesLock {
+// prev is used to carry job hashes forward (jobs that still exist keep their hash).
+func buildLock(cfg *Config, prev *DotfilesLock) *DotfilesLock {
 	lock := &DotfilesLock{}
 
 	for _, m := range cfg.Mappings {
@@ -143,11 +222,27 @@ func buildLock(cfg *Config) *DotfilesLock {
 		}
 	}
 
+	prevHashes := lockJobsToMap(nil)
+	if prev != nil {
+		prevHashes = lockJobsToMap(prev.Jobs)
+	}
 	for _, j := range cfg.Jobs {
-		lock.Jobs = append(lock.Jobs, j.Name)
+		lock.Jobs = append(lock.Jobs, JobLockEntry{Name: j.Name, Hash: prevHashes[j.Name]})
 	}
 
 	lock.InstallCommands = append(lock.InstallCommands, cfg.InstallCommands...)
+
+	if prev != nil {
+		prevInstalls := make(map[string]InstallManifest, len(prev.Installs))
+		for _, e := range prev.Installs {
+			prevInstalls[e.URL] = e
+		}
+		for _, inst := range cfg.Installs {
+			if e, ok := prevInstalls[inst.URL]; ok {
+				lock.Installs = append(lock.Installs, e)
+			}
+		}
+	}
 
 	for _, op := range cfg.OpMappings {
 		lock.OpMappings = append(lock.OpMappings, LockEntry{Source: op.Source, Destination: op.Destination})
@@ -156,15 +251,29 @@ func buildLock(cfg *Config) *DotfilesLock {
 	return lock
 }
 
-// diffLocks returns items present in old but absent from new (removed entries).
 func diffLocks(old, new *DotfilesLock) LockDiff {
 	var diff LockDiff
 	diff.RemovedSymlinks = removedEntries(old.Symlinks, new.Symlinks)
 	diff.RemovedJsoncCopies = removedEntries(old.JsoncCopies, new.JsoncCopies)
-	diff.RemovedJobs = removedStrings(old.Jobs, new.Jobs)
+	diff.RemovedJobs = removedJobEntries(old.Jobs, new.Jobs)
 	diff.RemovedInstallCommands = removedStrings(old.InstallCommands, new.InstallCommands)
+	diff.RemovedInstalls = removedInstallEntries(old.Installs, new.Installs)
 	diff.RemovedOpMappings = removedEntries(old.OpMappings, new.OpMappings)
 	return diff
+}
+
+func removedInstallEntries(old, new []InstallManifest) []InstallManifest {
+	newSet := make(map[string]bool, len(new))
+	for _, e := range new {
+		newSet[e.URL] = true
+	}
+	var removed []InstallManifest
+	for _, e := range old {
+		if !newSet[e.URL] {
+			removed = append(removed, e)
+		}
+	}
+	return removed
 }
 
 func removedEntries(old, new []LockEntry) []LockEntry {
@@ -176,6 +285,20 @@ func removedEntries(old, new []LockEntry) []LockEntry {
 	for _, e := range old {
 		if !newSet[e.Destination] {
 			removed = append(removed, e)
+		}
+	}
+	return removed
+}
+
+func removedJobEntries(old, new []JobLockEntry) []string {
+	newSet := make(map[string]bool, len(new))
+	for _, e := range new {
+		newSet[e.Name] = true
+	}
+	var removed []string
+	for _, e := range old {
+		if !newSet[e.Name] {
+			removed = append(removed, e.Name)
 		}
 	}
 	return removed
@@ -193,4 +316,22 @@ func removedStrings(old, new []string) []string {
 		}
 	}
 	return removed
+}
+
+// lockJobsToMap converts a []JobLockEntry to a name→hash map.
+func lockJobsToMap(entries []JobLockEntry) map[string]string {
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[e.Name] = e.Hash
+	}
+	return m
+}
+
+// mapToLockJobs converts a name→hash map to []JobLockEntry.
+func mapToLockJobs(m map[string]string) []JobLockEntry {
+	entries := make([]JobLockEntry, 0, len(m))
+	for name, hash := range m {
+		entries = append(entries, JobLockEntry{Name: name, Hash: hash})
+	}
+	return entries
 }
