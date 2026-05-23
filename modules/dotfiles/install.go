@@ -178,7 +178,7 @@ func installCacheDir() string {
 }
 
 var installSystemPrompt = `You analyze install scripts and produce a removal manifest.
-Respond ONLY with valid JSON — no prose, no markdown fences.`
+Output raw JSON only. Do not use markdown, code fences, or prose. Start your response with { and end with }.`
 
 var installAnalysisPrompt = `Analyze this install script from %s:
 
@@ -218,9 +218,8 @@ func runAnalysisLoop(client llm.Client, url, script string) (result analysisResu
 			return result, false
 		}
 
-		cleaned := stripJSONFences(raw)
 		var analysis analysisResult
-		if jerr := json.Unmarshal([]byte(cleaned), &analysis); jerr != nil {
+		if jerr := json.Unmarshal([]byte(raw), &analysis); jerr != nil {
 			if verboseFlag {
 				fmt.Printf("\n%s\n", style.SubtleStyle.Render(raw))
 			}
@@ -340,22 +339,6 @@ func printInstallCleanupBanner(url string, shellChanges []string) {
 		}
 	}
 	fmt.Printf("%s\n\n", sep)
-}
-
-// stripJSONFences removes markdown code fences that LLMs sometimes wrap JSON in.
-func stripJSONFences(s string) string {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		if i := strings.Index(s, "\n"); i >= 0 {
-			s = s[i+1:]
-		}
-	}
-	if strings.HasSuffix(s, "```") {
-		if i := strings.LastIndex(s, "```"); i >= 0 {
-			s = strings.TrimSpace(s[:i])
-		}
-	}
-	return s
 }
 
 func upsertInstall(entries []InstallManifest, e InstallManifest) []InstallManifest {
