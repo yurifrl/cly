@@ -15,19 +15,21 @@ import (
 )
 
 var (
-	installFlag  bool
-	jobsFlag     bool
-	opFlag       bool
-	allFlag      bool
-	onceFlag     bool
-	cacheFlag    bool
-	forceFlag    bool
-	verboseFlag  bool
-	dryRunFlag   bool
-	failFastFlag bool
-	bypassAIFlag bool
-	configFlag   string
-	noItFlag     bool
+	installFlag     bool
+	jobsFlag        bool
+	opFlag          bool
+	allFlag         bool
+	onceFlag        bool
+	cacheFlag       bool
+	installOnlyFlag bool
+	installNoAIFlag bool
+	forceFlag       bool
+	verboseFlag     bool
+	dryRunFlag      bool
+	failFastFlag    bool
+	bypassAIFlag    bool
+	configFlag      string
+	noItFlag        bool
 )
 
 func Register(parent *cobra.Command) {
@@ -51,7 +53,9 @@ Config syntax (dotfiles.conf):
   .jsonc -> .json                       comments stripped automatically
 
 Use --once to run only @once jobs (skips everything else).
-Use --cache to run only @cache jobs (skips everything else).`,
+Use --cache to run only @cache jobs (skips everything else).
+Use --install-only to run only @install directives (skips everything else).
+Use --install-no-ai to run only @install directives, skipping LLM analysis.`,
 		RunE:  runSync,
 	}
 
@@ -69,6 +73,8 @@ Use --cache to run only @cache jobs (skips everything else).`,
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
 	cmd.Flags().BoolVar(&bypassAIFlag, "bypass-ai", false, "Skip LLM analysis for @install directives (no uninstall manifest)")
+	cmd.Flags().BoolVar(&installOnlyFlag, "install-only", false, "Run only @install directives (skips symlinks, jobs, op)")
+	cmd.Flags().BoolVar(&installNoAIFlag, "install-no-ai", false, "Run only @install directives, skip LLM analysis")
 
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -178,6 +184,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 		// of whether the binary is already on PATH. During a normal sync (-j/-a)
 		// the cache check is honored.
 		return runJobsSubset(cmd, cfg, JobRunCache, "@cache", true)
+	}
+	if installOnlyFlag || installNoAIFlag {
+		return runInstallsOnly(cfg, installNoAIFlag || bypassAIFlag)
 	}
 
 	if !mut.DryRun() && !noItFlag {
@@ -491,6 +500,15 @@ func shortenPath(path string) string {
 		return "~" + path[len(home):]
 	}
 	return path
+}
+
+func runInstallsOnly(cfg *Config, bypassAI bool) error {
+	if len(cfg.Installs) == 0 {
+		fmt.Println("No @install directives declared.")
+		return nil
+	}
+	fmt.Printf("%s Applying %d @install directive(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Installs))
+	return ApplyInstalls(cfg, InstallOptions{BypassAI: bypassAI, FailFast: failFastFlag})
 }
 
 func runJobsSubset(cmd *cobra.Command, cfg *Config, run JobRun, label string, force bool) error {
