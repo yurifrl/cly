@@ -220,7 +220,7 @@ func runAnalysisLoop(client llm.Client, url, script string) (result analysisResu
 
 		var analysis analysisResult
 		if jerr := json.Unmarshal([]byte(raw), &analysis); jerr != nil {
-			fmt.Printf("\n%s\n\n%s\n", style.SubtleStyle.Render(raw), style.YellowStyle.Render("(could not parse JSON — reply with a question or 'abort')"))
+			fmt.Printf("\n%s\n\n%s\n", style.SubtleStyle.Render(raw), style.YellowStyle.Render("LLM returned unstructured output above. Ask a follow-up or type 'abort'."))
 		} else {
 			result = analysis
 			printInstallAnalysis(url, analysis)
