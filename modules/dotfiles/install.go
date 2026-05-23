@@ -28,8 +28,9 @@ var newInstallLLMClient = func() (llm.Client, error) {
 }
 
 type InstallOptions struct {
-	BypassAI bool
-	FailFast bool
+	BypassAI  bool
+	Reinstall bool
+	FailFast  bool
 }
 
 type analysisResult struct {
@@ -75,7 +76,7 @@ func ApplyInstalls(cfg *Config, opts InstallOptions) error {
 			continue
 		}
 
-		if known && prev.SHA == sha {
+		if known && prev.SHA == sha && !opts.Reinstall {
 			fmt.Printf("  %s @install %s (up to date)\n", style.SubtleStyle.Render("○"), inst.URL)
 			continue
 		}

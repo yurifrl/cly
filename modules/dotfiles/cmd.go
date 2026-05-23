@@ -21,8 +21,9 @@ var (
 	allFlag         bool
 	onceFlag        bool
 	cacheFlag       bool
-	installOnlyFlag bool
-	installNoAIFlag bool
+	installOnlyFlag    bool
+	installNoAIFlag    bool
+	reinstallFlag      bool
 	forceFlag       bool
 	verboseFlag     bool
 	dryRunFlag      bool
@@ -75,6 +76,7 @@ Use --install-no-ai to run only @install directives, skipping LLM analysis.`,
 	cmd.Flags().BoolVar(&bypassAIFlag, "bypass-ai", false, "Skip LLM analysis for @install directives (no uninstall manifest)")
 	cmd.Flags().BoolVar(&installOnlyFlag, "install-only", false, "Run only @install directives (skips symlinks, jobs, op)")
 	cmd.Flags().BoolVar(&installNoAIFlag, "install-no-ai", false, "Run only @install directives, skip LLM analysis")
+	cmd.Flags().BoolVar(&reinstallFlag, "reinstall", false, "Force reinstall @install directives even if SHA unchanged")
 
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -223,8 +225,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 			if len(cfg.Installs) > 0 {
 				fmt.Printf("\n%s Applying %d @install directive(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Installs))
 				if err := ApplyInstalls(cfg, InstallOptions{
-					BypassAI: bypassAIFlag,
-					FailFast: failFastFlag,
+					BypassAI:  bypassAIFlag,
+					Reinstall: reinstallFlag,
+					FailFast:  failFastFlag,
 				}); err != nil {
 					return err
 				}
@@ -508,7 +511,7 @@ func runInstallsOnly(cfg *Config, bypassAI bool) error {
 		return nil
 	}
 	fmt.Printf("%s Applying %d @install directive(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Installs))
-	return ApplyInstalls(cfg, InstallOptions{BypassAI: bypassAI, FailFast: failFastFlag})
+	return ApplyInstalls(cfg, InstallOptions{BypassAI: bypassAI, Reinstall: reinstallFlag, FailFast: failFastFlag})
 }
 
 func runJobsSubset(cmd *cobra.Command, cfg *Config, run JobRun, label string, force bool) error {
