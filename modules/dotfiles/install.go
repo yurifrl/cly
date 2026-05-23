@@ -64,7 +64,7 @@ func ApplyInstalls(cfg *Config, opts InstallOptions) error {
 	var client llm.Client
 
 	for _, inst := range cfg.Installs {
-		entry, known := existing[inst.URL]
+		prev, known := existing[inst.URL]
 
 		sha, scriptPath, err := fetchAndCacheScript(inst.URL)
 		if err != nil {
@@ -75,7 +75,7 @@ func ApplyInstalls(cfg *Config, opts InstallOptions) error {
 			continue
 		}
 
-		if known && entry.SHA == sha {
+		if known && prev.SHA == sha {
 			fmt.Printf("  %s @install %s (up to date)\n", style.SubtleStyle.Render("○"), inst.URL)
 			continue
 		}
@@ -111,10 +111,23 @@ func ApplyInstalls(cfg *Config, opts InstallOptions) error {
 		}
 
 		scriptBytes, _ := os.ReadFile(scriptPath)
-		analysis, approved := runAnalysisLoop(client, inst.URL, string(scriptBytes))
-		if !approved {
-			fmt.Printf("  %s @install %s aborted\n", style.YellowStyle.Render("⊘"), inst.URL)
-			continue
+		analysis, ok := analyzeScript(client, inst.URL, string(scriptBytes))
+
+		var entry InstallManifest
+		if ok {
+			printInstallAnalysis(inst.URL, analysis)
+			fmt.Print("Approve? [y/N] ")
+			reader := bufio.NewReader(os.Stdin)
+			line, _ := reader.ReadString('\n')
+			if input := strings.ToLower(strings.TrimSpace(line)); input != "y" && input != "yes" {
+				fmt.Printf("  %s @install %s aborted\n", style.YellowStyle.Render("⊘"), inst.URL)
+				continue
+			}
+			m := analysis.Manifest
+			entry = InstallManifest{URL: inst.URL, SHA: sha, Manifest: &m}
+		} else {
+			fmt.Printf("  %s @install %s: LLM analysis failed, installing without manifest\n", style.YellowStyle.Render("⚠️ "), inst.URL)
+			entry = InstallManifest{URL: inst.URL, SHA: sha, Bypassed: true}
 		}
 
 		if err := runScript(scriptPath, cfg.BaseDir); err != nil {
@@ -125,12 +138,7 @@ func ApplyInstalls(cfg *Config, opts InstallOptions) error {
 			continue
 		}
 
-		m := analysis.Manifest
-		lock.Installs = upsertInstall(lock.Installs, InstallManifest{
-			URL:      inst.URL,
-			SHA:      sha,
-			Manifest: &m,
-		})
+		lock.Installs = upsertInstall(lock.Installs, entry)
 		_ = saveLock(lockFile, lock)
 		fmt.Printf("  %s @install %s\n", style.GreenStyle.Render("✅"), inst.URL)
 	}
@@ -202,50 +210,21 @@ Return JSON:
   "message_to_user": "one-sentence summary"
 }`
 
-func runAnalysisLoop(client llm.Client, url, script string) (result analysisResult, approved bool) {
+func analyzeScript(client llm.Client, url, script string) (analysisResult, bool) {
 	prompt := fmt.Sprintf(installAnalysisPrompt, url, script)
-	messages := []llm.Message{{Role: llm.RoleUser, Content: prompt}}
-
-	approveSet := map[string]bool{"ok": true, "y": true, "yes": true, "sure": true, "go": true, "ship": true, "approve": true, "lgtm": true}
-	abortSet := map[string]bool{"stop": true, "n": true, "no": true, "cancel": true, "abort": true, "quit": true}
-
-	reader := bufio.NewReader(os.Stdin)
-
-	for turn := 0; turn < 10; turn++ {
-		raw, err := client.Complete(context.Background(), installSystemPrompt, messages)
-		if err != nil {
-			fmt.Printf("  %s LLM error: %s\n", style.RedStyle.Render("❌"), err)
-			return result, false
-		}
-
-		var analysis analysisResult
-		if jerr := json.Unmarshal([]byte(raw), &analysis); jerr != nil {
-			if verboseFlag {
-				fmt.Printf("\n%s\n", style.SubtleStyle.Render(raw))
-			}
-			fmt.Printf("  %s LLM returned unstructured output. Ask a follow-up or type 'abort'.\n", style.YellowStyle.Render("⚠️ "))
-		} else {
-			result = analysis
-			printInstallAnalysis(url, analysis)
-		}
-
-		fmt.Print("Approve? [y/N/question] ")
-		line, _ := reader.ReadString('\n')
-		input := strings.ToLower(strings.TrimSpace(line))
-
-		if approveSet[input] {
-			return result, true
-		}
-		if abortSet[input] || input == "" {
-			return result, false
-		}
-
-		messages = append(messages, llm.Message{Role: llm.RoleAssistant, Content: raw})
-		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: line})
+	raw, err := client.Complete(context.Background(), installSystemPrompt, []llm.Message{{Role: llm.RoleUser, Content: prompt}})
+	if err != nil {
+		fmt.Printf("  %s LLM error: %s\n", style.RedStyle.Render("❌"), err)
+		return analysisResult{}, false
 	}
-
-	fmt.Printf("  %s review loop exceeded 10 turns\n", style.RedStyle.Render("❌"))
-	return result, false
+	var result analysisResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		if verboseFlag {
+			fmt.Printf("\n%s\n", style.SubtleStyle.Render(raw))
+		}
+		return analysisResult{}, false
+	}
+	return result, true
 }
 
 func printInstallAnalysis(url string, a analysisResult) {
