@@ -177,7 +177,7 @@ func requireGoRunOrSkip(t *testing.T, err error, out []byte) {
 		return
 	}
 	msg := string(out)
-	if strings.Contains(msg, "build failed") || strings.Contains(msg, "not enough arguments in call to ApplyJobs") {
+	if strings.Contains(msg, "build failed") {
 		t.Skipf("skipping workflow test due to unrelated root build failure: %s", msg)
 	}
 	require.NoError(t, err, msg)
