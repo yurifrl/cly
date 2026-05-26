@@ -3,9 +3,8 @@ package notify
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
-
-	"github.com/yurifrl/cly/pkg/envs"
 )
 
 // ZellijNotifier sends notifications to Zellij status bar and tabs
@@ -58,7 +57,12 @@ func (z *ZellijNotifier) Send(ctx context.Context, n Notification) error {
 
 // Available returns true if we're in a Zellij session
 func (z *ZellijNotifier) Available() bool {
-	return envs.InZellij()
+	return os.Getenv("ZELLIJ") != ""
+}
+
+// Events returns a closed channel; the zellij notifier has no action callbacks.
+func (z *ZellijNotifier) Events() <-chan ActionEvent {
+	return closedActionChan()
 }
 
 // sendToStatusBar sends notification to zjstatus plugin (fire-and-forget)
@@ -70,8 +74,8 @@ func (z *ZellijNotifier) sendToStatusBar(_ context.Context, n Notification) erro
 
 // sendNotifyTabUpdate sends tab emoji update to old notify plugin (fire-and-forget)
 func (z *ZellijNotifier) sendNotifyTabUpdate(_ context.Context) error {
-	paneID := envs.ZellijPane().Or("")
-	sessionName := envs.ZellijSession().Or("")
+	paneID := os.Getenv("ZELLIJ_PANE_ID")
+	sessionName := os.Getenv("ZELLIJ_SESSION_NAME")
 	args := buildNotifyArgs(z.eventType, paneID, sessionName)
 	cmd := exec.Command("zellij", args...)
 	return cmd.Start()
@@ -92,7 +96,7 @@ func buildNotifyArgs(eventType, paneID, sessionName string) []string {
 
 // sendAttentionTabUpdate sends tab update to zellij-attention plugin (fire-and-forget)
 func (z *ZellijNotifier) sendAttentionTabUpdate(_ context.Context) error {
-	paneID := envs.ZellijPane().Or("")
+	paneID := os.Getenv("ZELLIJ_PANE_ID")
 	pipeName := buildAttentionPipeName(z.eventType, paneID)
 	cmd := exec.Command("zellij", "pipe", "--name", pipeName)
 	return cmd.Start()

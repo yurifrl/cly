@@ -33,6 +33,7 @@ Replaces the "while true; do cmd && sleep N || sleep M; done" pattern.`,
 	root.Flags().Duration("jitter", 0, "± jitter applied to interval/backoff")
 	root.Flags().Duration("initial-delay", 0, "delay before first run")
 	root.Flags().Bool("notify", false, "fire desktop notifications on transitions")
+	root.Flags().Bool("dry-run", false, "log commands without executing them")
 
 	root.AddCommand(statusCmd())
 	root.AddCommand(logsCmd())
@@ -68,6 +69,7 @@ func runEvery(cmd *cobra.Command, args []string) error {
 	jitter, _ := cmd.Flags().GetDuration("jitter")
 	initialDelay, _ := cmd.Flags().GetDuration("initial-delay")
 	notifyOn, _ := cmd.Flags().GetBool("notify")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	dir, err := DefaultDir()
 	if err != nil {
@@ -84,6 +86,7 @@ func runEvery(cmd *cobra.Command, args []string) error {
 		InitialDelay: initialDelay,
 		MaxFails:     maxFails,
 		Notify:       notifyOn,
+		DryRun:       dryRun,
 	}
 	return r.Run(cmd.Context(), cfg)
 }

@@ -208,3 +208,45 @@ func TestNotifyLevelString(t *testing.T) {
 		t.Fatal("level string mismatch")
 	}
 }
+
+// TestApplyAction verifies snooze and retry handlers mutate state correctly.
+func TestApplyAction(t *testing.T) {
+	dir := t.TempDir()
+	clk := &fakeClock{now: time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)}
+	r := NewRunner(dir)
+	r.Clock = clk
+
+	statePath := StatePath(dir, "task")
+	state := &State{Name: "task", ConsecutiveFails: 4, Status: StatusGaveUp}
+	if err := WriteState(statePath, state); err != nil {
+		t.Fatal(err)
+	}
+
+	r.applyAction("snooze", statePath)
+	st, err := ReadState(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantUntil := clk.now.Add(SnoozeDuration)
+	if !st.SnoozeUntil.Equal(wantUntil) {
+		t.Errorf("SnoozeUntil = %v, want %v", st.SnoozeUntil, wantUntil)
+	}
+
+	r.applyAction("retry", statePath)
+	st, _ = ReadState(statePath)
+	if st.ConsecutiveFails != 0 {
+		t.Errorf("retry should reset ConsecutiveFails, got %d", st.ConsecutiveFails)
+	}
+	if st.Status != StatusHealthy {
+		t.Errorf("retry should set Status=healthy, got %s", st.Status)
+	}
+
+	// unknown action: no-op
+	prevSnooze := st.SnoozeUntil
+	prevStatus := st.Status
+	r.applyAction("garbage", statePath)
+	st2, _ := ReadState(statePath)
+	if !st2.SnoozeUntil.Equal(prevSnooze) || st2.Status != prevStatus {
+		t.Errorf("unknown action mutated state")
+	}
+}

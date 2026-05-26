@@ -32,9 +32,36 @@ tasks:
     generates:
       - dist/**/*
 
+  envs:op:
+    desc: Process .env.op with 1Password CLI and output to .env (skipped if .env is fresher than .env.op)
+    sources:
+      - .env.op
+    generates:
+      - .env
+    cmds:
+      - op inject -f --account my.1password.com -i .env.op -o .env
+
+  envs:refresh:
+    desc: Force-rebuild .env from .env.op (bypasses freshness check)
+    cmds:
+      - op inject -f --account my.1password.com -i .env.op -o .env
+
+  build:notifier:
+    desc: Build embedded macOS notifier bundle (darwin only)
+    dotenv: ['.env']
+    cmds:
+      - bash pkg/notify/swift/build.sh
+    sources:
+      - pkg/notify/swift/Sources/**/*.swift
+      - pkg/notify/swift/Info.plist
+      - pkg/notify/swift/build.sh
+    generates:
+      - pkg/notify/assets/cly-notifier.app.tar.gz
+
   build:
     desc: Build cly for current platform
     deps: [build:web]
+    dotenv: ['.env']
     cmds:
       - go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version={{.VERSION}} -X github.com/yurifrl/cly/cmd.BuildTime={{.BUILD_TIME}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
     sources:
@@ -44,6 +71,7 @@ tasks:
 
   build:mcp:
     desc: Build mcp for current platform
+    dotenv: ['.env']
     cmds:
       - go build -ldflags="-s -w -X main.version={{.VERSION}}" -o {{.BUILD_DIR}}/mcp ./cmd/mcp
     sources:
@@ -54,6 +82,7 @@ tasks:
 
   build:pi:
     desc: Build pi wrapper binary for current platform
+    dotenv: ['.env']
     cmds:
       - go build -ldflags="-s -w" -o {{.BUILD_DIR}}/pi ./cmd/pi
     sources:
@@ -99,6 +128,28 @@ tasks:
     desc: Run MCP tests
     cmds:
       - go test ./modules/mcp/... -v {{.CLI_ARGS}}
+
+  lint:isolation:
+    desc: Verify standalone-flavor packages have no forbidden cly imports
+    cmds:
+      - |
+        set -e
+        echo "checking pkg/notify..."
+        leaks=$(grep -rn "yurifrl/cly" pkg/notify/ --include='*.go' || true)
+        if [ -n "$leaks" ]; then
+          echo "pkg/notify must not import cly internals:"; echo "$leaks"; exit 1
+        fi
+        echo "pkg/notify: OK"
+      - |
+        set -e
+        echo "checking modules/every..."
+        leaks=$(grep -rn "yurifrl/cly" modules/every/ --include='*.go' \
+          | grep -v "yurifrl/cly/modules/every/" \
+          | grep -v "yurifrl/cly/pkg/notify" || true)
+        if [ -n "$leaks" ]; then
+          echo "modules/every: forbidden cly imports:"; echo "$leaks"; exit 1
+        fi
+        echo "modules/every: OK"
 
   run:
     desc: Run cly directly with args (use -- for args, e.g., task run -- --help)

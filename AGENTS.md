@@ -164,6 +164,38 @@ The repo produces two binaries:
 
 Both share `modules/mcp/` code. The mcp binary is for use as an MCP server itself.
 
+## Native macOS Notifier (pkg/notify)
+
+`pkg/notify` embeds a signed Swift daemon (`cly-notifier.app`) for native
+UNUserNotificationCenter notifications with action buttons.
+
+**Fresh checkout on darwin:**
+```bash
+task envs:op       # resolve .env.op via 1Password (Personal/cly/APPLE_DEVELOPER_ID)
+task build:notifier
+task build
+```
+
+`cly update` is self-sufficient: if `.env` is missing it runs `op inject`
+to a temp file itself. All `task build*` targets dotenv-load `.env` so any
+secret declared in `.env.op` is available to sub-builds.
+
+The tarball at `pkg/notify/assets/cly-notifier.app.tar.gz` is committed as a
+1-byte placeholder so `go build` always succeeds even before `go generate`.
+Real builds overwrite it locally; CI on darwin runs `task envs:op` and
+`task build:notifier` before `go build`.
+
+**Standalone-flavor isolation contract:**
+- `pkg/notify` imports only stdlib + `github.com/gen2brain/beeep`
+- `modules/every` imports only stdlib + `github.com/yurifrl/cly/pkg/notify`
+- Enforced by `task lint:isolation`
+
+**Sign identity flow:**
+1. `.env.op` → `op inject` → `.env` → dotenv-loaded into `task build*`
+2. `cly update` does the inject inline if `.env` is missing
+3. `build.sh` reads only `CLY_NOTIFIER_SIGN_ID` from env; ad-hoc `-` if unset
+
+
 ## Release Process
 
 Version is in `VERSION` file. CI creates GitHub releases automatically:

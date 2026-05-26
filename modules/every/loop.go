@@ -13,8 +13,12 @@ import (
 	"time"
 
 	"github.com/yurifrl/cly/modules/every/notify"
-	"github.com/yurifrl/cly/pkg/mut"
 )
+
+// dryRunLog writes a `[dry-run] <action> <target>` line to w.
+func dryRunLog(w io.Writer, action, target string) {
+	fmt.Fprintf(w, "[dry-run] %s %s\n", action, target)
+}
 
 // Clock abstracts time so tests can drive the loop deterministically.
 type Clock interface {
@@ -51,7 +55,7 @@ type ExecResult struct {
 }
 
 // ExecFunc executes the command and returns its result. Implementations must
-// honour mut.DryRun and ctx cancellation.
+// honour ctx cancellation.
 type ExecFunc func(ctx context.Context, dir string, command []string) ExecResult
 
 // DefaultExec runs the child via os/exec, forwarding stdio. SIGTERM is sent
@@ -60,10 +64,6 @@ type ExecFunc func(ctx context.Context, dir string, command []string) ExecResult
 func DefaultExec(ctx context.Context, dir string, command []string) ExecResult {
 	if len(command) == 0 {
 		return ExecResult{ExitCode: -1, Err: fmt.Errorf("empty command")}
-	}
-	if mut.DryRun() {
-		mut.Log("exec", strings.Join(command, " "))
-		return ExecResult{}
 	}
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
@@ -116,6 +116,7 @@ type RunConfig struct {
 	MaxFails     int
 	Notify       bool
 	WorkDir      string // child cwd; empty = inherit
+	DryRun       bool   // log commands without executing them
 }
 
 // Runner is the injectable run-loop driver.
@@ -196,6 +197,12 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig) error {
 		}
 	}()
 
+	// 3b. listen for action events from the notifier, applying snooze / retry
+	// for THIS task only.
+	if cfg.Notify {
+		go r.handleActionEvents(sigCtx, cfg.Name, statePath)
+	}
+
 	// 4. initial delay
 	if cfg.InitialDelay > 0 {
 		if err := r.Sleep(sigCtx, cfg.InitialDelay); err != nil {
@@ -207,6 +214,22 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig) error {
 	for {
 		if sigCtx.Err() != nil {
 			return r.shutdown(state, statePath, "signal")
+		}
+
+		// honour SnoozeUntil — skip this run if user snoozed via notification action.
+		now := r.Clock.Now()
+		if !state.SnoozeUntil.IsZero() && now.Before(state.SnoozeUntil) {
+			wait := state.SnoozeUntil.Sub(now)
+			_ = AppendLog(logPath, Event{
+				TS:    now,
+				Event: "snoozed",
+				Extra: map[string]any{"until": state.SnoozeUntil},
+			})
+			fmt.Fprintf(r.Stdout, "%s ⏸ snoozed for %s\n", FormatTS(now), FormatDuration(wait))
+			if err := r.Sleep(sigCtx, wait); err != nil {
+				return r.shutdown(state, statePath, "signal")
+			}
+			continue
 		}
 
 		// run number
@@ -229,7 +252,13 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig) error {
 		_ = WriteState(statePath, state)
 
 		// exec
-		res := r.Exec(sigCtx, cfg.WorkDir, cfg.Command)
+		var res ExecResult
+		if cfg.DryRun {
+			dryRunLog(os.Stderr, "exec", strings.Join(cfg.Command, " "))
+			res = ExecResult{ExitCode: 0}
+		} else {
+			res = r.Exec(sigCtx, cfg.WorkDir, cfg.Command)
+		}
 
 		// classify
 		prevStatus := state.Status
@@ -330,6 +359,63 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig) error {
 	}
 }
 
+// SnoozeDuration is how long an action ID="snooze" pauses a task for.
+const SnoozeDuration = 5 * time.Minute
+
+// handleActionEvents subscribes to the shared notifier's event channel and
+// applies snooze/retry actions for the task identified by name.
+//
+// Group filtering: only events with Group == "cly.every.<name>" are honoured.
+// Other events (e.g. for sibling tasks) are ignored.
+func (r *Runner) handleActionEvents(ctx context.Context, taskName, statePath string) {
+	n := notify.Shared()
+	if n == nil {
+		return
+	}
+	ch := n.Events()
+	if ch == nil {
+		return
+	}
+	wantGroup := notify.GroupFor(taskName)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			if ev.Group != wantGroup {
+				continue
+			}
+			r.applyAction(ev.ActionID, statePath)
+		}
+	}
+}
+
+// applyAction mutates the persisted state for the given action.
+// Errors are logged to stderr; we never crash the loop.
+func (r *Runner) applyAction(actionID, statePath string) {
+	state, err := ReadState(statePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "every: action read state: %v\n", err)
+		return
+	}
+	switch actionID {
+	case "snooze":
+		state.SnoozeUntil = r.Clock.Now().Add(SnoozeDuration)
+	case "retry":
+		state.ConsecutiveFails = 0
+		state.NextRunAt = r.Clock.Now()
+		state.Status = StatusHealthy
+	default:
+		return
+	}
+	if err := WriteState(statePath, state); err != nil {
+		fmt.Fprintf(os.Stderr, "every: action write state: %v\n", err)
+	}
+}
+
 func (r *Runner) shutdown(state *State, path, reason string) error {
 	_ = AppendLog(LogPath(r.Dir, state.Name), Event{
 		TS:    r.Clock.Now(),
@@ -361,6 +447,7 @@ func mergeState(prev *State, cfg RunConfig, now time.Time) *State {
 		s.LastExit = prev.LastExit
 		s.LastDurationMs = prev.LastDurationMs
 		s.ConsecutiveFails = prev.ConsecutiveFails
+		s.SnoozeUntil = prev.SnoozeUntil
 		if prev.Status != "" {
 			s.Status = prev.Status
 		}

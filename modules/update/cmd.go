@@ -30,6 +30,7 @@ var (
 	remote      bool
 	bumpFlag    string
 	piNoExt     bool
+	refreshEnv  bool
 )
 
 func Register(parent *cobra.Command) {
@@ -51,6 +52,7 @@ Use --remote to download the latest GitHub release instead.`,
 
 	cmd.Flags().BoolVar(&remote, "remote", false, "Download latest release from GitHub instead of building locally")
 	cmd.Flags().BoolVar(&piNoExt, "pi-no-extension", false, "Skip installing bundled pi extensions after update")
+	cmd.Flags().BoolVar(&refreshEnv, "refresh-env", false, "Re-resolve .env.op via 1Password before building (slow; otherwise reuses existing .env)")
 	cmd.Flags().StringVarP(&bumpFlag, "bump", "b", "", "Cut a real release tag: patch, minor, or major")
 	cmd.Flags().Lookup("bump").NoOptDefVal = "patch"
 
@@ -180,6 +182,12 @@ func updateLocal(cmd *cobra.Command) error {
 	buildCmd.Dir = sourceDir
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
+	if env, eerr := loadBuildEnv(sourceDir, refreshEnv); eerr != nil {
+		fmt.Printf("%s env load: %v (continuing with os.Environ)\n",
+			style.YellowStyle.Render("⚠️"), eerr)
+	} else {
+		buildCmd.Env = env
+	}
 
 	if err := buildCmd.Run(); err != nil {
 		os.Remove(tmpPath)

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yurifrl/cly/pkg/style"
+	"github.com/yurifrl/cly/modules/every/internal"
 )
 
 // FormatTS renders an RFC3339 UTC timestamp.
@@ -56,7 +56,7 @@ func FormatAgo(t time.Time, now time.Time) string {
 
 // FormatRunStart renders the live "▶ run #N name" line.
 func FormatRunStart(now time.Time, run int, command string, retry, maxFails int) string {
-	prefix := style.BlueStyle.Render("▶")
+	prefix := internal.BlueStyle.Render("▶")
 	tail := ""
 	if retry > 0 {
 		max := "∞"
@@ -71,9 +71,9 @@ func FormatRunStart(now time.Time, run int, command string, retry, maxFails int)
 // FormatRunEnd renders the live "✓ done … / ✗ failed …" line.
 func FormatRunEnd(now time.Time, exit int, dur time.Duration, nextLabel string) string {
 	if exit == 0 {
-		return fmt.Sprintf("%s %s done in %s (exit 0) → %s", FormatTS(now), style.GreenStyle.Render("✓"), FormatDuration(dur), nextLabel)
+		return fmt.Sprintf("%s %s done in %s (exit 0) → %s", FormatTS(now), internal.GreenStyle.Render("✓"), FormatDuration(dur), nextLabel)
 	}
-	return fmt.Sprintf("%s %s failed in %s (exit %d) → %s", FormatTS(now), style.RedStyle.Render("✗"), FormatDuration(dur), exit, nextLabel)
+	return fmt.Sprintf("%s %s failed in %s (exit %d) → %s", FormatTS(now), internal.RedStyle.Render("✗"), FormatDuration(dur), exit, nextLabel)
 }
 
 // FormatLogEvent renders one parsed Event for the `every logs` command.
@@ -87,23 +87,23 @@ func FormatLogEvent(e Event) string {
 		if retry > 0 {
 			extra = fmt.Sprintf(" retry=%d", int(retry))
 		}
-		return fmt.Sprintf("%s %s start  run=%d%s", ts, style.BlueStyle.Render("▶"), int(run), extra)
+		return fmt.Sprintf("%s %s start  run=%d%s", ts, internal.BlueStyle.Render("▶"), int(run), extra)
 	case "end":
 		run, _ := e.Extra["run"].(float64)
 		exit, _ := e.Extra["exit"].(float64)
 		dur, _ := e.Extra["duration_ms"].(float64)
-		marker := style.GreenStyle.Render("✓")
+		marker := internal.GreenStyle.Render("✓")
 		if int(exit) != 0 {
-			marker = style.RedStyle.Render("✗")
+			marker = internal.RedStyle.Render("✗")
 		}
 		return fmt.Sprintf("%s %s end    run=%d exit=%d duration=%s", ts, marker, int(run), int(exit), FormatDuration(time.Duration(dur)*time.Millisecond))
 	case "transition":
 		from, _ := e.Extra["from"].(string)
 		to, _ := e.Extra["to"].(string)
-		return fmt.Sprintf("%s %s transition %s → %s", ts, style.YellowStyle.Render("↻"), from, to)
+		return fmt.Sprintf("%s %s transition %s → %s", ts, internal.YellowStyle.Render("↻"), from, to)
 	case "gave_up":
 		fails, _ := e.Extra["fails"].(float64)
-		return fmt.Sprintf("%s %s gave_up fails=%d", ts, style.RedStyle.Render("✗"), int(fails))
+		return fmt.Sprintf("%s %s gave_up fails=%d", ts, internal.RedStyle.Render("✗"), int(fails))
 	case "shutdown":
 		reason, _ := e.Extra["reason"].(string)
 		return fmt.Sprintf("%s ⏹ shutdown reason=%s", ts, reason)
@@ -159,19 +159,19 @@ func (r StatusRow) LifecycleLabel() string {
 	state := r.Lifecycle
 	if r.Status == StatusFailing {
 		state = "failing"
-		return style.YellowStyle.Render(dot+" "+state)
+		return internal.YellowStyle.Render(dot+" "+state)
 	}
 	if r.Status == StatusGaveUp {
 		state = "gave_up"
-		return style.RedStyle.Render(dot+" "+state)
+		return internal.RedStyle.Render(dot+" "+state)
 	}
 	switch r.Lifecycle {
 	case LifecycleActive:
-		return style.GreenStyle.Render(dot+" "+state)
+		return internal.GreenStyle.Render(dot+" "+state)
 	case LifecycleStopped:
-		return style.SubtleStyle.Render(dot+" "+state)
+		return internal.SubtleStyle.Render(dot+" "+state)
 	case LifecycleOrphan:
-		return style.RedStyle.Render(dot+" "+state)
+		return internal.RedStyle.Render(dot+" "+state)
 	}
 	return dot + " " + state
 }

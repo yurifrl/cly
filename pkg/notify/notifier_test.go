@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -10,10 +11,11 @@ import (
 
 // Mock notifier for testing
 type mockNotifier struct {
-	sendCalled     bool
+	sendCalled       bool
 	lastNotification Notification
-	availableResult bool
-	sendError      error
+	availableResult  bool
+	sendError        error
+	events           chan ActionEvent
 }
 
 func (m *mockNotifier) Send(ctx context.Context, n Notification) error {
@@ -24,6 +26,13 @@ func (m *mockNotifier) Send(ctx context.Context, n Notification) error {
 
 func (m *mockNotifier) Available() bool {
 	return m.availableResult
+}
+
+func (m *mockNotifier) Events() <-chan ActionEvent {
+	if m.events == nil {
+		return closedActionChan()
+	}
+	return m.events
 }
 
 func TestMultiNotifier_SendsToAllNotifiers(t *testing.T) {
@@ -86,4 +95,55 @@ func TestMultiNotifier_Available(t *testing.T) {
 			assert.Equal(t, tt.expected, multi.Available())
 		})
 	}
+}
+
+func TestMultiNotifier_EventsFanIn(t *testing.T) {
+	a := &mockNotifier{availableResult: true, events: make(chan ActionEvent, 4)}
+	b := &mockNotifier{availableResult: true, events: make(chan ActionEvent, 4)}
+	multi := NewMultiNotifier([]Notifier{a, b})
+
+	a.events <- ActionEvent{Group: "ga", ActionID: "snooze"}
+	b.events <- ActionEvent{Group: "gb", ActionID: "retry"}
+
+	got := map[string]string{}
+	for i := 0; i < 2; i++ {
+		select {
+		case ev := <-multi.Events():
+			got[ev.Group] = ev.ActionID
+		case <-time.After(time.Second):
+			t.Fatalf("timeout waiting for fan-in event %d", i)
+		}
+	}
+	assert.Equal(t, "snooze", got["ga"])
+	assert.Equal(t, "retry", got["gb"])
+
+	close(a.events)
+	close(b.events)
+}
+
+func TestMultiNotifier_EventsNilSafe(t *testing.T) {
+	// Backends without action callbacks return closedActionChan().
+	a := &mockNotifier{availableResult: true}
+	b := &mockNotifier{availableResult: true}
+	multi := NewMultiNotifier([]Notifier{a, b})
+
+	select {
+	case <-multi.Events():
+		// fine — nothing expected
+	case <-time.After(50 * time.Millisecond):
+		// expected
+	}
+}
+
+func TestNotification_ActionsRoundTrip(t *testing.T) {
+	n := Notification{
+		Group: "cly.every.foo",
+		Actions: []Action{
+			{ID: "snooze", Title: "Snooze 5m"},
+			{ID: "dismiss", Title: "Dismiss"},
+		},
+	}
+	require.Len(t, n.Actions, 2)
+	assert.Equal(t, "snooze", n.Actions[0].ID)
+	assert.Equal(t, "Dismiss", n.Actions[1].Title)
 }

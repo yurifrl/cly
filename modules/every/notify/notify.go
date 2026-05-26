@@ -1,16 +1,18 @@
 // Package notify is the cly-every desktop notification subsystem. It is
-// self-contained: nothing here imports pkg/cmux or any other cly module.
+// a thin shim over pkg/notify, mapping every's three transition levels
+// (failing/recovered/gaveup) to default Action sets and routing to the
+// shared notifier (native macOS bundle, beeep, zellij).
 package notify
 
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	pkgnotify "github.com/yurifrl/cly/pkg/notify"
 )
 
 // Level enumerates the three transitions cly-every emits.
@@ -35,7 +37,9 @@ func (l Level) String() string {
 	return "unknown"
 }
 
-// Notification is the input to Send.
+// Notification is the input to Send. The TaskName is used to derive a
+// stable group ID ("cly.every.<task>") so action callbacks can be routed
+// back to the right task.
 type Notification struct {
 	TaskName string
 	Level    Level
@@ -50,22 +54,64 @@ var (
 		LevelGaveUp:    "Sosumi",
 	}
 
-	missingWarnOnce sync.Once
-
-	// Runner is the os/exec entrypoint. Tests can swap it.
-	Runner = func(ctx context.Context, name string, args ...string) error {
-		cmd := exec.CommandContext(ctx, name, args...)
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-
-	// LookPath is swappable for tests.
-	LookPath = exec.LookPath
-
 	// ConfigDir resolves ~/.config/cly/every. Override in tests.
 	ConfigDir = defaultConfigDir
+
+	// Default actions per transition level. Empty for recovered = passive
+	// info, no buttons, banner auto-dismisses.
+	defaultActions = map[Level][]pkgnotify.Action{
+		LevelFailing: {
+			{ID: "snooze", Title: "Snooze 5m"},
+			{ID: "dismiss", Title: "Dismiss"},
+		},
+		LevelRecovered: nil,
+		LevelGaveUp: {
+			{ID: "retry", Title: "Retry"},
+			{ID: "dismiss", Title: "Dismiss"},
+		},
+	}
+
+	// shared is the lazily-initialised pkg/notify backend. One per process.
+	shared     pkgnotify.Notifier
+	sharedOnce sync.Once
 )
+
+// Shared returns the process-wide notifier. The first call initialises the
+// pkg/notify backend (native macOS where available, beeep otherwise).
+func Shared() pkgnotify.Notifier {
+	sharedOnce.Do(func() {
+		shared = pkgnotify.New("every", false, false, false, "")
+	})
+	return shared
+}
+
+// SetShared injects a notifier (used by tests).
+func SetShared(n pkgnotify.Notifier) {
+	sharedOnce.Do(func() {})
+	shared = n
+}
+
+// GroupFor returns the canonical notification group for a task name.
+func GroupFor(taskName string) string {
+	return "cly.every." + taskName
+}
+
+// Send delivers a notification through the shared pkg/notify backend.
+// It is a no-crash wrapper: any underlying error is dropped.
+func Send(ctx context.Context, n Notification) error {
+	notifier := Shared()
+	if notifier == nil || !notifier.Available() {
+		return nil
+	}
+	_ = notifier.Send(ctx, pkgnotify.Notification{
+		Title:   n.Title,
+		Message: n.Body,
+		Sound:   resolveSound(n.Level),
+		Group:   GroupFor(n.TaskName),
+		Actions: defaultActions[n.Level],
+	})
+	return nil
+}
 
 func defaultConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -73,60 +119,6 @@ func defaultConfigDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".config", "cly", "every"), nil
-}
-
-// Send shells out to terminal-notifier. When terminal-notifier is missing or
-// returns an error this never crashes the caller.
-func Send(ctx context.Context, n Notification) error {
-	if _, err := LookPath("terminal-notifier"); err != nil {
-		missingWarnOnce.Do(func() {
-			fmt.Fprintln(os.Stderr, "cly every notify: terminal-notifier not on PATH; desktop notifications disabled")
-		})
-		return nil
-	}
-
-	icon, ierr := iconPath(n.Level)
-	if ierr != nil {
-		fmt.Fprintf(os.Stderr, "cly every notify: icon resolve: %v\n", ierr)
-	}
-
-	sound := resolveSound(n.Level)
-	args := []string{
-		"-title", n.Title,
-		"-message", n.Body,
-		"-sound", sound,
-		"-group", "cly.every." + n.TaskName,
-	}
-	if icon != "" {
-		args = append(args, "-appIcon", icon)
-	}
-	if err := Runner(ctx, "terminal-notifier", args...); err != nil {
-		fmt.Fprintf(os.Stderr, "cly every notify: %v\n", err)
-		return nil
-	}
-	return nil
-}
-
-// iconPath returns either a user override or the embedded extracted path.
-func iconPath(l Level) (string, error) {
-	if dir, err := ConfigDir(); err == nil {
-		p := filepath.Join(dir, "icons", l.String()+".png")
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			return p, nil
-		}
-	}
-	tmp := filepath.Join(os.TempDir(), fmt.Sprintf("cly-every-%s.png", l.String()))
-	if _, err := os.Stat(tmp); err == nil {
-		return tmp, nil
-	}
-	data := iconBytes(l)
-	if len(data) == 0 {
-		return "", fmt.Errorf("no icon for level %s", l)
-	}
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return "", err
-	}
-	return tmp, nil
 }
 
 // resolveSound picks a sound name from sounds.toml, falling back to defaults.

@@ -176,3 +176,70 @@ go build
 # Run tests (when implemented)
 go test ./...
 ```
+
+## Native macOS Notifications
+
+`pkg/notify` ships an embedded, signed Swift daemon (`cly-notifier.app`) that
+delivers notifications via `UNUserNotificationCenter` with action buttons
+(Snooze, Retry) and persistence in Notification Center. On non-darwin hosts
+or when the bundle is unavailable, it falls back to `beeep`.
+
+### One-time bundle build (darwin only)
+
+The Apple Developer ID identity lives as a field on your `cly` 1Password
+Secure Note (Personal account). The repo ships a `.env.op` template that
+resolves it at build time — same pattern as other 1Password-backed env files
+([1password skill](https://1password.com/downloads/command-line/)).
+
+```bash
+# Resolve secrets into .env (gitignored)
+task envs:op
+
+# Build the notifier bundle (codesigned with your Developer ID)
+task build:notifier
+
+# Build cly normally
+task build
+```
+
+`cly update` (alias `cly u`) is self-sufficient — if `.env` is missing it
+runs `op inject` to a temp file itself, so you don't have to remember to
+`task envs:op` first.
+
+If `op` isn't on PATH or `CLY_NOTIFIER_SIGN_ID` is unset, `build.sh` uses an
+ad-hoc signature (`-`). That works on your own Mac for local development
+but is not distributable.
+
+The template `.env.op` is committed; the resolved `.env` is gitignored.
+
+Fresh checkouts ship with a 1-byte placeholder tarball at
+`pkg/notify/assets/cly-notifier.app.tar.gz` so `go build` always succeeds.
+The native backend detects the placeholder and falls back silently.
+
+### Permission prompt
+
+First time the daemon runs, macOS shows a notification permission prompt for
+`dev.yurifrl.cly.notifier`. Approve it once and macOS remembers per bundle ID
+forever. If denied, notifications still send but won't appear; `cly` logs an
+actionable hint to stderr.
+
+### `cly every` snooze + retry
+
+When `cly every --notify` is on, transitions emit notifications with action
+buttons:
+
+- `failing`  → `[Snooze 5m] [Dismiss]`
+- `recovered` → no buttons (auto-dismiss)
+- `gaveup`   → `[Retry] [Dismiss]`
+
+Clicking **Snooze 5m** sets `SnoozeUntil` on the task state; the loop skips
+runs until that time passes. Clicking **Retry** resets the failure counter
+and triggers the next run immediately.
+
+### Standalone-flavor packages
+
+`pkg/notify` and `modules/every` are designed for future extraction as their
+own Go modules. They import only stdlib + their declared external deps —
+nothing else under `github.com/yurifrl/cly`. Run `task lint:isolation` to
+verify the contract.
+

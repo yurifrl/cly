@@ -2,95 +2,107 @@ package notify
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
+
+	pkgnotify "github.com/yurifrl/cly/pkg/notify"
 )
 
-func TestSendMissingTerminalNotifier(t *testing.T) {
-	old := LookPath
-	defer func() { LookPath = old }()
-	LookPath = func(string) (string, error) { return "", errors.New("not found") }
-	if err := Send(context.Background(), Notification{TaskName: "x", Title: "t", Body: "b"}); err != nil {
-		t.Fatalf("expected nil error when terminal-notifier missing, got %v", err)
-	}
+// fakeNotifier captures Send calls for assertions.
+type fakeNotifier struct {
+	mu        sync.Mutex
+	available bool
+	got       []pkgnotify.Notification
+	events    chan pkgnotify.ActionEvent
 }
 
-func TestSendInvokesRunner(t *testing.T) {
-	old := LookPath
-	defer func() { LookPath = old }()
-	LookPath = func(string) (string, error) { return "/usr/bin/true", nil }
-
-	var mu sync.Mutex
-	var got []string
-	oldRunner := Runner
-	defer func() { Runner = oldRunner }()
-	Runner = func(ctx context.Context, name string, args ...string) error {
-		mu.Lock()
-		defer mu.Unlock()
-		got = append([]string{name}, args...)
-		return nil
+func (f *fakeNotifier) Send(_ context.Context, n pkgnotify.Notification) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.got = append(f.got, n)
+	return nil
+}
+func (f *fakeNotifier) Available() bool { return f.available }
+func (f *fakeNotifier) Events() <-chan pkgnotify.ActionEvent {
+	if f.events == nil {
+		ch := make(chan pkgnotify.ActionEvent)
+		close(ch)
+		return ch
 	}
+	return f.events
+}
 
-	if err := Send(context.Background(), Notification{TaskName: "smoke", Level: LevelFailing, Title: "T", Body: "B"}); err != nil {
+func TestSend_RoutesGroupAndActions_Failing(t *testing.T) {
+	f := &fakeNotifier{available: true}
+	SetShared(f)
+
+	if err := Send(context.Background(), Notification{
+		TaskName: "smoke",
+		Level:    LevelFailing,
+		Title:    "T",
+		Body:     "B",
+	}); err != nil {
 		t.Fatalf("send: %v", err)
 	}
-	if len(got) == 0 || got[0] != "terminal-notifier" {
-		t.Fatalf("unexpected runner invocation: %v", got)
+
+	if len(f.got) != 1 {
+		t.Fatalf("want 1 send, got %d", len(f.got))
 	}
-	if !contains(got, "-group") || !contains(got, "cly.every.smoke") {
-		t.Fatalf("missing -group: %v", got)
+	n := f.got[0]
+	if n.Group != "cly.every.smoke" {
+		t.Errorf("group: %q", n.Group)
 	}
-	if !contains(got, "-sound") || !contains(got, "Basso") {
-		t.Fatalf("missing default Basso sound: %v", got)
+	if n.Sound != "Basso" {
+		t.Errorf("sound: %q", n.Sound)
+	}
+	if len(n.Actions) != 2 || n.Actions[0].ID != "snooze" || n.Actions[1].ID != "dismiss" {
+		t.Errorf("actions: %+v", n.Actions)
 	}
 }
 
-func TestIconExtractionIdempotent(t *testing.T) {
-	old := ConfigDir
-	defer func() { ConfigDir = old }()
-	ConfigDir = func() (string, error) { return t.TempDir(), nil }
+func TestSend_RoutesGroupAndActions_Recovered_NoButtons(t *testing.T) {
+	f := &fakeNotifier{available: true}
+	SetShared(f)
 
-	p1, err := iconPath(LevelFailing)
-	if err != nil {
-		t.Fatal(err)
+	_ = Send(context.Background(), Notification{TaskName: "t", Level: LevelRecovered})
+	if len(f.got) != 1 {
+		t.Fatalf("want 1 send")
 	}
-	stat1, _ := os.Stat(p1)
-	p2, err := iconPath(LevelFailing)
-	if err != nil {
-		t.Fatal(err)
+	if len(f.got[0].Actions) != 0 {
+		t.Errorf("recovered should have no actions, got %+v", f.got[0].Actions)
 	}
-	stat2, _ := os.Stat(p2)
-	if p1 != p2 {
-		t.Fatalf("expected same path: %s vs %s", p1, p2)
-	}
-	if stat1.ModTime() != stat2.ModTime() {
-		t.Fatalf("file rewritten between calls")
+	if f.got[0].Sound != "Glass" {
+		t.Errorf("recovered sound: %q", f.got[0].Sound)
 	}
 }
 
-func TestIconOverride(t *testing.T) {
-	cfgDir := t.TempDir()
-	old := ConfigDir
-	defer func() { ConfigDir = old }()
-	ConfigDir = func() (string, error) { return cfgDir, nil }
+func TestSend_RoutesGroupAndActions_GaveUp(t *testing.T) {
+	f := &fakeNotifier{available: true}
+	SetShared(f)
 
-	override := filepath.Join(cfgDir, "icons", "failing.png")
-	if err := os.MkdirAll(filepath.Dir(override), 0o755); err != nil {
-		t.Fatal(err)
+	_ = Send(context.Background(), Notification{TaskName: "t", Level: LevelGaveUp})
+	if len(f.got) != 1 {
+		t.Fatalf("want 1 send")
 	}
-	if err := os.WriteFile(override, []byte("fake"), 0o644); err != nil {
-		t.Fatal(err)
+	got := f.got[0]
+	if len(got.Actions) != 2 || got.Actions[0].ID != "retry" || got.Actions[1].ID != "dismiss" {
+		t.Errorf("gaveup actions: %+v", got.Actions)
 	}
-	got, err := iconPath(LevelFailing)
-	if err != nil {
-		t.Fatal(err)
+	if got.Sound != "Sosumi" {
+		t.Errorf("gaveup sound: %q", got.Sound)
 	}
-	if got != override {
-		t.Fatalf("expected override %s, got %s", override, got)
+}
+
+func TestSend_NoCrashWhenUnavailable(t *testing.T) {
+	f := &fakeNotifier{available: false}
+	SetShared(f)
+	if err := Send(context.Background(), Notification{TaskName: "x", Level: LevelFailing}); err != nil {
+		t.Fatalf("expected nil error when unavailable, got %v", err)
+	}
+	if len(f.got) != 0 {
+		t.Fatalf("should not send when unavailable")
 	}
 }
 
@@ -114,11 +126,14 @@ func TestSoundOverride(t *testing.T) {
 	}
 }
 
-func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle || strings.Contains(h, needle) {
-			return true
-		}
+func TestGroupFor(t *testing.T) {
+	if g := GroupFor("foo"); g != "cly.every.foo" {
+		t.Fatalf("group: %s", g)
 	}
-	return false
+}
+
+func TestLevelString(t *testing.T) {
+	if LevelFailing.String() != "failing" || LevelRecovered.String() != "recovered" || LevelGaveUp.String() != "gaveup" {
+		t.Fatal("level strings drifted")
+	}
 }
