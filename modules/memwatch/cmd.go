@@ -134,13 +134,17 @@ func Register(parent *cobra.Command) {
 		Long: `Polls macOS memory_pressure and sends notifications when free memory
 drops below a configured threshold or pressure state becomes warn/critical.
 
-Designed to be launched at login via ~/Dotfiles/dotfiles.conf:
-  @startup memwatch keepalive -- cly memwatch run`,
+Designed to be launched at login by process-compose. Add a process to
+~/.config/process-compose/process-compose.yaml:
+  memwatch:
+    command: "cly memwatch run"
+    availability: { restart: always }`,
 	}
 
 	root.AddCommand(
 		newTopCmd(),
 		newPiCmd(),
+		newTUICmd(),
 		&cobra.Command{
 			Use:   "check",
 			Short: "One-shot memory pressure check (prints JSON)",
@@ -159,7 +163,7 @@ Designed to be launched at login via ~/Dotfiles/dotfiles.conf:
 		},
 		&cobra.Command{
 			Use:   "run",
-			Short: "Run the memory watcher loop (blocks; designed for @startup keepalive)",
+			Short: "Run the memory watcher loop (blocks; designed to be supervised by process-compose)",
 			RunE:  runLoop,
 		},
 		newNotifyCmd(),
@@ -176,7 +180,7 @@ Designed to be launched at login via ~/Dotfiles/dotfiles.conf:
 		},
 		&cobra.Command{
 			Use:   "restart",
-			Short: "Kill the running memwatch daemon (dotfiles @startup keepalive relaunches it with the new binary)",
+			Short: "Kill the running memwatch daemon (process-compose relaunches it with the new binary)",
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return Restart(cmd.Context())
 			},

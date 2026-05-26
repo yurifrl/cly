@@ -19,6 +19,7 @@ type PiProc struct {
 	Label        string   `json:"label"`         // short label derived from CWD
 	RSSKB        int64    `json:"rss_kb"`
 	Workspace    string   `json:"workspace,omitempty"`
+	WorkspaceRef string   `json:"workspace_ref,omitempty"` // e.g. workspace:3
 	SessionNames []string `json:"session_names,omitempty"`
 }
 
@@ -34,6 +35,7 @@ func PiProcesses(ctx context.Context) ([]PiProc, error) {
 	// Build cwd -> (workspace, session names) map from pi-tree scan.
 	type wsInfo struct {
 		workspace string
+		ref       string
 		names     []string
 	}
 	cwdInfo := map[string]*wsInfo{}
@@ -48,7 +50,7 @@ func PiProcesses(ctx context.Context) ([]PiProc, error) {
 					continue
 				}
 				if _, ok := cwdInfo[cwd]; !ok {
-					cwdInfo[cwd] = &wsInfo{workspace: ws.Name}
+					cwdInfo[cwd] = &wsInfo{workspace: ws.Name, ref: ws.WorkspaceRef}
 				}
 				name := s.SessionName
 				if name == "" {
@@ -82,6 +84,7 @@ func PiProcesses(ctx context.Context) ([]PiProc, error) {
 		}
 		if info, ok := cwdInfo[cwd]; ok {
 			p.Workspace = info.workspace
+			p.WorkspaceRef = info.ref
 			p.SessionNames = info.names
 		}
 		procs = append(procs, p)

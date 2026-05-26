@@ -12,8 +12,9 @@ import (
 )
 
 // Restart finds any running `cly memwatch run` process and sends it SIGTERM.
-// It relies on dotfiles @startup keepalive (or whoever supervised the daemon)
-// to respawn it with the freshly installed binary.
+// It relies on the supervisor (process-compose, see
+// ~/.config/process-compose/process-compose.yaml) to respawn it with the
+// freshly installed binary.
 //
 // Returns nil when there's nothing to kill — this is a non-error state so
 // post-install hooks can always call it safely.
@@ -38,11 +39,11 @@ func Restart(ctx context.Context) error {
 	}
 
 	if killed == 0 {
-		fmt.Fprintln(os.Stderr, "memwatch: no running `cly memwatch run` process found (keepalive will pick up the new binary on next launch)")
+		fmt.Fprintln(os.Stderr, "memwatch: no running `cly memwatch run` process found (process-compose will pick up the new binary on next launch)")
 		return nil
 	}
 
-	fmt.Fprintf(os.Stderr, "memwatch: signalled %d process(es) — @startup keepalive will relaunch with the new binary\n", killed)
+	fmt.Fprintf(os.Stderr, "memwatch: signalled %d process(es) — process-compose will relaunch with the new binary\n", killed)
 	// Give the supervisor a moment to respawn; best-effort, non-blocking if unavailable.
 	time.Sleep(300 * time.Millisecond)
 	return nil
