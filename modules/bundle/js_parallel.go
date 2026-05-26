@@ -52,6 +52,8 @@ type parallelModel struct {
 	done     bool
 	force    bool
 	verbose  bool
+	manager  string
+	addCmd   string
 }
 
 var (
@@ -62,7 +64,7 @@ var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
 )
 
-func newParallelModel(packages []string, force bool, verbose bool) parallelModel {
+func newParallelModel(manager, addCmd string, packages []string, force bool, verbose bool) parallelModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
@@ -81,6 +83,8 @@ func newParallelModel(packages []string, force bool, verbose bool) parallelModel
 		resultCh: make(chan pkgResultMsg, len(packages)),
 		force:    force,
 		verbose:  verbose,
+		manager:  manager,
+		addCmd:   addCmd,
 	}
 }
 
@@ -91,7 +95,7 @@ func (m parallelModel) Init() tea.Cmd {
 		wg.Add(1)
 		go func(idx int, p string) {
 			defer wg.Done()
-			out, err := runPnpmInstall(p, m.force)
+			out, err := runManagerInstall(m.manager, m.addCmd, p, m.force)
 			m.resultCh <- pkgResultMsg{index: idx, output: out, err: err}
 		}(i, pkg)
 	}
@@ -244,21 +248,21 @@ func pollResults(ch <-chan pkgResultMsg) tea.Cmd {
 	}
 }
 
-// runPnpmInstall runs `pnpm add -g <pkg>` and returns combined output.
-func runPnpmInstall(pkg string, force bool) (string, error) {
-	args := []string{"add", "-g", pkg}
+// runManagerInstall runs `<manager> <addCmd> -g <pkg>` and returns combined output.
+func runManagerInstall(manager, addCmd, pkg string, force bool) (string, error) {
+	args := []string{addCmd, "-g", pkg}
 	if force {
 		args = append(args, "--force")
 	}
-	cmd := exec.Command("pnpm", args...)
+	cmd := exec.Command(manager, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("pnpm add failed: %s", strings.TrimSpace(string(output)))
+		return string(output), fmt.Errorf("%s %s failed: %s", manager, addCmd, strings.TrimSpace(string(output)))
 	}
 	return string(output), nil
 }
 
-// summarizePnpmOutput extracts a useful one-liner from pnpm output.
+// summarizePnpmOutput extracts a useful one-liner from pnpm/npm output.
 func summarizePnpmOutput(output string) string {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	// Look for version info or "added" lines
@@ -280,8 +284,8 @@ func summarizePnpmOutput(output string) string {
 
 // runParallelInstall runs the TUI for parallel package installation.
 // Returns error only if the TUI itself fails; individual package errors are displayed.
-func runParallelInstall(packages []string, force bool, verbose bool) error {
-	m := newParallelModel(packages, force, verbose)
+func runParallelInstall(manager, addCmd string, packages []string, force bool, verbose bool) error {
+	m := newParallelModel(manager, addCmd, packages, force, verbose)
 	p := tea.NewProgram(m)
 	finalModel, err := p.Run()
 	if err != nil {

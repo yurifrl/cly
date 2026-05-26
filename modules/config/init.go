@@ -62,6 +62,7 @@ modules:
   bundle:
     go_file: ~/.config/cly/bundles/Gofile
     js_file: ~/.config/cly/bundles/packages.json
+    js_manager: pnpm
     python_file: ~/.config/cly/bundles/Pythonfile
     brew_file: ~/.config/cly/bundles/Brewfile
     rust_file: ~/.config/cly/bundles/Rustfile

@@ -21,6 +21,7 @@ var (
 	masFlag       bool
 	parallelFlag  bool
 	updateFlag    bool
+	uninstallFlag bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -70,7 +71,7 @@ Types:
 			if len(args) > 0 {
 				bundleType = args[0]
 			}
-			if noItFlag || updateFlag {
+			if noItFlag || updateFlag || uninstallFlag {
 				return runSync(bundlers, bundleType)
 			}
 			return runIterative(bundlers, bundleType)
@@ -88,6 +89,7 @@ Types:
 	cmd.Flags().BoolVar(&masFlag, "mas", false, "install Mac App Store apps (brew only)")
 	cmd.Flags().BoolVar(&parallelFlag, "parallel", false, "use parallel installs with TUI progress (js only)")
 	cmd.Flags().BoolVarP(&updateFlag, "update", "u", false, "sync without opening the editor")
+	cmd.Flags().BoolVar(&uninstallFlag, "uninstall", false, "uninstall all packages listed in the bundle file (js only)")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))
@@ -154,6 +156,20 @@ func cleanupCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.C
 }
 
 func runSync(bundlers map[string]Bundler, bundleType string) error {
+	if uninstallFlag {
+		if bundleType != "js" {
+			return fmt.Errorf("--uninstall is only supported for 'js' bundle type")
+		}
+		jsB, ok := bundlers["js"].(*JsBundler)
+		if !ok {
+			return fmt.Errorf("js bundler not available")
+		}
+		if err := jsB.CheckDeps(); err != nil {
+			return err
+		}
+		return jsB.UninstallAll(getBundleFile(jsB), verboseFlag)
+	}
+
 	if bundleType == "all" {
 		return runAll(bundlers, func(b Bundler) error {
 			return b.Sync(getBundleFile(b), verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag)
