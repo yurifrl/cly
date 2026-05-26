@@ -6,6 +6,7 @@
 package piwrap
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,17 +16,77 @@ import (
 
 	"github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/envs"
+	"github.com/yurifrl/cly/pkg/helpy"
 )
 
 // defaultSessionFileNamePrefix is used when
 // modules.piwrap.session_file_name_prefix is not set in config.
 const defaultSessionFileNamePrefix = "cly"
 
-// Run extracts --name/-n from args, applies side effects (env + cmux
-// rename), then execs `pi` with the remaining args. Returns the pi
-// process exit error (if any). args should NOT include argv[0].
+// Run extracts piwrap-owned flags (--name/-n, --sety, --sety-string,
+// --dry-run, --helpy) from args, applies their side effects, then
+// execs `pi` with the remaining args. Returns the pi process exit
+// error (if any). args should NOT include argv[0].
 func Run(args []string) error {
-	name, rest := extractName(args)
+	name, afterName := extractName(args)
+
+	flags, setyErr := extractPiwrapFlags(afterName)
+	if setyErr != nil {
+		setyErr.Render()
+		return setyErr
+	}
+
+	// --helpy short-circuits everything else.
+	if flags.Helpy {
+		renderHelpy(flags.HelpyJSON)
+		return nil
+	}
+
+	rest := flags.Rest
+
+	// Session import requires -n.
+	if flags.Sety.HasImportID {
+		if name == "" {
+			e := newSetyError(CodeSetyNameRequired,
+				"--sety session_import.id requires -n / --name", nil)
+			e.Hint = "add -n <session-name>"
+			e.Render()
+			return e
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("piwrap: getwd: %w", err)
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("piwrap: home dir: %w", err)
+		}
+		plan, ierr := runImport(flags.Sety, name, home, cwd, flags.DryRun)
+		if flags.DryRun {
+			renderDryRun(plan, ierr)
+			if ierr != nil {
+				return ierr
+			}
+			if plan.BlockedBy != "" {
+				// Plan completed but action would be blocked. Return
+				// a non-error sentinel so cobra exits non-zero without
+				// re-rendering anything.
+				return newSetyError(plan.BlockedBy,
+					"dry-run: action blocked by "+plan.BlockedBy, nil)
+			}
+			return nil
+		}
+		if ierr != nil {
+			ierr.Render()
+			return ierr
+		}
+		// Inject --session <target> so pi opens the freshly forked
+		// file. hasSessionFlag still wins so explicit user --session
+		// trumps the import target.
+		if !hasSessionFlag(rest) {
+			rest = append([]string{"--session", plan.Target}, rest...)
+		}
+	}
 
 	if name != "" {
 		if err := envs.SetSessionName(name); err != nil {
@@ -62,6 +123,37 @@ func Run(args []string) error {
 	cmd.Env = os.Environ()
 
 	return cmd.Run()
+}
+
+// renderHelpy writes the cheat sheet to stdout in text or JSON form.
+func renderHelpy(asJSON bool) {
+	if asJSON {
+		_ = helpy.RenderJSON(os.Stdout, "", map[string]string{
+			"pi_help":     "pi --help",
+			"cobra_help":  "cly --help",
+			"piwrap_help": "cly pi --help",
+		})
+		return
+	}
+	helpy.RenderText(os.Stdout,
+		"cly pi \u2014 piwrap flags on top of the pi binary",
+		"See also:\n  pi --help                     Passthrough flags (model, thinking, ...)\n  cly --help                    Cobra command tree.\n  cly pi --help                 This subcommand's stock help.\n",
+	)
+}
+
+// renderDryRun emits the import plan as JSON on stdout. Includes the
+// blocking error code (if any) under blocked_by.
+func renderDryRun(plan importPlan, ierr *SetyError) {
+	if ierr != nil && plan.BlockedBy == "" {
+		plan.BlockedBy = ierr.Code
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(map[string]interface{}{
+		"action": "session.import",
+		"plan":   plan,
+	})
 }
 
 // extractName scans args for --name/-n and returns (name, remaining).

@@ -17,6 +17,7 @@ func Register(parent *cobra.Command) {
 		Long:               "Thin pass-through to the `pi` binary.\n\nAdds --name / -n: sets $CLY_SESSION_NAME for the pi process and renames the current cmux tab. All other arguments are forwarded to pi unchanged.",
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
+		SilenceErrors:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := Run(args)
 			if err != nil {
