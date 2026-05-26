@@ -27,10 +27,17 @@ type LockEntry struct {
 	SourceHash  string `json:"source_hash,omitempty"`
 }
 
-// JobLockEntry stores a job name and its definition hash (used to detect reruns).
-type JobLockEntry struct {
-	Name string `json:"name"`
-	Hash string `json:"hash,omitempty"`
+// CacheLockEntry stores the metadata for one @cache entry. Hash is the
+// primary key (sha256 of the command); Command is kept for audit so the
+// lock is human-readable. LastRun is RFC3339 UTC. FlaggedForDelete
+// (RFC3339 UTC) marks an entry whose hash no longer appears in the
+// config; after the grace window it gets pruned.
+type CacheLockEntry struct {
+	Hash             string `json:"hash"`
+	Command          string `json:"command,omitempty"`
+	LastRun          string `json:"last_run,omitempty"`
+	ExitCode         int    `json:"exit_code"`
+	FlaggedForDelete string `json:"flagged_for_delete,omitempty"`
 }
 
 // ScriptManifest records what an install script installs so it can be reversed.
@@ -55,39 +62,56 @@ type InstallManifest struct {
 type DotfilesLock struct {
 	Symlinks        []LockEntry       `json:"symlinks"`
 	JsoncCopies     []LockEntry       `json:"jsonc_copies"`
-	Jobs            []JobLockEntry    `json:"jobs"`
+	Cache           []CacheLockEntry  `json:"cache"`
 	InstallCommands []string          `json:"install_commands"`
 	Installs        []InstallManifest `json:"installs,omitempty"`
 	OpMappings      []LockEntry       `json:"op_mappings"`
 }
 
-// UnmarshalJSON handles the legacy []string format for the Jobs field.
+// UnmarshalJSON handles legacy formats:
+//   - `"jobs": ["name", ...]`         (very old, names only) — dropped
+//   - `"jobs": [{name,hash}]`          (older format) — hash kept, name dropped
+//   - `"cache": [{name,hash,...}]`     (previous format) — hash kept, name dropped
+//   - `"cache": [{hash,command,...}]`  (current format)
+//
+// Entries without a Hash (the bare-string and orphan name-only forms) are
+// treated as orphaned legacy and dropped — they would have referenced a
+// pre-hash-keyed identity that no longer exists.
 func (d *DotfilesLock) UnmarshalJSON(data []byte) error {
 	type Alias DotfilesLock
 	aux := &struct {
-		Jobs json.RawMessage `json:"jobs"`
+		Jobs  json.RawMessage `json:"jobs"`
+		Cache json.RawMessage `json:"cache"`
 		*Alias
 	}{Alias: (*Alias)(d)}
 	if err := json.Unmarshal(data, aux); err != nil {
 		return err
 	}
-	if len(aux.Jobs) == 0 || string(aux.Jobs) == "null" {
+	raw := aux.Cache
+	if len(raw) == 0 || string(raw) == "null" {
+		raw = aux.Jobs
+	}
+	if len(raw) == 0 || string(raw) == "null" {
 		return nil
 	}
-	var entries []JobLockEntry
-	if err := json.Unmarshal(aux.Jobs, &entries); err == nil {
-		d.Jobs = entries
+	var entries []CacheLockEntry
+	if err := json.Unmarshal(raw, &entries); err == nil {
+		kept := entries[:0]
+		for _, e := range entries {
+			if e.Hash == "" {
+				continue // orphaned legacy (name-only)
+			}
+			kept = append(kept, e)
+		}
+		d.Cache = kept
 		return nil
 	}
-	// Legacy: ["name", ...]
+	// Legacy: ["name", ...] — nothing usable now, drop.
 	var names []string
-	if err := json.Unmarshal(aux.Jobs, &names); err != nil {
+	if err := json.Unmarshal(raw, &names); err != nil {
 		return err
 	}
-	d.Jobs = make([]JobLockEntry, len(names))
-	for i, n := range names {
-		d.Jobs[i] = JobLockEntry{Name: n}
-	}
+	d.Cache = nil
 	return nil
 }
 
@@ -95,7 +119,7 @@ func (d *DotfilesLock) UnmarshalJSON(data []byte) error {
 type LockDiff struct {
 	RemovedSymlinks        []LockEntry
 	RemovedJsoncCopies     []LockEntry
-	RemovedJobs            []string
+	RemovedCache           []string
 	RemovedInstallCommands []string
 	RemovedInstalls        []InstallManifest
 	RemovedOpMappings      []LockEntry
@@ -168,8 +192,12 @@ func loadLock(path string) (*DotfilesLock, error) {
 	return &lock, nil
 }
 
-// migrateJobsState merges hashes from the legacy jobs-state.json into the lock
-// and deletes the legacy file.
+// migrateJobsState merges hashes from the legacy jobs-state.json into the
+// lock's Cache field and deletes the legacy file. Preserved so users
+// upgrading from the @once era do not lose state. Note: the legacy hashes
+// were keyed by name, not by command, so the carried-over entries will
+// fail the new hash skip check on the next sync and be re-run — which is
+// the correct behaviour now that command identity replaces names.
 func migrateJobsState(lock *DotfilesLock) {
 	path := legacyJobsStatePath()
 	data, err := os.ReadFile(path)
@@ -183,14 +211,16 @@ func migrateJobsState(lock *DotfilesLock) {
 		_ = os.Remove(path)
 		return
 	}
-	existing := make(map[string]bool, len(lock.Jobs))
-	for _, e := range lock.Jobs {
-		existing[e.Name] = true
+	existing := make(map[string]bool, len(lock.Cache))
+	for _, e := range lock.Cache {
+		existing[e.Hash] = true
 	}
-	for name, hash := range legacy.Jobs {
-		if !existing[name] {
-			lock.Jobs = append(lock.Jobs, JobLockEntry{Name: name, Hash: hash})
+	for _, hash := range legacy.Jobs {
+		if hash == "" || existing[hash] {
+			continue
 		}
+		lock.Cache = append(lock.Cache, CacheLockEntry{Hash: hash})
+		existing[hash] = true
 	}
 	_ = os.Remove(path)
 }
@@ -222,12 +252,45 @@ func buildLock(cfg *Config, prev *DotfilesLock) *DotfilesLock {
 		}
 	}
 
-	prevHashes := lockJobsToMap(nil)
+	prevByHash := make(map[string]CacheLockEntry)
 	if prev != nil {
-		prevHashes = lockJobsToMap(prev.Jobs)
+		for _, e := range prev.Cache {
+			if e.Hash == "" {
+				continue
+			}
+			prevByHash[e.Hash] = e
+		}
 	}
-	for _, j := range cfg.Jobs {
-		lock.Jobs = append(lock.Jobs, JobLockEntry{Name: j.Name, Hash: prevHashes[j.Name]})
+	cfgHashes := make(map[string]bool, len(cfg.CacheEntries))
+	seen := make(map[string]bool, len(cfg.CacheEntries))
+	for _, e := range cfg.CacheEntries {
+		h := hashCacheEntry(e)
+		cfgHashes[h] = true
+		if seen[h] {
+			// Duplicate identical @cache lines collapse into one lock entry.
+			continue
+		}
+		seen[h] = true
+		// Only carry forward entries that already exist in prev (with their
+		// metadata). New entries are left for ApplyCache to insert after
+		// running so we don't accidentally pre-seed a hash match that would
+		// short-circuit the first execution.
+		if pe, ok := prevByHash[h]; ok {
+			lock.Cache = append(lock.Cache, pe)
+		}
+	}
+	// Carry forward stale prev entries so pruneStaleCacheEntries can
+	// flag/age them out. They are dropped from the lock once the grace
+	// window elapses (or immediately on `cly dotfiles prune --apply`).
+	if prev != nil {
+		for _, pe := range prev.Cache {
+			if pe.Hash == "" {
+				continue
+			}
+			if !cfgHashes[pe.Hash] {
+				lock.Cache = append(lock.Cache, pe)
+			}
+		}
 	}
 
 	lock.InstallCommands = append(lock.InstallCommands, cfg.InstallCommands...)
@@ -255,7 +318,7 @@ func diffLocks(old, new *DotfilesLock) LockDiff {
 	var diff LockDiff
 	diff.RemovedSymlinks = removedEntries(old.Symlinks, new.Symlinks)
 	diff.RemovedJsoncCopies = removedEntries(old.JsoncCopies, new.JsoncCopies)
-	diff.RemovedJobs = removedJobEntries(old.Jobs, new.Jobs)
+	diff.RemovedCache = removedCacheEntries(old.Cache, new.Cache)
 	diff.RemovedInstallCommands = removedStrings(old.InstallCommands, new.InstallCommands)
 	diff.RemovedInstalls = removedInstallEntries(old.Installs, new.Installs)
 	diff.RemovedOpMappings = removedEntries(old.OpMappings, new.OpMappings)
@@ -290,15 +353,15 @@ func removedEntries(old, new []LockEntry) []LockEntry {
 	return removed
 }
 
-func removedJobEntries(old, new []JobLockEntry) []string {
+func removedCacheEntries(old, new []CacheLockEntry) []string {
 	newSet := make(map[string]bool, len(new))
 	for _, e := range new {
-		newSet[e.Name] = true
+		newSet[e.Hash] = true
 	}
 	var removed []string
 	for _, e := range old {
-		if !newSet[e.Name] {
-			removed = append(removed, e.Name)
+		if !newSet[e.Hash] {
+			removed = append(removed, e.Hash)
 		}
 	}
 	return removed
@@ -318,20 +381,11 @@ func removedStrings(old, new []string) []string {
 	return removed
 }
 
-// lockJobsToMap converts a []JobLockEntry to a name→hash map.
-func lockJobsToMap(entries []JobLockEntry) map[string]string {
+// lockCacheToMap converts a []CacheLockEntry to a hash→command map.
+func lockCacheToMap(entries []CacheLockEntry) map[string]string {
 	m := make(map[string]string, len(entries))
 	for _, e := range entries {
-		m[e.Name] = e.Hash
+		m[e.Hash] = e.Command
 	}
 	return m
-}
-
-// mapToLockJobs converts a name→hash map to []JobLockEntry.
-func mapToLockJobs(m map[string]string) []JobLockEntry {
-	entries := make([]JobLockEntry, 0, len(m))
-	for name, hash := range m {
-		entries = append(entries, JobLockEntry{Name: name, Hash: hash})
-	}
-	return entries
 }

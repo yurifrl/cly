@@ -87,45 +87,6 @@ func TestDotfilesIntegration(t *testing.T) {
 		assert.Contains(t, string(output), "✓")
 	})
 
-	t.Run("jobs flag applies once jobs", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		markerFile := filepath.Join(tmpDir, "marker.txt")
-		configContent := `@once bootstrap -- printf 'done\n' >> ` + markerFile
-		configPath := filepath.Join(tmpDir, "dotfiles.conf")
-		require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
-
-		cmd := exec.Command(binary, "dotfiles", "-j", "--config", configPath)
-		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
-		output, err := cmd.CombinedOutput()
-		require.NoError(t, err, "output: %s", output)
-
-		data, err := os.ReadFile(markerFile)
-		require.NoError(t, err)
-		assert.Contains(t, string(data), "done")
-	})
-
-	t.Run("force reruns once jobs", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		markerFile := filepath.Join(tmpDir, "marker.txt")
-		configContent := `@once bootstrap -- printf 'done\n' >> ` + markerFile
-		configPath := filepath.Join(tmpDir, "dotfiles.conf")
-		require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
-
-		cmd := exec.Command(binary, "dotfiles", "-j", "--config", configPath)
-		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
-		output, err := cmd.CombinedOutput()
-		require.NoError(t, err, "output: %s", output)
-
-		cmd = exec.Command(binary, "dotfiles", "-j", "-f", "--config", configPath)
-		cmd.Env = append(os.Environ(), "HOME="+tmpDir)
-		output, err = cmd.CombinedOutput()
-		require.NoError(t, err, "output: %s", output)
-
-		data, err := os.ReadFile(markerFile)
-		require.NoError(t, err)
-		assert.Equal(t, 2, strings.Count(string(data), "done\n"))
-	})
-
 	t.Run("unlink removes symlinks", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		sourceFile := filepath.Join(tmpDir, "source.txt")
@@ -174,6 +135,62 @@ func TestDotfilesIntegration(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, sourceFile, link)
 	})
+}
+
+func TestParseConfig_RemovedDirectivesAreErrors(t *testing.T) {
+	content := `@startup foo -- echo
+@interval foo every=1h -- echo
+@once foo -- echo`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "dotfiles.conf")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+	cfg, err := ParseConfig(configPath)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.CacheEntries)
+	require.Len(t, cfg.Errors, 3)
+	assert.Contains(t, cfg.Errors[0], "@startup is removed; migrate background processes to process-compose.yaml")
+	assert.Contains(t, cfg.Errors[1], "@interval is removed; migrate scheduled tasks to process-compose.yaml")
+	assert.Contains(t, cfg.Errors[2], "@once is removed; use @cache instead")
+}
+
+func TestParseConfig_CacheNewForm(t *testing.T) {
+	content := "@cache echo hello\n@cache git pull --ff-only\n"
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "dotfiles.conf")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+	cfg, err := ParseConfig(configPath)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Errors)
+	require.Len(t, cfg.CacheEntries, 2)
+	assert.Equal(t, "echo hello", cfg.CacheEntries[0].Command)
+	assert.Equal(t, "git pull --ff-only", cfg.CacheEntries[1].Command)
+}
+
+func TestParseConfig_CacheLegacyFormRejected(t *testing.T) {
+	content := "@cache foo -- echo hi\n"
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "dotfiles.conf")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+	cfg, err := ParseConfig(configPath)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.CacheEntries)
+	require.Len(t, cfg.Errors, 1)
+	assert.Contains(t, cfg.Errors[0], "@cache no longer takes a name; use '@cache <command>' (the command itself is the identity)")
+}
+
+func TestParseConfig_CacheEmptyCommand(t *testing.T) {
+	content := "@cache\n"
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "dotfiles.conf")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+	cfg, err := ParseConfig(configPath)
+	require.NoError(t, err)
+	require.Len(t, cfg.Errors, 1)
+	assert.Contains(t, cfg.Errors[0], "@cache requires a command")
 }
 
 func buildBinary(t *testing.T) string {

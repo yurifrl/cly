@@ -17,8 +17,8 @@ func TestBuildLock(t *testing.T) {
 			{Source: "/dotfiles/settings.jsonc", Destination: "/home/user/settings.json"},
 		},
 		InstallCommands: []string{"brew install fzf", "brew install ripgrep"},
-		Jobs: []Job{
-			{Name: "sync-dotfiles", Run: JobRunStartup},
+		CacheEntries: []CacheEntry{
+			{Command: "echo fzf"},
 		},
 		OpMappings: []OpMapping{
 			{Source: "/dotfiles/.env.op", Destination: "/home/user/.env"},
@@ -35,9 +35,9 @@ func TestBuildLock(t *testing.T) {
 	assert.Equal(t, "/dotfiles/settings.jsonc", lock.JsoncCopies[0].Source)
 	assert.Equal(t, "/home/user/settings.json", lock.JsoncCopies[0].Destination)
 
-	require.Len(t, lock.Jobs, 1)
-	assert.Equal(t, "sync-dotfiles", lock.Jobs[0].Name)
-	assert.Empty(t, lock.Jobs[0].Hash)
+	// Cache entries with no prior lock state are not pre-seeded; they are
+	// inserted by ApplyCache after the command runs.
+	assert.Empty(t, lock.Cache)
 
 	require.Len(t, lock.InstallCommands, 2)
 	assert.Equal(t, "brew install fzf", lock.InstallCommands[0])
@@ -47,41 +47,47 @@ func TestBuildLock(t *testing.T) {
 }
 
 func TestBuildLock_PreservesHashes(t *testing.T) {
+	jobA := CacheEntry{Command: "echo job-a"}
+	jobB := CacheEntry{Command: "echo job-b"}
 	cfg := &Config{
-		Jobs: []Job{
-			{Name: "job-a", Run: JobRunOnce},
-			{Name: "job-b", Run: JobRunStartup},
-		},
+		CacheEntries: []CacheEntry{jobA, jobB},
 	}
+	hashA := hashCacheEntry(jobA)
+	hashB := hashCacheEntry(jobB)
 	prev := &DotfilesLock{
-		Jobs: []JobLockEntry{
-			{Name: "job-a", Hash: "abc123"},
-			{Name: "stale-job", Hash: "def456"},
+		Cache: []CacheLockEntry{
+			{Hash: hashA, Command: "echo job-a", LastRun: "2026-01-01T00:00:00Z"},
+			{Hash: "def456stale", Command: "echo stale"},
 		},
 	}
 	lock := buildLock(cfg, prev)
 
-	require.Len(t, lock.Jobs, 2)
-	byName := make(map[string]string)
-	for _, e := range lock.Jobs {
-		byName[e.Name] = e.Hash
+	// New behavior: cfg entries with prev metadata are carried forward;
+	// new cfg entries (job-b) are NOT pre-seeded — ApplyCache inserts
+	// them after running. Stale prev entries are kept around so
+	// pruneStaleCacheEntries can flag/age them.
+	require.Len(t, lock.Cache, 2)
+	byHash := make(map[string]CacheLockEntry)
+	for _, e := range lock.Cache {
+		byHash[e.Hash] = e
 	}
-	assert.Equal(t, "abc123", byName["job-a"])
-	assert.Empty(t, byName["job-b"])
-	assert.Empty(t, byName["stale-job"], "stale job should not appear in new lock")
+	assert.Equal(t, "2026-01-01T00:00:00Z", byHash[hashA].LastRun, "prev metadata carried forward")
+	_, hasB := byHash[hashB]
+	assert.False(t, hasB, "new entry not pre-seeded; ApplyCache will insert")
+	assert.Equal(t, "echo stale", byHash["def456stale"].Command, "stale entry carried forward for prune accounting")
 }
 
 func TestDiffLocks_NoChanges(t *testing.T) {
 	lock := &DotfilesLock{
 		Symlinks:        []LockEntry{{Source: "/src/.zshrc", Destination: "/dst/.zshrc"}},
-		Jobs:            []JobLockEntry{{Name: "my-job", Hash: "abc"}},
+		Cache:           []CacheLockEntry{{Hash: "abc", Command: "echo my-job"}},
 		InstallCommands: []string{"brew install fzf"},
 	}
 
 	diff := diffLocks(lock, lock)
 
 	assert.Empty(t, diff.RemovedSymlinks)
-	assert.Empty(t, diff.RemovedJobs)
+	assert.Empty(t, diff.RemovedCache)
 	assert.Empty(t, diff.RemovedInstallCommands)
 }
 
@@ -105,14 +111,14 @@ func TestDiffLocks_RemovedSymlink(t *testing.T) {
 	assert.Empty(t, diff.RemovedJsoncCopies)
 }
 
-func TestDiffLocks_RemovedJob(t *testing.T) {
-	old := &DotfilesLock{Jobs: []JobLockEntry{{Name: "job-a"}, {Name: "job-b"}}}
-	new := &DotfilesLock{Jobs: []JobLockEntry{{Name: "job-a"}}}
+func TestDiffLocks_RemovedCache(t *testing.T) {
+	old := &DotfilesLock{Cache: []CacheLockEntry{{Hash: "h-a"}, {Hash: "h-b"}}}
+	new := &DotfilesLock{Cache: []CacheLockEntry{{Hash: "h-a"}}}
 
 	diff := diffLocks(old, new)
 
-	require.Len(t, diff.RemovedJobs, 1)
-	assert.Equal(t, "job-b", diff.RemovedJobs[0])
+	require.Len(t, diff.RemovedCache, 1)
+	assert.Equal(t, "h-b", diff.RemovedCache[0])
 }
 
 func TestDiffLocks_RemovedInstallCommand(t *testing.T) {
@@ -141,7 +147,7 @@ func TestLoadLock_NotExist(t *testing.T) {
 	lock, err := loadLock("/nonexistent/path/dotfiles.lock")
 	require.NoError(t, err)
 	assert.Empty(t, lock.Symlinks)
-	assert.Empty(t, lock.Jobs)
+	assert.Empty(t, lock.Cache)
 }
 
 func TestSaveLock_RoundTrip(t *testing.T) {
@@ -150,7 +156,7 @@ func TestSaveLock_RoundTrip(t *testing.T) {
 
 	original := &DotfilesLock{
 		Symlinks:        []LockEntry{{Source: "/src/.zshrc", Destination: "/dst/.zshrc"}},
-		Jobs:            []JobLockEntry{{Name: "my-job", Hash: "abc123"}},
+		Cache:           []CacheLockEntry{{Hash: "abc123", Command: "echo my-job"}},
 		InstallCommands: []string{"brew install fzf"},
 	}
 
@@ -161,7 +167,7 @@ func TestSaveLock_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, original.Symlinks, loaded.Symlinks)
-	assert.Equal(t, original.Jobs, loaded.Jobs)
+	assert.Equal(t, original.Cache, loaded.Cache)
 	assert.Equal(t, original.InstallCommands, loaded.InstallCommands)
 }
 
@@ -176,25 +182,41 @@ func TestSaveLock_CreatesDirectory(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestJobsLock_LegacyStringUnmarshal(t *testing.T) {
+func TestCacheLock_LegacyStringUnmarshal(t *testing.T) {
+	// Legacy bare-string entries had no hash — they're orphaned and dropped.
 	raw := `{"jobs": ["job-a", "job-b"], "symlinks": []}`
 	var lock DotfilesLock
 	require.NoError(t, json.Unmarshal([]byte(raw), &lock))
-
-	require.Len(t, lock.Jobs, 2)
-	assert.Equal(t, "job-a", lock.Jobs[0].Name)
-	assert.Empty(t, lock.Jobs[0].Hash)
-	assert.Equal(t, "job-b", lock.Jobs[1].Name)
+	assert.Empty(t, lock.Cache, "legacy bare-string entries are orphaned and dropped")
 }
 
-func TestJobsLock_NewFormatUnmarshal(t *testing.T) {
+func TestCacheLock_LegacyJobsObjectUnmarshal(t *testing.T) {
+	// Old name+hash form: hash is kept, name is silently dropped.
 	raw := `{"jobs": [{"name": "job-a", "hash": "abc123"}]}`
 	var lock DotfilesLock
 	require.NoError(t, json.Unmarshal([]byte(raw), &lock))
 
-	require.Len(t, lock.Jobs, 1)
-	assert.Equal(t, "job-a", lock.Jobs[0].Name)
-	assert.Equal(t, "abc123", lock.Jobs[0].Hash)
+	require.Len(t, lock.Cache, 1)
+	assert.Equal(t, "abc123", lock.Cache[0].Hash)
+}
+
+func TestCacheLock_LegacyJobsObjectDropsNameOnlyEntries(t *testing.T) {
+	// Old name-only entries (no hash) are orphaned legacy and get dropped.
+	raw := `{"cache": [{"name": "orphan"}, {"name": "keep", "hash": "h1"}]}`
+	var lock DotfilesLock
+	require.NoError(t, json.Unmarshal([]byte(raw), &lock))
+	require.Len(t, lock.Cache, 1)
+	assert.Equal(t, "h1", lock.Cache[0].Hash)
+}
+
+func TestCacheLock_NewFormatUnmarshal(t *testing.T) {
+	raw := `{"cache": [{"hash": "abc123", "command": "echo job-a"}]}`
+	var lock DotfilesLock
+	require.NoError(t, json.Unmarshal([]byte(raw), &lock))
+
+	require.Len(t, lock.Cache, 1)
+	assert.Equal(t, "abc123", lock.Cache[0].Hash)
+	assert.Equal(t, "echo job-a", lock.Cache[0].Command)
 }
 
 func TestLoadLock_MigratesLegacyJobsState(t *testing.T) {
@@ -212,8 +234,10 @@ func TestLoadLock_MigratesLegacyJobsState(t *testing.T) {
 	lock, err := loadLock("/nonexistent/path/dotfiles.lock")
 	require.NoError(t, err)
 
-	hashes := lockJobsToMap(lock.Jobs)
-	assert.Equal(t, "hashABC", hashes["once-job"])
+	commands := lockCacheToMap(lock.Cache)
+	// Legacy jobs-state hashes are carried forward keyed by hash.
+	_, ok := commands["hashABC"]
+	assert.True(t, ok, "legacy jobs-state hash should be migrated into the lock")
 
 	_, statErr := os.Stat(filepath.Join(stateDir, "jobs-state.json"))
 	assert.True(t, os.IsNotExist(statErr))

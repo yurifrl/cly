@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
-	"unicode"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 )
@@ -18,23 +18,16 @@ type Mapping struct {
 	LineNum     int
 }
 
-type JobRun string
-
-const (
-	JobRunStartup  JobRun = "startup"
-	JobRunInterval JobRun = "interval"
-	JobRunOnce     JobRun = "once"
-	JobRunCache    JobRun = "cache"
-)
-
-type Job struct {
-	Name      string
-	Run       JobRun
-	Command   string
-	Every     string
-	Check     string // reserved for future use
-	KeepAlive bool
-	LineNum   int
+// CacheEntry models a single `@cache` directive. The whole rest-of-line
+// after `@cache ` is the command; sha256(Command) is the identity used to
+// decide whether to skip the run on subsequent invocations.
+//
+// Two identical `@cache` lines hash to the same value and are de-facto
+// idempotent — the second occurrence becomes a cache hit on the first's
+// lock entry, so the command runs once per unique command text.
+type CacheEntry struct {
+	Command string
+	LineNum int
 }
 
 type OpMapping struct {
@@ -58,7 +51,7 @@ type Config struct {
 	BaseDir         string
 	Mappings        []Mapping
 	InstallCommands []string
-	Jobs            []Job
+	CacheEntries    []CacheEntry
 	Installs        []Install
 	OpMappings      []OpMapping
 	Errors          []string
@@ -115,140 +108,46 @@ func ParseConfig(configPath string) (*Config, error) {
 	return cfg, nil
 }
 
+// legacyCacheNameForm matches the removed `@cache <name> -- <command>`
+// grammar. We only flag it when the remainder of the line begins with a
+// bareword identifier followed by ` -- ` so that legitimate `--flag`
+// arguments inside a real command are not misclassified.
+var legacyCacheNameForm = regexp.MustCompile(`^[A-Za-z0-9_.-]+ -- `)
+
 func parseJobLine(cfg *Config, line string, lineNum int) error {
-	parts := strings.SplitN(line, " -- ", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid job format, expected '@startup name -- command'")
+	// Hard-fail removed directives loudly; users must migrate.
+	switch {
+	case strings.HasPrefix(line, "@startup ") || line == "@startup":
+		return fmt.Errorf("@startup is removed; migrate background processes to process-compose.yaml")
+	case strings.HasPrefix(line, "@interval ") || line == "@interval":
+		return fmt.Errorf("@interval is removed; migrate scheduled tasks to process-compose.yaml")
+	case strings.HasPrefix(line, "@once ") || line == "@once":
+		return fmt.Errorf("@once is removed; use @cache instead")
 	}
 
-	meta := parseKVTokens(parts[0])
-	if len(meta) < 2 {
-		return fmt.Errorf("job name is required")
+	if !strings.HasPrefix(line, "@cache ") && line != "@cache" {
+		fields := strings.Fields(line)
+		name := "@"
+		if len(fields) > 0 {
+			name = fields[0]
+		}
+		return fmt.Errorf("unknown directive %q", name)
 	}
 
-	job := Job{
-		Name:    meta[1],
-		Command: strings.TrimSpace(parts[1]),
+	command := strings.TrimSpace(strings.TrimPrefix(line, "@cache"))
+	if command == "" {
+		return fmt.Errorf("@cache requires a command")
+	}
+
+	if legacyCacheNameForm.MatchString(command) {
+		return fmt.Errorf("@cache no longer takes a name; use '@cache <command>' (the command itself is the identity)")
+	}
+
+	cfg.CacheEntries = append(cfg.CacheEntries, CacheEntry{
+		Command: command,
 		LineNum: lineNum,
-	}
-
-	if job.Command == "" {
-		return fmt.Errorf("job command is empty")
-	}
-	if !isValidJobName(job.Name) {
-		return fmt.Errorf("invalid job name %q", job.Name)
-	}
-	if hasJobName(cfg.Jobs, job.Name) {
-		return fmt.Errorf("duplicate job name %q", job.Name)
-	}
-
-	switch meta[0] {
-	case "@startup":
-		job.Run = JobRunStartup
-		for _, token := range meta[2:] {
-			if token == "keepalive" {
-				job.KeepAlive = true
-				continue
-			}
-			return fmt.Errorf("unknown startup option %q", token)
-		}
-	case "@interval":
-		if len(meta) < 3 {
-			return fmt.Errorf("interval job requires every=<duration>")
-		}
-		if len(meta) > 3 {
-			return fmt.Errorf("interval job only supports '@interval name every=<duration> -- command'")
-		}
-		if !strings.HasPrefix(meta[2], "every=") {
-			return fmt.Errorf("interval job requires every=<duration>")
-		}
-		job.Run = JobRunInterval
-		job.Every = strings.TrimPrefix(meta[2], "every=")
-		if job.Every == "" {
-			return fmt.Errorf("interval job requires every=<duration>")
-		}
-	case "@once":
-		if len(meta) > 2 {
-			return fmt.Errorf("once job only supports '@once name -- command'")
-		}
-		job.Run = JobRunOnce
-	case "@cache":
-		job.Run = JobRunCache
-		// Re-split parts[0] with plain Fields so quoting doesn't collapse the
-		// check into a single token. For @cache we treat the whole text between
-		// `@cache` and ` -- ` as the check expression.
-		fields := strings.Fields(parts[0])
-		if len(fields) < 2 {
-			return fmt.Errorf("@cache requires at least a name")
-		}
-		job.Name = fields[1]
-		if len(fields) > 2 {
-			// Multi-word check: the first word doubles as the job name AND is
-			// included in the shell check (e.g. `@cache foo -v` -> sh -c 'foo -v').
-			job.Check = strings.Join(fields[1:], " ")
-		}
-	default:
-		return fmt.Errorf("unknown job directive %q", meta[0])
-	}
-
-	cfg.Jobs = append(cfg.Jobs, job)
+	})
 	return nil
-}
-
-// parseKVTokens splits a whitespace-separated header like
-//   @cache hermes check="gh enhance -v"
-// into tokens (`@cache`, `hermes`, `check=gh enhance -v`) respecting
-// double-quoted values. Quotes are consumed and the inside is kept verbatim.
-func parseKVTokens(s string) []string {
-	var tokens []string
-	var cur strings.Builder
-	inQuote := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '"' {
-			inQuote = !inQuote
-			continue
-		}
-		if (c == ' ' || c == '\t') && !inQuote {
-			if cur.Len() > 0 {
-				tokens = append(tokens, cur.String())
-				cur.Reset()
-			}
-			continue
-		}
-		cur.WriteByte(c)
-	}
-	if cur.Len() > 0 {
-		tokens = append(tokens, cur.String())
-	}
-	return tokens
-}
-
-func hasJobName(jobs []Job, name string) bool {
-	for _, job := range jobs {
-		if job.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-func isValidJobName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for _, r := range name {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			continue
-		}
-		switch r {
-		case '-', '_', '.':
-			continue
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 // ParseMapping parses a "source -> destination" string into a Mapping.

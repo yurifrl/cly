@@ -1,25 +1,24 @@
 package dotfiles
 
 import (
-	"github.com/yurifrl/cly/pkg/mut"
 	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
-	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/cmux"
+	pkgconfig "github.com/yurifrl/cly/pkg/config"
+	"github.com/yurifrl/cly/pkg/mut"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
 var (
 	installFlag     bool
-	jobsFlag        bool
 	opFlag          bool
 	allFlag         bool
-	onceFlag        bool
 	cacheFlag       bool
 	installOnlyFlag    bool
 	installNoAIFlag    bool
@@ -43,30 +42,26 @@ Config syntax (dotfiles.conf):
   ./src -> ~/dst                        symlink (dirs need trailing /)
   !cmd                                  run shell command (-i flag)
   @install <url>                        fetch+analyze install script (-i flag)
-  @once name -- cmd                     run once ever (-f to rerun)
-  @cache name -- cmd                    run unless 'command -v name' succeeds
-  @cache foo -v -- cmd                  run unless 'command -v foo' AND 'foo -v' both exit 0
-  @startup name -- cmd                  run every time (-j flag)
-  @startup name keepalive -- cmd        run and keep alive
-  @interval name every=1h -- cmd        run if interval elapsed
+  @cache <command>                      runs once; re-runs only when the command text changes (sha256-keyed)
   @op account=x ./s.op -> ~/d           1Password inject (-o flag)
   @op account=x op://vault/item/field -> ~/d  1Password read secret (-o flag)
   .jsonc -> .json                       comments stripped automatically
 
-Use --once to run only @once jobs (skips everything else).
-Use --cache to run only @cache jobs (skips everything else).
+Use --cache to force re-run of every @cache entry (ignores the hash skip).
 Use --install-only to run only @install directives (skips everything else).
-Use --install-no-ai to run only @install directives, skipping LLM analysis.`,
+Use --install-no-ai to run only @install directives, skipping LLM analysis.
+
+Maintenance:
+  cly dotfiles prune                    dry-run cleanup of stale cache entries
+  cly dotfiles prune --apply            actually drop entries no longer in the conf`,
 		RunE:  runSync,
 	}
 
 	cmd.Flags().BoolVarP(&installFlag, "install", "i", false, "Execute install commands (lines starting with !)")
-	cmd.Flags().BoolVarP(&jobsFlag, "jobs", "j", false, "Apply declarative jobs (@startup/@interval/@once)")
 	cmd.Flags().BoolVarP(&opFlag, "op", "o", false, "Inject 1Password templates")
-	cmd.Flags().BoolVarP(&allFlag, "all", "a", false, "Run everything (install, jobs, 1Password)")
-	cmd.Flags().BoolVar(&onceFlag, "once", false, "Run only @once jobs (skips symlinks, install, op, startup, interval)")
-	cmd.Flags().BoolVar(&cacheFlag, "cache", false, "Run all @cache jobs (bypass the 'already installed' check; during normal sync the check is honored)")
-	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions (rerun @once jobs)")
+	cmd.Flags().BoolVarP(&allFlag, "all", "a", false, "Run everything (install, 1Password)")
+	cmd.Flags().BoolVar(&cacheFlag, "cache", false, "Run all @cache entries (bypass the 'already installed' check; during normal sync the check is honored)")
+	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions")
 	cmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Verbose output (show overwrites, intermediate steps)")
 	cmd.PersistentFlags().BoolVarP(&dryRunFlag, "dry-run", "n", false, "Dry run: log every mutation (fs writes, shell commands) without executing")
 	cmd.PersistentFlags().BoolVar(&failFastFlag, "fail-fast", false, "Abort sync on the first error (default: print the error and continue)")
@@ -101,8 +96,15 @@ Example:
 		RunE: runEval,
 	}
 
-	cmd.AddCommand(statusCmd, unlinkCmd, evalCmd)
-	registerJobsCommands(cmd)
+	pruneCmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Drop stale cache lock entries (dry-run unless --apply)",
+		RunE:  runPrune,
+	}
+	pruneCmd.Flags().Bool("apply", false, "Actually remove flagged entries (default: dry-run)")
+	pruneCmd.Flags().Duration("max-age", cacheGracePeriod, "Grace window before flagged entries are eligible for pruning")
+
+	cmd.AddCommand(statusCmd, unlinkCmd, evalCmd, pruneCmd)
 	parent.AddCommand(cmd)
 }
 
@@ -177,15 +179,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 		fmt.Printf("⚠️  %s\n", e)
 	}
 
-	// --once short-circuits everything else: only @once jobs are applied.
-	if onceFlag {
-		return runJobsSubset(cmd, cfg, JobRunOnce, "@once", forceFlag)
-	}
+	// --cache short-circuits the rest of sync: re-run every @cache entry
+	// regardless of the hash skip. The lock is still updated so subsequent
+	// runs benefit from the refreshed metadata.
 	if cacheFlag {
-		// Explicit --cache means the user wants to (re)run cache jobs regardless
-		// of whether the binary is already on PATH. During a normal sync (-j/-a)
-		// the cache check is honored.
-		return runJobsSubset(cmd, cfg, JobRunCache, "@cache", true)
+		cacheLock := buildLock(cfg, oldLock)
+		if err := ApplyCache(cfg, cacheLock, CacheApplyOptions{Force: true, FailFast: failFastFlag}); err != nil {
+			return err
+		}
+		pruneStaleCacheEntries(cacheLock, cfg, time.Now().UTC(), false)
+		return saveLock(lockFile, cacheLock)
 	}
 	if installOnlyFlag || installNoAIFlag {
 		return runInstallsOnly(cfg, installNoAIFlag || bypassAIFlag)
@@ -251,23 +254,22 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(cfg.Jobs) > 0 {
-		if jobsFlag || allFlag {
-			fmt.Printf("\n%s Applying %d job(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Jobs))
-			if err := ApplyJobs(cfg, JobApplyOptions{Force: forceFlag, FailFast: failFastFlag}); err != nil {
-				return err
-			}
-		} else {
-			fmt.Printf("\n%s %d job(s) skipped (use -j to apply)\n",
-				style.YellowStyle.Render("⏭️ "), len(cfg.Jobs))
+	// Reload lock to pick up hashes written by ApplyInstalls.
+	postApplyLock, _ := loadLock(lockFile)
+
+	// Build new lock (carries forward cache metadata + stale candidates).
+	newLock := buildLock(cfg, postApplyLock)
+
+	if len(cfg.CacheEntries) > 0 {
+		fmt.Printf("\n%s Applying %d @cache entry/entries\n", style.BlueStyle.Render("⚙️"), len(cfg.CacheEntries))
+		if err := ApplyCache(cfg, newLock, CacheApplyOptions{Force: forceFlag, FailFast: failFastFlag}); err != nil {
+			return err
 		}
 	}
 
-	// Reload lock to pick up hashes written by ApplyJobs / ApplyInstalls.
-	postApplyLock, _ := loadLock(lockFile)
+	// Auto-prune: flag stale entries, drop those past the grace window.
+	pruneStaleCacheEntries(newLock, cfg, time.Now().UTC(), false)
 
-	// Build new lock and diff against previous.
-	newLock := buildLock(cfg, postApplyLock)
 	diff := diffLocks(oldLock, newLock)
 	applyDiff(diff)
 
@@ -291,12 +293,6 @@ func applyDiff(diff LockDiff) {
 		m := Mapping{Source: e.Source, Destination: e.Destination}
 		if RemoveJsoncCopy(m) {
 			fmt.Printf("%s %s\n", style.YellowStyle.Render("🗑️  Removed jsonc copy:"), shortenPath(e.Destination))
-		}
-	}
-
-	for _, name := range diff.RemovedJobs {
-		if err := RemoveJobByName(name); err == nil {
-			fmt.Printf("%s %s\n", style.YellowStyle.Render("🗑️  Removed job:"), name)
 		}
 	}
 
@@ -352,8 +348,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	if len(cfg.InstallCommands) > 0 {
 		fmt.Printf("\nInstall commands: %d (use -i to execute)\n", len(cfg.InstallCommands))
 	}
-	if len(cfg.Jobs) > 0 {
-		fmt.Printf("Jobs: %d (use 'dotfiles jobs status' for details)\n", len(cfg.Jobs))
+	if len(cfg.CacheEntries) > 0 {
+		fmt.Printf("Cache entries: %d\n", len(cfg.CacheEntries))
 	}
 	if len(cfg.OpMappings) > 0 {
 		fmt.Printf("1Password templates: %d (use -o to inject)\n", len(cfg.OpMappings))
@@ -514,27 +510,6 @@ func runInstallsOnly(cfg *Config, bypassAI bool) error {
 	return ApplyInstalls(cfg, InstallOptions{BypassAI: bypassAI, Reinstall: reinstallFlag, FailFast: failFastFlag})
 }
 
-func runJobsSubset(cmd *cobra.Command, cfg *Config, run JobRun, label string, force bool) error {
-	filtered := make([]Job, 0, len(cfg.Jobs))
-	for _, j := range cfg.Jobs {
-		if j.Run == run {
-			filtered = append(filtered, j)
-		}
-	}
-	if len(filtered) == 0 {
-		fmt.Printf("No %s jobs declared.\n", label)
-		return nil
-	}
-	subset := *cfg
-	subset.Jobs = filtered
-	fmt.Printf("%s Applying %d %s job(s)\n", style.BlueStyle.Render("⚙️"), len(filtered), label)
-	if err := ApplyJobs(&subset, JobApplyOptions{Force: force, FailFast: failFastFlag}); err != nil {
-		return err
-	}
-	cmux.Notify(cmd.Context(), "Dotfiles", fmt.Sprintf("Ran %d %s job(s)", len(filtered), label))
-	return nil
-}
-
 func executeCommand(cmdStr, baseDir string) error {
 	if strings.HasPrefix(cmdStr, "zellij_plugin ") {
 		url := strings.TrimPrefix(cmdStr, "zellij_plugin ")
@@ -546,4 +521,98 @@ func executeCommand(cmdStr, baseDir string) error {
 		return downloadZellijPlugin(url)
 	}
 	return mut.ExecDir(baseDir, "fish", "-c", cmdStr)
+}
+
+
+// runPrune implements `cly dotfiles prune`. By default it is a dry run that
+// reports stale @cache lock entries; --apply commits the deletions. The
+// orphan symlink/jsonc/op/install paths are already handled by the normal
+// sync diff/apply machinery (see applyDiff), so prune intentionally only
+// touches the cache section.
+func runPrune(cmd *cobra.Command, args []string) error {
+	configPath, err := getConfigPath()
+	if err != nil {
+		return err
+	}
+
+	apply, _ := cmd.Flags().GetBool("apply")
+	maxAge, _ := cmd.Flags().GetDuration("max-age")
+	if maxAge <= 0 {
+		maxAge = cacheGracePeriod
+	}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return fmt.Errorf("config not found: %s", configPath)
+	}
+
+	cfg, err := ParseConfig(configPath)
+	if err != nil {
+		return err
+	}
+
+	lockFile, _ := lockFilePath()
+	lock, _ := loadLock(lockFile)
+
+	cfgHashes := make(map[string]bool, len(cfg.CacheEntries))
+	for _, e := range cfg.CacheEntries {
+		cfgHashes[hashCacheEntry(e)] = true
+	}
+
+	now := time.Now().UTC()
+	var pastGrace, inGrace []CacheLockEntry
+	for _, e := range lock.Cache {
+		if cfgHashes[e.Hash] {
+			continue
+		}
+		if e.FlaggedForDelete == "" {
+			// Never flagged yet — would be flagged on next sync.
+			inGrace = append(inGrace, e)
+			continue
+		}
+		flaggedAt, perr := time.Parse(time.RFC3339, e.FlaggedForDelete)
+		if perr != nil || now.Sub(flaggedAt) >= maxAge {
+			pastGrace = append(pastGrace, e)
+		} else {
+			inGrace = append(inGrace, e)
+		}
+	}
+
+	fmt.Printf("%s Scanning %s\n", style.BlueStyle.Render("🔍"), shortenPath(configPath))
+	fmt.Printf("  cache entries: %d in config, %d in lock\n", len(cfg.CacheEntries), len(lock.Cache))
+	fmt.Printf("  flagged for prune (>= %s): %d\n", maxAge, len(pastGrace))
+	for _, e := range pastGrace {
+		fmt.Printf("    - %s: %s (flagged %s, last run %s, exit %d)\n", shortHash(e.Hash), truncateCmd(e.Command), fmtRFC(e.FlaggedForDelete), fmtRFC(e.LastRun), e.ExitCode)
+	}
+	fmt.Printf("  flagged but in grace window: %d\n", len(inGrace))
+	for _, e := range inGrace {
+		ago := ""
+		if t, err := time.Parse(time.RFC3339, e.FlaggedForDelete); err == nil {
+			ago = fmt.Sprintf(", %s ago", now.Sub(t).Truncate(time.Second))
+		}
+		fmt.Printf("    - %s: %s (flagged %s%s)\n", shortHash(e.Hash), truncateCmd(e.Command), fmtRFC(e.FlaggedForDelete), ago)
+	}
+
+	if !apply {
+		count := len(pastGrace)
+		fmt.Printf("%s Would prune %d cache entry/entries. Run with --apply to commit.\n", style.YellowStyle.Render("[dry-run]"), count)
+		return nil
+	}
+
+	// Hard prune: drop every stale entry regardless of age.
+	_, _, pruned := pruneStaleCacheEntries(lock, cfg, now, true)
+	if err := saveLock(lockFile, lock); err != nil {
+		return err
+	}
+	fmt.Printf("%s Pruned %d cache entry/entries.\n", style.GreenStyle.Render("✅"), len(pruned))
+	return nil
+}
+
+func fmtRFC(s string) string {
+	if s == "" {
+		return "—"
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.Format("2006-01-02")
+	}
+	return s
 }
