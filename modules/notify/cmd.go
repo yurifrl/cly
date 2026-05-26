@@ -27,9 +27,10 @@ func Register(parent *cobra.Command) {
 	soundCmd := createSoundCmd()
 	configCmd := createConfigCmd()
 	debugCmd := createDebugCmd()
+	fireCmd := createFireCmd()
 	claudeCmd := createClaudeCmd()
 
-	notifyCmd.AddCommand(hookCmd, soundCmd, configCmd, debugCmd, claudeCmd)
+	notifyCmd.AddCommand(hookCmd, soundCmd, configCmd, debugCmd, claudeCmd, fireCmd)
 	parent.AddCommand(notifyCmd)
 }
 

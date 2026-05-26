@@ -18,9 +18,7 @@ type webBundle struct {
 
 // knownWebBundles lists all embeddable frontends in the repo.
 // Add new entries here when a module adds a web/ directory.
-var knownWebBundles = []webBundle{
-	{dir: "modules/diff2/web", name: "diff2"},
-}
+var knownWebBundles = []webBundle{}
 
 // buildWebBundles runs `npm install && npm run build` in each known
 // frontend directory so //go:embed picks up the latest dist/.

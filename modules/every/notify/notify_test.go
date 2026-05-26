@@ -10,12 +10,10 @@ import (
 	pkgnotify "github.com/yurifrl/cly/pkg/notify"
 )
 
-// fakeNotifier captures Send calls for assertions.
 type fakeNotifier struct {
 	mu        sync.Mutex
 	available bool
 	got       []pkgnotify.Notification
-	events    chan pkgnotify.ActionEvent
 }
 
 func (f *fakeNotifier) Send(_ context.Context, n pkgnotify.Notification) error {
@@ -25,16 +23,8 @@ func (f *fakeNotifier) Send(_ context.Context, n pkgnotify.Notification) error {
 	return nil
 }
 func (f *fakeNotifier) Available() bool { return f.available }
-func (f *fakeNotifier) Events() <-chan pkgnotify.ActionEvent {
-	if f.events == nil {
-		ch := make(chan pkgnotify.ActionEvent)
-		close(ch)
-		return ch
-	}
-	return f.events
-}
 
-func TestSend_RoutesGroupAndActions_Failing(t *testing.T) {
+func TestSend_RoutesGroupAndSound_Failing(t *testing.T) {
 	f := &fakeNotifier{available: true}
 	SetShared(f)
 
@@ -56,42 +46,6 @@ func TestSend_RoutesGroupAndActions_Failing(t *testing.T) {
 	}
 	if n.Sound != "Basso" {
 		t.Errorf("sound: %q", n.Sound)
-	}
-	if len(n.Actions) != 2 || n.Actions[0].ID != "snooze" || n.Actions[1].ID != "dismiss" {
-		t.Errorf("actions: %+v", n.Actions)
-	}
-}
-
-func TestSend_RoutesGroupAndActions_Recovered_NoButtons(t *testing.T) {
-	f := &fakeNotifier{available: true}
-	SetShared(f)
-
-	_ = Send(context.Background(), Notification{TaskName: "t", Level: LevelRecovered})
-	if len(f.got) != 1 {
-		t.Fatalf("want 1 send")
-	}
-	if len(f.got[0].Actions) != 0 {
-		t.Errorf("recovered should have no actions, got %+v", f.got[0].Actions)
-	}
-	if f.got[0].Sound != "Glass" {
-		t.Errorf("recovered sound: %q", f.got[0].Sound)
-	}
-}
-
-func TestSend_RoutesGroupAndActions_GaveUp(t *testing.T) {
-	f := &fakeNotifier{available: true}
-	SetShared(f)
-
-	_ = Send(context.Background(), Notification{TaskName: "t", Level: LevelGaveUp})
-	if len(f.got) != 1 {
-		t.Fatalf("want 1 send")
-	}
-	got := f.got[0]
-	if len(got.Actions) != 2 || got.Actions[0].ID != "retry" || got.Actions[1].ID != "dismiss" {
-		t.Errorf("gaveup actions: %+v", got.Actions)
-	}
-	if got.Sound != "Sosumi" {
-		t.Errorf("gaveup sound: %q", got.Sound)
 	}
 }
 

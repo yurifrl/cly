@@ -169,6 +169,9 @@ Both share `modules/mcp/` code. The mcp binary is for use as an MCP server itsel
 `pkg/notify` embeds a signed Swift daemon (`cly-notifier.app`) for native
 UNUserNotificationCenter notifications with action buttons.
 
+**First-time setup (codesign cert + 1Password):** see
+[docs/notifier-cert-setup.md](docs/notifier-cert-setup.md).
+
 **Fresh checkout on darwin:**
 ```bash
 task envs:op       # resolve .env.op via 1Password (Personal/cly/APPLE_DEVELOPER_ID)

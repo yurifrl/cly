@@ -7,7 +7,7 @@
     <key>CFBundleExecutable</key>
     <string>cly-notifier</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.yurifrl.cly.notifier</string>
+    <string>dev.yurifrl.cly</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -16,14 +16,14 @@
     <string>cly</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>icon</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
-    <key>LSUIElement</key>
-    <true/>
     <key>NSHumanReadableCopyright</key>
     <string>cly</string>
     <key>NSUserNotificationUsageDescription</key>

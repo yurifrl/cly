@@ -184,6 +184,10 @@ delivers notifications via `UNUserNotificationCenter` with action buttons
 (Snooze, Retry) and persistence in Notification Center. On non-darwin hosts
 or when the bundle is unavailable, it falls back to `beeep`.
 
+**First-time setup:** see [docs/notifier-cert-setup.md](docs/notifier-cert-setup.md)
+for the codesign certificate dance (Apple Developer cert + WWDR CA + 1Password
+field). Without that, notifications fall back to `beeep` (no action buttons).
+
 ### One-time bundle build (darwin only)
 
 The Apple Developer ID identity lives as a field on your `cly` 1Password
@@ -219,7 +223,7 @@ The native backend detects the placeholder and falls back silently.
 ### Permission prompt
 
 First time the daemon runs, macOS shows a notification permission prompt for
-`dev.yurifrl.cly.notifier`. Approve it once and macOS remembers per bundle ID
+`dev.yurifrl.cly`. Approve it once and macOS remembers per bundle ID
 forever. If denied, notifications still send but won't appear; `cly` logs an
 actionable hint to stderr.
 

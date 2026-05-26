@@ -45,6 +45,27 @@ lipo -create -output "$APP_DIR/Contents/MacOS/cly-notifier" \
 
 cp "$SCRIPT_DIR/Info.plist" "$APP_DIR/Contents/Info.plist"
 
+# Generate .icns icon from the embedded PNG so the notification has an icon.
+ICON_PNG="$PKG_DIR/assets/icon.png"
+if [[ -f "$ICON_PNG" ]]; then
+    echo "build.sh: generating icon.icns..."
+    mkdir -p "$APP_DIR/Contents/Resources"
+    ICONSET="$BUILD_DIR/icon.iconset"
+    rm -rf "$ICONSET"
+    mkdir -p "$ICONSET"
+    for size in 16 32 64 128 256 512; do
+        sips -z $size $size "$ICON_PNG" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+        # Retina @2x variants (skip for 512 which is the cap)
+        if [[ $size -lt 512 ]]; then
+            dbl=$((size * 2))
+            sips -z $dbl $dbl "$ICON_PNG" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+        fi
+    done
+    iconutil -c icns -o "$APP_DIR/Contents/Resources/icon.icns" "$ICONSET"
+    cp "$ICON_PNG" "$APP_DIR/Contents/Resources/icon.png"
+    rm -rf "$ICONSET"
+fi
+
 SIGN_ID="${CLY_NOTIFIER_SIGN_ID:-}"
 if [[ -n "$SIGN_ID" ]]; then
     echo "build.sh: codesigning with Developer ID..."

@@ -1,17 +1,14 @@
 import Foundation
 
-// Entry point. Parses --socket <path> and runs the daemon until the socket
-// is disconnected or the process is terminated.
+// Entry point. Parses --socket <path> and runs the daemon until the parent
+// disconnects from the socket.
 //
 // Protocol: newline-delimited JSON over a Unix socket.
-//   inbound  → {"op":"send","group":"...","title":"...","body":"...","sound":"...","actions":[{"id":"...","title":"..."}]}
+//   inbound  → {"op":"send","group":"...","title":"...","body":"...","sound":"..."}
 //   inbound  → {"op":"ping"}
-//   outbound → {"op":"action","group":"...","id":"..."}
 //   outbound → {"op":"ready","authorized":true|false}
 //   outbound → {"op":"pong"}
 //   outbound → {"op":"error","message":"..."}
-//
-// Socket disconnect (parent exits) terminates the daemon cleanly.
 
 let args = CommandLine.arguments
 var socketPath: String? = nil
@@ -40,22 +37,40 @@ guard let sock = socketPath, !sock.isEmpty else {
 let socket = SocketServer(path: sock)
 let notifier = Notifier(socket: socket)
 
+var authState: Bool? = nil
+var clientConnected = false
+var readySent = false
+
+func emitReady() {
+    if !clientConnected { return }
+    let granted = authState ?? false
+    socket.send(["op": "ready", "authorized": granted])
+    readySent = true
+}
+
 socket.onLine = { line in
     notifier.handleLine(line)
 }
 
 socket.onDisconnect = {
-    // Parent went away. Exit cleanly; macOS will clean up scheduled
-    // notifications shortly after the process dies.
     FileHandle.standardError.write("cly-notifier: parent disconnected, exiting\n".data(using: .utf8)!)
     exit(0)
 }
 
+socket.onConnect = {
+    clientConnected = true
+    emitReady()
+}
+
 notifier.requestAuthorization { granted in
-    socket.send(["op": "ready", "authorized": granted])
+    authState = granted
+    if !readySent {
+        emitReady()
+    } else {
+        socket.send(["op": "ready", "authorized": granted])
+    }
 }
 
 socket.start()
 
-// Run main loop forever; UNUserNotificationCenter callbacks need a runloop.
 RunLoop.main.run()

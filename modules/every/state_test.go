@@ -23,7 +23,6 @@ func TestValidateName(t *testing.T) {
 func TestStateRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	p := StatePath(dir, "demo")
-	snooze := time.Date(2026, 5, 25, 1, 0, 0, 0, time.UTC)
 	in := &State{
 		Name:        "demo",
 		Command:     "echo hi",
@@ -31,7 +30,6 @@ func TestStateRoundTrip(t *testing.T) {
 		PID:         os.Getpid(),
 		StartedAt:   time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC),
 		Status:      StatusHealthy,
-		SnoozeUntil: snooze,
 	}
 	if err := WriteState(p, in); err != nil {
 		t.Fatal(err)
@@ -42,9 +40,6 @@ func TestStateRoundTrip(t *testing.T) {
 	}
 	if out.Name != "demo" || out.IntervalSec != 60 || out.Status != StatusHealthy {
 		t.Fatalf("round trip mismatch: %+v", out)
-	}
-	if !out.SnoozeUntil.Equal(snooze) {
-		t.Fatalf("SnoozeUntil round trip failed: got %v want %v", out.SnoozeUntil, snooze)
 	}
 	if _, err := os.Stat(p + ".tmp"); !os.IsNotExist(err) {
 		t.Fatal("tmp file leaked")

@@ -56,7 +56,6 @@ type State struct {
 	Totals24h        Totals    `json:"totals_24h"`
 	TotalsLifetime   Totals    `json:"totals_lifetime"`
 	Status           string    `json:"status"`
-	SnoozeUntil      time.Time `json:"snooze_until,omitempty"`
 }
 
 var nameRE = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)

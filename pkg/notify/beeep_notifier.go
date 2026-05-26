@@ -20,8 +20,3 @@ func (b *BeeepNotifier) Send(ctx context.Context, n Notification) error {
 func (b *BeeepNotifier) Available() bool {
 	return true
 }
-
-// Events returns a closed channel; beeep does not support action callbacks.
-func (b *BeeepNotifier) Events() <-chan ActionEvent {
-	return closedActionChan()
-}

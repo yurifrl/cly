@@ -60,11 +60,6 @@ func (z *ZellijNotifier) Available() bool {
 	return os.Getenv("ZELLIJ") != ""
 }
 
-// Events returns a closed channel; the zellij notifier has no action callbacks.
-func (z *ZellijNotifier) Events() <-chan ActionEvent {
-	return closedActionChan()
-}
-
 // sendToStatusBar sends notification to zjstatus plugin (fire-and-forget)
 func (z *ZellijNotifier) sendToStatusBar(_ context.Context, n Notification) error {
 	message := fmt.Sprintf("zjstatus::notify::%s", n.Title)

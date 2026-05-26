@@ -13,5 +13,4 @@ func NewNativeMacOSNotifier(_ context.Context) *NativeMacOSNotifier {
 
 func (n *NativeMacOSNotifier) Send(_ context.Context, _ Notification) error { return nil }
 func (n *NativeMacOSNotifier) Available() bool                              { return false }
-func (n *NativeMacOSNotifier) Events() <-chan ActionEvent                   { return closedActionChan() }
 func (n *NativeMacOSNotifier) Close() error                                 { return nil }

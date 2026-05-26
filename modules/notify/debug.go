@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/spf13/cobra"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
@@ -64,6 +65,11 @@ func createDebugCmd() *cobra.Command {
 			// Check notifier availability
 			fmt.Println(style.YellowStyle.Render("Notifier Availability:"))
 
+			// Native macOS (UNUserNotificationCenter daemon)
+			native := notify.NewNativeMacOSNotifier(context.Background())
+			nativeAvail := native.Available()
+			fmt.Printf("  Native macOS: %s\n", availStatus(nativeAvail))
+
 			// Beeep
 			beeepNotifier := &notify.BeeepNotifier{Icon: iconPath}
 			beeepAvail := beeepNotifier.Available()
@@ -90,6 +96,25 @@ func createDebugCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
+
+			// Test Native macOS
+			if nativeAvail {
+				fmt.Println(style.YellowStyle.Render("Testing Native macOS:"))
+				fmt.Printf("  Title: %s\n", testNotification.Title)
+				fmt.Printf("  Message: %s\n", testNotification.Message)
+				fmt.Printf("  Sending... ")
+				nativeNote := testNotification
+				nativeNote.Title = "✅ Native macOS Test"
+				nativeNote.Message = "Native bundle delivery"
+				nativeNote.Group = "cly.debug.native"
+				if err := native.Send(ctx, nativeNote); err != nil {
+					fmt.Println(style.RedStyle.Render("✗ Failed: " + err.Error()))
+				} else {
+					time.Sleep(750 * time.Millisecond)
+					fmt.Println(style.GreenStyle.Render("✓ Sent (check Notification Center)"))
+				}
+				fmt.Println()
+			}
 
 			// Test Beeep
 			fmt.Println(style.YellowStyle.Render("Testing Beeep:"))

@@ -197,12 +197,6 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig) error {
 		}
 	}()
 
-	// 3b. listen for action events from the notifier, applying snooze / retry
-	// for THIS task only.
-	if cfg.Notify {
-		go r.handleActionEvents(sigCtx, cfg.Name, statePath)
-	}
-
 	// 4. initial delay
 	if cfg.InitialDelay > 0 {
 		if err := r.Sleep(sigCtx, cfg.InitialDelay); err != nil {
@@ -214,22 +208,6 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig) error {
 	for {
 		if sigCtx.Err() != nil {
 			return r.shutdown(state, statePath, "signal")
-		}
-
-		// honour SnoozeUntil — skip this run if user snoozed via notification action.
-		now := r.Clock.Now()
-		if !state.SnoozeUntil.IsZero() && now.Before(state.SnoozeUntil) {
-			wait := state.SnoozeUntil.Sub(now)
-			_ = AppendLog(logPath, Event{
-				TS:    now,
-				Event: "snoozed",
-				Extra: map[string]any{"until": state.SnoozeUntil},
-			})
-			fmt.Fprintf(r.Stdout, "%s ⏸ snoozed for %s\n", FormatTS(now), FormatDuration(wait))
-			if err := r.Sleep(sigCtx, wait); err != nil {
-				return r.shutdown(state, statePath, "signal")
-			}
-			continue
 		}
 
 		// run number
@@ -359,62 +337,7 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig) error {
 	}
 }
 
-// SnoozeDuration is how long an action ID="snooze" pauses a task for.
-const SnoozeDuration = 5 * time.Minute
-
-// handleActionEvents subscribes to the shared notifier's event channel and
-// applies snooze/retry actions for the task identified by name.
-//
-// Group filtering: only events with Group == "cly.every.<name>" are honoured.
-// Other events (e.g. for sibling tasks) are ignored.
-func (r *Runner) handleActionEvents(ctx context.Context, taskName, statePath string) {
-	n := notify.Shared()
-	if n == nil {
-		return
-	}
-	ch := n.Events()
-	if ch == nil {
-		return
-	}
-	wantGroup := notify.GroupFor(taskName)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case ev, ok := <-ch:
-			if !ok {
-				return
-			}
-			if ev.Group != wantGroup {
-				continue
-			}
-			r.applyAction(ev.ActionID, statePath)
-		}
-	}
-}
-
-// applyAction mutates the persisted state for the given action.
-// Errors are logged to stderr; we never crash the loop.
-func (r *Runner) applyAction(actionID, statePath string) {
-	state, err := ReadState(statePath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "every: action read state: %v\n", err)
-		return
-	}
-	switch actionID {
-	case "snooze":
-		state.SnoozeUntil = r.Clock.Now().Add(SnoozeDuration)
-	case "retry":
-		state.ConsecutiveFails = 0
-		state.NextRunAt = r.Clock.Now()
-		state.Status = StatusHealthy
-	default:
-		return
-	}
-	if err := WriteState(statePath, state); err != nil {
-		fmt.Fprintf(os.Stderr, "every: action write state: %v\n", err)
-	}
-}
+// SnoozeDuration was removed; the notifier no longer surfaces actions.
 
 func (r *Runner) shutdown(state *State, path, reason string) error {
 	_ = AppendLog(LogPath(r.Dir, state.Name), Event{
@@ -447,7 +370,6 @@ func mergeState(prev *State, cfg RunConfig, now time.Time) *State {
 		s.LastExit = prev.LastExit
 		s.LastDurationMs = prev.LastDurationMs
 		s.ConsecutiveFails = prev.ConsecutiveFails
-		s.SnoozeUntil = prev.SnoozeUntil
 		if prev.Status != "" {
 			s.Status = prev.Status
 		}

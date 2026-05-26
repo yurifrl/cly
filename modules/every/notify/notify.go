@@ -1,7 +1,6 @@
 // Package notify is the cly-every desktop notification subsystem. It is
-// a thin shim over pkg/notify, mapping every's three transition levels
-// (failing/recovered/gaveup) to default Action sets and routing to the
-// shared notifier (native macOS bundle, beeep, zellij).
+// a thin shim over pkg/notify that maps every's three transition levels
+// (failing/recovered/gaveup) to titles + sounds.
 package notify
 
 import (
@@ -24,7 +23,6 @@ const (
 	LevelGaveUp
 )
 
-// String returns the canonical key used in config files.
 func (l Level) String() string {
 	switch l {
 	case LevelFailing:
@@ -37,9 +35,7 @@ func (l Level) String() string {
 	return "unknown"
 }
 
-// Notification is the input to Send. The TaskName is used to derive a
-// stable group ID ("cly.every.<task>") so action callbacks can be routed
-// back to the right task.
+// Notification is the input to Send.
 type Notification struct {
 	TaskName string
 	Level    Level
@@ -57,27 +53,11 @@ var (
 	// ConfigDir resolves ~/.config/cly/every. Override in tests.
 	ConfigDir = defaultConfigDir
 
-	// Default actions per transition level. Empty for recovered = passive
-	// info, no buttons, banner auto-dismisses.
-	defaultActions = map[Level][]pkgnotify.Action{
-		LevelFailing: {
-			{ID: "snooze", Title: "Snooze 5m"},
-			{ID: "dismiss", Title: "Dismiss"},
-		},
-		LevelRecovered: nil,
-		LevelGaveUp: {
-			{ID: "retry", Title: "Retry"},
-			{ID: "dismiss", Title: "Dismiss"},
-		},
-	}
-
-	// shared is the lazily-initialised pkg/notify backend. One per process.
 	shared     pkgnotify.Notifier
 	sharedOnce sync.Once
 )
 
-// Shared returns the process-wide notifier. The first call initialises the
-// pkg/notify backend (native macOS where available, beeep otherwise).
+// Shared returns the process-wide notifier.
 func Shared() pkgnotify.Notifier {
 	sharedOnce.Do(func() {
 		shared = pkgnotify.New("every", false, false, false, "")
@@ -97,7 +77,6 @@ func GroupFor(taskName string) string {
 }
 
 // Send delivers a notification through the shared pkg/notify backend.
-// It is a no-crash wrapper: any underlying error is dropped.
 func Send(ctx context.Context, n Notification) error {
 	notifier := Shared()
 	if notifier == nil || !notifier.Available() {
@@ -108,7 +87,6 @@ func Send(ctx context.Context, n Notification) error {
 		Message: n.Body,
 		Sound:   resolveSound(n.Level),
 		Group:   GroupFor(n.TaskName),
-		Actions: defaultActions[n.Level],
 	})
 	return nil
 }

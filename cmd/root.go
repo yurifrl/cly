@@ -16,7 +16,6 @@ import (
 	"github.com/yurifrl/cly/modules/completion"
 	"github.com/yurifrl/cly/modules/config"
 	"github.com/yurifrl/cly/modules/demo"
-	"github.com/yurifrl/cly/modules/diff2"
 	"github.com/yurifrl/cly/modules/dotfiles"
 	"github.com/yurifrl/cly/modules/every"
 	gitcommits "github.com/yurifrl/cly/modules/git-commits"
@@ -83,7 +82,6 @@ func init() {
 	claudetasks.Register(RootCmd)
 	uuid.Register(RootCmd)
 	demo.Register(RootCmd)
-	diff2.Register(RootCmd)
 	config.Register(RootCmd)
 	dotfiles.Register(RootCmd)
 	every.Register(RootCmd)

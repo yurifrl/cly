@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // SocketServer listens on a Unix domain socket, accepts a single client
 // (the parent Go process), and exchanges newline-delimited JSON messages.
@@ -10,11 +11,12 @@ final class SocketServer {
     private let path: String
     private var listenFD: Int32 = -1
     private var clientFD: Int32 = -1
-    private let queue = DispatchQueue(label: "dev.yurifrl.cly.notifier.socket")
+    private let queue = DispatchQueue(label: "dev.yurifrl.cly.socket")
     private var readBuffer = Data()
 
     var onLine: ((String) -> Void)?
     var onDisconnect: (() -> Void)?
+    var onConnect: (() -> Void)?
 
     init(path: String) {
         self.path = path
@@ -24,7 +26,7 @@ final class SocketServer {
         // Remove any stale socket file at the path.
         try? FileManager.default.removeItem(atPath: path)
 
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else {
             fatalError("socket(): \(String(cString: strerror(errno)))")
         }
@@ -54,7 +56,7 @@ final class SocketServer {
         guard bindResult == 0 else {
             fatalError("bind(): \(String(cString: strerror(errno)))")
         }
-        guard listen(fd, 1) == 0 else {
+        guard Darwin.listen(fd, 1) == 0 else {
             fatalError("listen(): \(String(cString: strerror(errno)))")
         }
 
@@ -64,21 +66,24 @@ final class SocketServer {
     }
 
     private func acceptLoop() {
-        let client = accept(listenFD, nil, nil)
+        let client = Darwin.accept(listenFD, nil, nil)
         guard client >= 0 else {
             FileHandle.standardError.write("cly-notifier: accept() failed\n".data(using: .utf8)!)
             return
         }
         clientFD = client
+        DispatchQueue.main.async { [weak self] in
+            self?.onConnect?()
+        }
         readLoop()
     }
 
     private func readLoop() {
         var buf = [UInt8](repeating: 0, count: 4096)
         while true {
-            let n = read(clientFD, &buf, buf.count)
+            let n = Darwin.read(clientFD, &buf, buf.count)
             if n <= 0 {
-                close(clientFD)
+                Darwin.close(clientFD)
                 clientFD = -1
                 DispatchQueue.main.async { [weak self] in
                     self?.onDisconnect?()
@@ -103,16 +108,16 @@ final class SocketServer {
     }
 
     // send marshals dict to JSON + newline and writes it to the client.
-    // Safe to call from any thread.
+    // Writes synchronously — the dispatch queue is serial and blocked by
+    // readLoop, so async dispatch would never run.
     func send(_ dict: [String: Any]) {
-        queue.async { [weak self] in
-            guard let self = self, self.clientFD >= 0 else { return }
-            guard let data = try? JSONSerialization.data(withJSONObject: dict, options: []) else { return }
-            var payload = Data(data)
-            payload.append(0x0A)
-            payload.withUnsafeBytes { raw in
-                _ = write(self.clientFD, raw.baseAddress, payload.count)
-            }
+        guard clientFD >= 0 else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: []) else { return }
+        var payload = Data(data)
+        payload.append(0x0A)
+        let fd = clientFD
+        payload.withUnsafeBytes { raw in
+            _ = Darwin.write(fd, raw.baseAddress, payload.count)
         }
     }
 }
