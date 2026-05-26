@@ -18,6 +18,7 @@ import (
 	"github.com/yurifrl/cly/modules/demo"
 	"github.com/yurifrl/cly/modules/diff2"
 	"github.com/yurifrl/cly/modules/dotfiles"
+	"github.com/yurifrl/cly/modules/every"
 	gitcommits "github.com/yurifrl/cly/modules/git-commits"
 	"github.com/yurifrl/cly/modules/helpy"
 	llmchat "github.com/yurifrl/cly/modules/llm-chat"
@@ -85,6 +86,7 @@ func init() {
 	diff2.Register(RootCmd)
 	config.Register(RootCmd)
 	dotfiles.Register(RootCmd)
+	every.Register(RootCmd)
 	gitcommits.Register(RootCmd)
 	helpy.Register(RootCmd)
 	llmchat.Register(RootCmd)
