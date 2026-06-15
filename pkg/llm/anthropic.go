@@ -15,7 +15,7 @@ type anthropicClient struct {
 
 func newAnthropicClient(apiKey, model string) (*anthropicClient, error) {
 	if model == "" {
-		model = "claude-sonnet-4-20250514"
+		model = "claude-sonnet-4-5-20250929"
 	}
 
 	client := anthropic.NewClient(

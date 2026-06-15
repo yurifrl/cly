@@ -20,7 +20,7 @@ func TestNewClient(t *testing.T) {
 		{
 			name: "with model",
 			flags: map[string]interface{}{
-				"model": "claude-sonnet-4-20250514",
+				"model": "claude-sonnet-4-5-20250929",
 				"api":   "anthropic",
 			},
 			wantErr: false,
@@ -64,7 +64,7 @@ func TestClient_SendMessage(t *testing.T) {
 	}
 
 	flags := map[string]interface{}{
-		"model": "claude-sonnet-4-20250514",
+		"model": "claude-sonnet-4-5-20250929",
 		"api":   "anthropic",
 	}
 	client, err := NewClient(flags)

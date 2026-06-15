@@ -15,7 +15,7 @@ func TestNewClient_Anthropic(t *testing.T) {
 
 	client, err := NewClient(Config{
 		Provider: ProviderAnthropic,
-		Model:    "claude-sonnet-4-20250514",
+		Model:    "claude-sonnet-4-5-20250929",
 	})
 
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestComplete_AnthropicClientCreation(t *testing.T) {
 
 	client, err := NewClient(Config{
 		Provider: ProviderAnthropic,
-		Model:    "claude-sonnet-4-20250514",
+		Model:    "claude-sonnet-4-5-20250929",
 	})
 	require.NoError(t, err)
 

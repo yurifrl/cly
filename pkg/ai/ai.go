@@ -21,7 +21,7 @@
 //     provider: anthropic
 //     providers:
 //       anthropic:
-//         model: claude-sonnet-4-20250514
+//         model: claude-sonnet-4-5-20250929
 //         api_key: $ANTHROPIC_API_KEY    # literal or $ENV / ${ENV}
 //       openai:
 //         model: gpt-4o-mini
@@ -50,7 +50,7 @@ import (
 // Library defaults — used when nothing is configured.
 const (
 	defaultProvider  = "anthropic"
-	defaultModel     = "claude-sonnet-4-20250514"
+	defaultModel     = "claude-sonnet-4-5-20250929"
 	defaultAPIKeyEnv = "ANTHROPIC_API_KEY"
 )
 

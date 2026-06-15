@@ -34,7 +34,7 @@ modules:
     ai:
       enabled: true
       provider: "anthropic"
-      model: "claude-sonnet-4-20250514"
+      model: "claude-sonnet-4-5-20250929"
       api_key: ""
       api_key_env: "ANTHROPIC_API_KEY"
       system_prompt: "You are a helpful assistant. Answer questions about the document provided. Be concise and reference specific sections when possible."
@@ -120,7 +120,7 @@ modules:
     split_prompt: ""
     ai:
       provider: "anthropic"
-      model: "claude-sonnet-4-20250514"
+      model: "claude-sonnet-4-5-20250929"
       api_key: ""
       api_key_env: "ANTHROPIC_API_KEY"
 `)
