@@ -40,38 +40,42 @@ func (b *BrewBundler) CheckDeps() error {
 func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate bool, taps bool, mas bool) error {
 	bundleFile = expandPath(bundleFile)
 
-	// Only extract and sync taps if --taps flag is passed
-	if taps {
-		tapLines, err := extractTaps(bundleFile)
-		if err != nil {
-			return fmt.Errorf("failed to read Brewfile: %w", err)
-		}
-
-		if len(tapLines) > 0 {
-			fmt.Printf("Syncing %d tap(s) from %s\n\n", len(tapLines), bundleFile)
-
-			tapsFile, err := writeTapsToTempFile(tapLines)
-			if err != nil {
-				return fmt.Errorf("failed to create temp taps file: %w", err)
-			}
-			defer os.Remove(tapsFile)
-
-			args := []string{"bundle", "--file=" + tapsFile}
-			if verbose {
-				args = append(args, "--verbose")
-			}
-
-			fmt.Printf("$ brew %s\n", strings.Join(args, " "))
-			cmd := exec.Command("brew", args...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-
-			if err := cmd.Run(); err != nil {
-				fmt.Printf("Warning: brew bundle taps had errors: %v\n", err)
-			}
-			fmt.Println()
-		}
+	// Always extract taps so we can trust third-party taps before installing.
+	// Without this, brew refuses to load formulae from untrusted taps when
+	// HOMEBREW_REQUIRE_TAP_TRUST is set.
+	tapLines, err := extractTaps(bundleFile)
+	if err != nil {
+		return fmt.Errorf("failed to read Brewfile: %w", err)
 	}
+
+	// Only sync taps in a separate pass if --taps flag is passed.
+	if taps && len(tapLines) > 0 {
+		fmt.Printf("Syncing %d tap(s) from %s\n\n", len(tapLines), bundleFile)
+
+		tapsFile, err := writeTapsToTempFile(tapLines)
+		if err != nil {
+			return fmt.Errorf("failed to create temp taps file: %w", err)
+		}
+		defer os.Remove(tapsFile)
+
+		args := []string{"bundle", "--file=" + tapsFile}
+		if verbose {
+			args = append(args, "--verbose")
+		}
+
+		fmt.Printf("$ brew %s\n", strings.Join(args, " "))
+		cmd := exec.Command("brew", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Warning: brew bundle taps had errors: %v\n", err)
+		}
+		fmt.Println()
+	}
+
+	// Always trust taps so untrusted third-party formulae can be installed.
+	trustTaps(tapLines, verbose)
 
 	// Determine which file to use for bundle
 	effectiveFile := bundleFile
@@ -109,7 +113,6 @@ func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 	if !noUpdate {
 		args = append(args, "--upgrade")
 	}
-	args = append(args, "--cleanup")
 
 	fmt.Printf("$ brew %s\n", strings.Join(args, " "))
 	cmd := exec.Command("brew", args...)
@@ -189,6 +192,45 @@ func extractTaps(brewfile string) ([]string, error) {
 	}
 
 	return taps, nil
+}
+
+// parseTapName extracts the "user/repo" name from a Brewfile tap line.
+// e.g. `tap "gromgit/brewtils"  # comment` -> "gromgit/brewtils".
+func parseTapName(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "tap ") {
+		return ""
+	}
+	start := strings.Index(trimmed, "\"")
+	if start == -1 {
+		return ""
+	}
+	end := strings.Index(trimmed[start+1:], "\"")
+	if end == -1 {
+		return ""
+	}
+	return trimmed[start+1 : start+1+end]
+}
+
+// trustTaps runs `brew trust` on each tap so formulae from third-party taps
+// can be installed without the "Refusing to load formula from untrusted tap" error.
+func trustTaps(tapLines []string, verbose bool) {
+	for _, line := range tapLines {
+		name := parseTapName(line)
+		if name == "" {
+			continue
+		}
+		args := []string{"trust", "--tap", name}
+		if verbose {
+			fmt.Printf("$ brew %s\n", strings.Join(args, " "))
+		}
+		cmd := exec.Command("brew", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Warning: failed to trust tap %s: %v\n", name, err)
+		}
+	}
 }
 
 // writeTapsToTempFile writes tap lines to a temporary file and returns its path.

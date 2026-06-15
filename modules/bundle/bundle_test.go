@@ -170,6 +170,20 @@ tap "some/tap"  # inline comment`
 	})
 }
 
+func TestParseTapName(t *testing.T) {
+	cases := map[string]string{
+		`tap "homebrew/cask"`:                 "homebrew/cask",
+		`tap "gromgit/brewtils"  # comment`:   "gromgit/brewtils",
+		`  tap "some/other"`:                   "some/other",
+		`tap "user/repo", "https://x.com/r"`:  "user/repo",
+		`brew "git"`:                          "",
+		`# tap "commented/out"`:                "",
+	}
+	for line, want := range cases {
+		assert.Equal(t, want, parseTapName(line), "line: %s", line)
+	}
+}
+
 func TestWriteTapsToTempFile(t *testing.T) {
 	t.Run("creates temp file with tap lines", func(t *testing.T) {
 		taps := []string{
