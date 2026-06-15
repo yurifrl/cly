@@ -1,5 +1,4 @@
-// Package py consolidates all pi (coding agent) tools under one command.
-package py
+package piwrap
 
 import (
 	"fmt"
@@ -15,19 +14,25 @@ import (
 	pitree "github.com/yurifrl/cly/modules/pi-tree"
 )
 
-func Register(parent *cobra.Command) {
-	cmd := &cobra.Command{
-		Use:   "py",
-		Short: "Pi coding agent tools",
+// registerY attaches the `y` subcommand to the wrapped `pi` command.
+// `pi y ...` is the namespace for cly-owned pi tooling (everything
+// that used to live under the standalone `cly py` command). Because
+// it is a real cobra subcommand it participates in shell completion
+// even though the parent `pi` command has DisableFlagParsing set.
+func registerY(parent *cobra.Command) {
+	y := &cobra.Command{
+		Use:   "y",
+		Short: "cly-owned pi coding agent tools",
+		Long:  "Namespace for cly's own pi helpers. Everything under `pi y` is a cly command (not forwarded to the pi binary).",
 	}
 
-	pitree.Register(cmd)
-	pianon.Register(cmd)
-	pireload.Register(cmd)
-	clypi.Register(cmd)
-	cmd.AddCommand(modelsCmd(), secCmd(), settingsCmd(), updateCmd())
+	pitree.Register(y)
+	pianon.Register(y)
+	pireload.Register(y)
+	clypi.Register(y)
+	y.AddCommand(modelsCmd(), secCmd(), settingsCmd(), updateCmd())
 
-	parent.AddCommand(cmd)
+	parent.AddCommand(y)
 }
 
 func modelsCmd() *cobra.Command {

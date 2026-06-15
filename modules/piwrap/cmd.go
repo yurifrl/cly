@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/yurifrl/cly/modules/aliases"
 )
 
 // Register attaches `cly pi` (alias `p`) to parent. Flag parsing is
@@ -14,10 +15,15 @@ func Register(parent *cobra.Command) {
 		Use:                "pi [-n NAME] [pi args...]",
 		Aliases:            []string{"p"},
 		Short:              "Wrap pi with --name to label the session and rename the cmux tab",
-		Long:               "Thin pass-through to the `pi` binary.\n\nAdds --name / -n: sets $CLY_SESSION_NAME for the pi process and renames the current cmux tab. All other arguments are forwarded to pi unchanged.",
+		Long:               "Thin pass-through to the `pi` binary.\n\nAdds --name / -n: sets $CLY_SESSION_NAME for the pi process and renames the current cmux tab. All other arguments are forwarded to pi unchanged.\n\nThe `pi y` subcommand namespaces cly's own pi tooling (not forwarded to the pi binary).",
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,
+		Annotations: map[string]string{
+			// Intentionally shadow the real `pi` binary: `alias pi "cly pi"`.
+			// The wrapper still execs the real pi via exec.LookPath internally.
+			aliases.AnnotationForceAlias: "true",
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := Run(args)
 			if err != nil {
@@ -29,5 +35,6 @@ func Register(parent *cobra.Command) {
 			return err
 		},
 	}
+	registerY(cmd)
 	parent.AddCommand(cmd)
 }

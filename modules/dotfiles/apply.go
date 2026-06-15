@@ -12,7 +12,7 @@ import (
 )
 
 // ApplyJsoncMapping is the single-mapping equivalent of `cly dotfiles` for
-// jsonc -> json copies. It is meant for callers like `cly py settings` that
+// jsonc -> json copies. It is meant for callers like `cly pi y settings` that
 // regenerate exactly one destination after the user edits the source: it
 // preserves the same backup, lock-tracking, and confirmation guarantees as a
 // full sync without forcing the user through the entire dotfiles loop.

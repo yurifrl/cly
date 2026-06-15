@@ -54,10 +54,10 @@ surfaces (e.g. "memwatch", "idle"), or use --all-terminals to hit every
 terminal surface (dangerous — will send the command to non-pi shells too).
 
 Examples:
-  cly py reload --list
-  cly py reload --match '^π -|^memwatch$|^idle$'
-  cly py reload --cmd idle
-  cly py reload -y`,
+  cly pi y reload --list
+  cly pi y reload --match '^π -|^memwatch$|^idle$'
+  cly pi y reload --cmd idle
+  cly pi y reload -y`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(cmd, match, listOnly, cmdName, allTerminals, yes)
 		},

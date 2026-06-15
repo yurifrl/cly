@@ -8,13 +8,22 @@ import (
 )
 
 func Register(parent *cobra.Command) {
-	// Register lazy generator — runs when `cly completion fish` executes,
+	// Register lazy generators — run when `cly completion fish` executes,
 	// after all modules are registered on parent.
-	// Emits both alias definitions and completion wrappers so a single
-	// cached file handles everything.
+	//
+	// Alias definitions (`alias p "cly pi";`) are runnable commands and must
+	// load at shell startup, so they go through RegisterLazyAliases — the
+	// install command writes those to fish conf.d (startup-sourced).
+	//
+	// Completion wrappers (`complete -c p -w 'cly pi'`) belong with the other
+	// completion specs in the completions file (lazily autoloaded by fish).
+	completion.RegisterLazyAliases(func() string {
+		entries := GenerateAliases(parent, exec.LookPath)
+		return FormatFish(entries)
+	})
 	completion.RegisterLazy(func() string {
 		entries := GenerateAliases(parent, exec.LookPath)
 		skip := completion.RegisteredAliases()
-		return FormatFish(entries) + FormatFishCompletions(entries, skip...)
+		return FormatFishCompletions(entries, skip...)
 	})
 }

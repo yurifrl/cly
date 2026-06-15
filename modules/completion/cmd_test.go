@@ -75,6 +75,65 @@ func TestRegisterLazy(t *testing.T) {
 	lazyGenerators = nil
 }
 
+func TestBuildAliasDefinitions(t *testing.T) {
+	lazyAliasGenerators = nil
+
+	// Empty when nothing registered.
+	assert.Empty(t, BuildAliasDefinitions())
+
+	RegisterLazyAliases(func() string {
+		return "alias p \"cly pi\";\nalias pi \"cly pi\";\n"
+	})
+
+	out := BuildAliasDefinitions()
+	assert.Contains(t, out, "autoloaded at every shell startup")
+	assert.Contains(t, out, `alias p "cly pi";`)
+	assert.Contains(t, out, `alias pi "cly pi";`)
+	// Alias definitions must NOT carry completion wrappers.
+	assert.NotContains(t, out, "complete -c")
+
+	lazyAliasGenerators = nil
+}
+
+func TestInstallWritesConfDAliasesAtStartupLocation(t *testing.T) {
+	extraCompletions = nil
+	lazyGenerators = nil
+	lazyAliasGenerators = nil
+
+	// Simulate the aliases module wiring: aliases -> conf.d, wrappers -> completions.
+	RegisterLazyAliases(func() string { return "alias p \"cly pi\";\n" })
+	RegisterLazy(func() string { return "complete -c p -w 'cly pi'\n" })
+
+	tmpDir := t.TempDir()
+	completionsDir := filepath.Join(tmpDir, ".config", "fish", "completions")
+	confDir := filepath.Join(tmpDir, ".config", "fish", "conf.d")
+
+	root := &cobra.Command{Use: "cly"}
+	root.CompletionOptions.DisableDefaultCmd = true
+	Register(root)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"completion", "fish", "install", "--dir", completionsDir, "--conf-d", confDir})
+	require.NoError(t, root.Execute())
+
+	// conf.d gets runnable alias definitions (startup-sourced), no wrappers.
+	aliasContent, err := os.ReadFile(filepath.Join(confDir, "cly-aliases.fish"))
+	require.NoError(t, err)
+	assert.Contains(t, string(aliasContent), `alias p "cly pi";`)
+	assert.NotContains(t, string(aliasContent), "complete -c p")
+
+	// completions file keeps the completion wrappers (lazily autoloaded).
+	compContent, err := os.ReadFile(filepath.Join(completionsDir, "cly.fish"))
+	require.NoError(t, err)
+	assert.Contains(t, string(compContent), "complete -c p -w 'cly pi'")
+
+	extraCompletions = nil
+	lazyGenerators = nil
+	lazyAliasGenerators = nil
+}
+
 func TestCompletionFishOutput(t *testing.T) {
 	extraCompletions = nil
 	RegisterAlias("zl", "complete -c zl -w 'cly zl'")

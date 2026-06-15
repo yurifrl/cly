@@ -26,7 +26,7 @@ context_file: /Users/yuri/Workdir/Yuri/cly/.agents/contexts/2026-05-22-1255-pkg-
 We confirmed via `pi --help` and `docs/sessions.md` that:
 - `--session <path|id>` either resolves an existing session by partial UUID OR uses a literal path. Bare unknown UUIDs fail with `No session found matching '<id>'`.
 - Anything containing `/`, `.`, or `\` is treated as a path; pi creates the file if it doesn't exist.
-- pi's per-cwd dir is `~/.pi/agent/sessions/--<cwd-encoded>--/` where encoding is: strip leading `/`, replace `/` with `-`, wrap with `--...--`. Verified against `--Users-yuri-Workdir-Yuri-cly--` and the nested `--Users-yuri-.pi-agent-sessions---Users-yuri-Workdir-Nsx-...---certification----` example.
+- pi's per-cwd dir is `~/.pi/agent/sessions/--<cwd-encoded>--/` where encoding is: strip leading `/`, replace `/` with `-`, wrap with `--...--`. Verified against `--Users-yuri-Workdir-Yuri-cly--` and the nested `--Users-yuri-.pi-agent-sessions---Users-yuri-Workdir-Acme-...---certification----` example.
 
 ## Problem
 

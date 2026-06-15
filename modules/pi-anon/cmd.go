@@ -12,8 +12,8 @@ func Register(parent *cobra.Command) {
 		Short: "Anonymous pi sessions in /tmp",
 		Long: `Create or resume anonymous pi sessions.
 
-New session:    cly py anon
-Resume:         cly py anon monkey-car-whale
+New session:    cly pi y anon
+Resume:         cly pi y anon monkey-car-whale
 
 Sessions live in /tmp/<timestamp>-<words>-pi-anon/ with a .anon.json
 tracking session ID, timestamps, toggle preferences, and calling dirs.`,

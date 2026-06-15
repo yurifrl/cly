@@ -32,7 +32,6 @@ import (
 	"github.com/yurifrl/cly/modules/uuid"
 	"github.com/yurifrl/cly/modules/zl"
 	"github.com/yurifrl/cly/modules/oi"
-	"github.com/yurifrl/cly/modules/py"
 	"github.com/yurifrl/cly/modules/skills"
 	"github.com/yurifrl/cly/modules/zs"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
@@ -98,7 +97,6 @@ func init() {
 	update.Register(RootCmd)
 	zl.Register(RootCmd)
 	oi.Register(RootCmd)
-	py.Register(RootCmd)
 	skills.Register(RootCmd)
 	zs.Register(RootCmd)
 	cmd.Register(RootCmd)

@@ -21,6 +21,14 @@ var skipCommands = map[string]bool{
 //	cmd.Annotations = map[string]string{aliases.AnnotationSkipAlias: "true"}
 const AnnotationSkipAlias = "cly.alias.skip"
 
+// AnnotationForceAlias forces creation of the command's name alias even
+// when a binary of the same name exists on PATH. Use it for commands
+// that are intentional wrappers meant to shadow an external binary
+// (e.g. `pi` -> `cly pi`, which still execs the real pi internally).
+//
+//	cmd.Annotations = map[string]string{aliases.AnnotationForceAlias: "true"}
+const AnnotationForceAlias = "cly.alias.force"
+
 type AliasEntry struct {
 	Alias   string
 	Command string
@@ -44,8 +52,11 @@ func GenerateAliases(root *cobra.Command, lookPath func(string) (string, error))
 			continue
 		}
 
-		// Only alias the command name if it doesn't shadow an existing binary
-		if _, err := lookPath(name); err != nil {
+		// Alias the command name unless it shadows an existing binary —
+		// unless the command opts in via AnnotationForceAlias (intentional
+		// wrappers like `pi` that exec the real binary internally).
+		force := cmd.Annotations[AnnotationForceAlias] == "true"
+		if _, err := lookPath(name); err != nil || force {
 			entries = append(entries, AliasEntry{
 				Alias:   name,
 				Command: fmt.Sprintf("cly %s", name),

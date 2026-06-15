@@ -120,7 +120,10 @@ func Run(args []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = os.Environ()
+	// pi inherits the ambient environment unchanged. Bedrock API-key
+	// injection now lives in the pi `aws` extension (see DotFiles
+	// pi-extensions), so it applies however pi is launched — not only
+	// through this wrapper.
 
 	return cmd.Run()
 }

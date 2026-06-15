@@ -22,7 +22,7 @@ context_file: /Users/yuri/Workdir/Yuri/cly/.agents/contexts/2026-05-03-0021-open
 
 ## Context
 
-The user tracks work in [beads](https://github.com/NSXBet/bbt) via the `bd` CLI. The most common command is `bd create --title=... --description=... --type=task`, and typing those flags by hand is slow. They wanted a compact inline TUI with autocomplete for `type` — not a fullscreen app — that they can open instantly, fill in, and submit. It had to live in the existing `cly` modular Cobra/Bubbletea v2 codebase and follow the patterns established by `modules/demo/credit-card-form/` and `modules/demo/autocomplete/`.
+The user tracks work in beads via the `bd` CLI. The most common command is `bd create --title=... --description=... --type=task`, and typing those flags by hand is slow. They wanted a compact inline TUI with autocomplete for `type` — not a fullscreen app — that they can open instantly, fill in, and submit. It had to live in the existing `cly` modular Cobra/Bubbletea v2 codebase and follow the patterns established by `modules/demo/credit-card-form/` and `modules/demo/autocomplete/`.
 
 A secondary problem surfaced mid-session: the `cly` alias generator (`modules/aliases/aliases.go`) emitted shell aliases for every cobra alias unconditionally, which meant registering `cly beads` with alias `bd` would have clobbered the real `bd` binary in fish.
 
