@@ -88,7 +88,7 @@ func (c *Catalog) AddMCP(opts AddMCPOptions) error {
 		return err
 	}
 
-	libDir := filepath.Join(homeDir, ".config", "mcpcli", "mcps")
+	libDir := filepath.Join(homeDir, ".config", "cly", "mcps")
 
 	// If no file specified, use custom.yaml
 	if opts.TargetFile == "" {

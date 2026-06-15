@@ -211,7 +211,7 @@ func launchTUI(ai, scope string) error {
 	if err != nil {
 		return fmt.Errorf("getting home directory: %w", err)
 	}
-	libPath := filepath.Join(homeDir, ".config", "mcpcli")
+	libPath := filepath.Join(homeDir, ".config", "cly")
 	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
 	if err != nil {
 		return fmt.Errorf("loading MCP sources: %w", err)
@@ -255,7 +255,7 @@ func runList(long, all bool) error {
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	libPath := filepath.Join(homeDir, ".config", "mcpcli")
+	libPath := filepath.Join(homeDir, ".config", "cly")
 	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
 	if err != nil {
 		return fmt.Errorf("loading catalog: %w", err)
@@ -381,7 +381,7 @@ func runSwitch(args []string, forceOn, forceOff, switchAll bool, preset, tag str
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	libPath := filepath.Join(homeDir, ".config", "mcpcli")
+	libPath := filepath.Join(homeDir, ".config", "cly")
 	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
 	if err != nil {
 		return fmt.Errorf("loading catalog: %w", err)
@@ -555,7 +555,7 @@ func runAdd(args []string, transport, tags, desc, targetFile string, envVars, he
 
 	globalCfg, _ := LoadGlobalConfig()
 	homeDir, _ := os.UserHomeDir()
-	libPath := filepath.Join(homeDir, ".config", "mcpcli")
+	libPath := filepath.Join(homeDir, ".config", "cly")
 	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
 	if err != nil {
 		return fmt.Errorf("loading source catalog: %w", err)
@@ -572,7 +572,7 @@ func runAdd(args []string, transport, tags, desc, targetFile string, envVars, he
 func runRemove(name string) error {
 	globalCfg, _ := LoadGlobalConfig()
 	homeDir, _ := os.UserHomeDir()
-	libPath := filepath.Join(homeDir, ".config", "mcpcli")
+	libPath := filepath.Join(homeDir, ".config", "cly")
 	catalog, err := LoadCatalogWithSources(libPath, globalCfg.SourcePaths)
 	if err != nil {
 		return fmt.Errorf("loading source catalog: %w", err)
@@ -631,11 +631,13 @@ func runDoctor() error {
 }
 
 func checkConfigFiles() (bool, string) {
-	homeDir, _ := os.UserHomeDir()
-	configPath := filepath.Join(homeDir, ".config", "mcpcli", "config.yaml")
+	configPath, err := GetGlobalConfigPath()
+	if err != nil {
+		return false, fmt.Sprintf("Can't resolve config path: %v", err)
+	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return false, "Global config missing"
+		return false, "cly config missing"
 	}
 
 	cfg, err := LoadGlobalConfig()
@@ -649,7 +651,7 @@ func checkConfigFiles() (bool, string) {
 func checkSourceCatalog() (bool, string) {
 	globalCfg, _ := LoadGlobalConfig()
 	homeDir, _ := os.UserHomeDir()
-	mcpsPath := filepath.Join(homeDir, ".config", "mcpcli")
+	mcpsPath := filepath.Join(homeDir, ".config", "cly")
 
 	catalog, err := LoadCatalogWithSources(mcpsPath, globalCfg.SourcePaths)
 	if err != nil {
@@ -692,8 +694,8 @@ func checkAITools() (bool, string) {
 func checkPermissions() (bool, string) {
 	homeDir, _ := os.UserHomeDir()
 	paths := []string{
-		filepath.Join(homeDir, ".config", "mcpcli"),
-		filepath.Join(homeDir, ".config", "mcpcli", "mcps"),
+		filepath.Join(homeDir, ".config", "cly"),
+		filepath.Join(homeDir, ".config", "cly", "mcps"),
 	}
 
 	for _, path := range paths {

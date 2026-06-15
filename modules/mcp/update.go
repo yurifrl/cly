@@ -599,7 +599,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if item.Type == ListItemMCP && item.MCP != nil {
 					params := m.availableExtraParams()
 					if len(params) == 0 {
-						m.statusMessage = "No extra params defined. Add 'extraParams' to ~/.config/mcpcli/config.yaml"
+						m.statusMessage = "No extra params defined. Add 'extraParams' under mcp in ~/.config/cly/config.yaml"
 					} else {
 						mcpName := strings.TrimSpace(item.Name)
 						m.extraModal = newExtraParamsModal(mcpName, params, m.mcpExtraParams[mcpName])
@@ -614,7 +614,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Open global extra params modal (same UI as per-MCP, applies to all MCPs)
 			params := m.availableExtraParams()
 			if len(params) == 0 {
-				m.statusMessage = "No extra params defined. Add 'extraParams' to ~/.config/mcpcli/config.yaml"
+				m.statusMessage = "No extra params defined. Add 'extraParams' under mcp in ~/.config/cly/config.yaml"
 			} else {
 				m.extraModal = newExtraParamsModal("global (all MCPs)", params, m.globalExtraParams)
 				m.extraModalIsGlobal = true

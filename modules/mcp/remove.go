@@ -35,7 +35,7 @@ func (c *Catalog) RemoveMCP(name string) error {
 		return err
 	}
 
-	libDir := filepath.Join(homeDir, ".config", "mcpcli", "mcps")
+	libDir := filepath.Join(homeDir, ".config", "cly", "mcps")
 	filePath := filepath.Join(libDir, sourceFile)
 
 	// Read existing file

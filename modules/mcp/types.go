@@ -7,7 +7,7 @@ type Context struct {
 }
 
 // ExtraParam defines a configurable extra field that can be injected into MCP entries at write-time.
-// Users define available params in ~/.config/mcpcli/config.yaml under extraParams.
+// Users define available params in the cly config (~/.config/cly/config.yaml) under mcp.extraParams.
 // Example: key=lifecycle, value=lazy → adds "lifecycle": "lazy" to the MCP JSON.
 type ExtraParam struct {
 	Key   string      `json:"key"             yaml:"key"`
@@ -20,7 +20,7 @@ type UIConfig struct {
 	HiddenSections []string `json:"hiddenSections,omitempty" yaml:"hiddenSections,omitempty"`
 }
 
-// GlobalConfig represents the global configuration stored at ~/.config/mcpcli/config.json
+// GlobalConfig represents the MCP configuration stored under the `modules.mcp` key in ~/.config/cly/config.yaml
 type GlobalConfig struct {
 	Defaults struct {
 		AI      string   `json:"ai"`

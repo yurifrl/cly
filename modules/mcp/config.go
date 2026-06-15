@@ -9,57 +9,61 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadGlobalConfig loads the global configuration from ~/.config/mcpcli/config.{yaml,jsonc,json}
-func LoadGlobalConfig() (*GlobalConfig, error) {
+// clyConfigPath returns the path to the shared cly config file (~/.config/cly/config.yaml).
+func clyConfigPath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".config", "cly", "config.yaml"), nil
+}
+
+// LoadGlobalConfig loads the MCP configuration from the shared cly config file
+// (~/.config/cly/config.yaml) under the `modules.mcp` key.
+func LoadGlobalConfig() (*GlobalConfig, error) {
+	path, err := clyConfigPath()
+	if err != nil {
+		return nil, err
 	}
 
-	configDir := filepath.Join(homeDir, ".config", "mcpcli")
-
-	// Try formats in precedence order: yaml > jsonc > json
-	var configPath string
-	var configData []byte
-	for _, filename := range []string{"config.yaml", "config.jsonc", "config.json"} {
-		path := filepath.Join(configDir, filename)
-		if data, err := os.ReadFile(path); err == nil {
-			configPath = path
-			configData = data
-			break
-		}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		// No cly config yet: use defaults.
+		return createDefaultGlobalConfig(), nil
 	}
 
-	// If no config found, create default
-	if configPath == "" {
-		if err := os.MkdirAll(configDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create config directory: %w", err)
-		}
-
-		defaultConfig := createDefaultGlobalConfig()
-		configPath = filepath.Join(configDir, "config.yaml")
-		if err := saveGlobalConfig(configPath, defaultConfig); err != nil {
-			return nil, fmt.Errorf("failed to create default config: %w", err)
-		}
-
-		return defaultConfig, nil
+	var root map[string]interface{}
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: cly config is malformed; using default MCP config.\n")
+		return createDefaultGlobalConfig(), nil
 	}
 
-	// Parse existing config
-	var cfg GlobalConfig
-	if err := parseConfigFile(configPath, configData, &cfg); err != nil {
-		// Create fresh default on corrupted config
-		defaultConfig := createDefaultGlobalConfig()
-		defaultPath := filepath.Join(configDir, "config.yaml")
-		if err := saveGlobalConfig(defaultPath, defaultConfig); err != nil {
-			return nil, fmt.Errorf("failed to recover from corrupted config: %w", err)
-		}
-
-		fmt.Fprintf(os.Stderr, "Warning: Config was corrupted. Created fresh config.\n")
-		return defaultConfig, nil
+	modules, _ := root["modules"].(map[string]interface{})
+	mcpRaw, ok := modules["mcp"]
+	if !ok || mcpRaw == nil {
+		return createDefaultGlobalConfig(), nil
 	}
 
-	return &cfg, nil
+	// Re-marshal the modules.mcp subtree and decode into GlobalConfig.
+	sub, err := yaml.Marshal(mcpRaw)
+	if err != nil {
+		return createDefaultGlobalConfig(), nil
+	}
+
+	cfg := createDefaultGlobalConfig()
+	if err := yaml.Unmarshal(sub, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: modules.mcp config is malformed; using defaults.\n")
+		return createDefaultGlobalConfig(), nil
+	}
+
+	if cfg.Presets == nil {
+		cfg.Presets = make(map[string][]string)
+	}
+	if cfg.Projects == nil {
+		cfg.Projects = make(map[string]ProjectConfig)
+	}
+
+	return cfg, nil
 }
 
 // LoadProjectConfig loads project-specific config from .mcpcli.{yaml,jsonc,json}
@@ -101,44 +105,52 @@ func createDefaultGlobalConfig() *GlobalConfig {
 	return cfg
 }
 
-// SaveGlobalConfig writes global config to the default config path
+// SaveGlobalConfig merges the MCP config into the shared cly config file
+// (~/.config/cly/config.yaml) under the `modules.mcp` key, preserving all
+// other sections. Note: YAML comments in the file are not preserved.
 func SaveGlobalConfig(cfg *GlobalConfig) error {
-	homeDir, err := os.UserHomeDir()
+	path, err := clyConfigPath()
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return err
 	}
 
-	configDir := filepath.Join(homeDir, ".config", "mcpcli")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	configPath := filepath.Join(configDir, "config.yaml")
-	return saveGlobalConfig(configPath, cfg)
-}
-
-// saveGlobalConfig writes global config to file with formatting
-func saveGlobalConfig(path string, cfg *GlobalConfig) error {
-	format := detectFormat(path)
-
-	var data []byte
-	var err error
-
-	if format == "yaml" {
-		data, err = yaml.Marshal(cfg)
-		if err != nil {
-			return err
+	root := map[string]interface{}{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := yaml.Unmarshal(data, &root); err != nil {
+			return fmt.Errorf("refusing to overwrite malformed cly config (%s): %w", path, err)
 		}
-		yamlWithComments := []byte("# MCP Manager Global Configuration\n# Default AI tool and scope settings\n\n")
-		data = append(yamlWithComments, data...)
-	} else {
-		data, err = json.MarshalIndent(cfg, "", "  ")
-		if err != nil {
-			return err
+		if root == nil {
+			root = map[string]interface{}{}
 		}
 	}
 
-	return os.WriteFile(path, data, 0644)
+	modules, _ := root["modules"].(map[string]interface{})
+	if modules == nil {
+		modules = map[string]interface{}{}
+		root["modules"] = modules
+	}
+
+	// Convert the typed config into a generic map so it nests cleanly.
+	sub, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	var mcpMap map[string]interface{}
+	if err := yaml.Unmarshal(sub, &mcpMap); err != nil {
+		return err
+	}
+	modules["mcp"] = mcpMap
+
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, out, 0644)
 }
 
 // parseConfigFile parses config file in any supported format
@@ -156,21 +168,8 @@ func parseConfigFile(path string, data []byte, target interface{}) error {
 	}
 }
 
-// GetGlobalConfigPath returns the path to global config
+// GetGlobalConfigPath returns the path to the shared cly config file that
+// holds MCP settings under `modules.mcp`.
 func GetGlobalConfigPath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-
-	configDir := filepath.Join(homeDir, ".config", "mcpcli")
-
-	for _, filename := range []string{"config.yaml", "config.jsonc", "config.json"} {
-		path := filepath.Join(configDir, filename)
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
-	}
-
-	return filepath.Join(configDir, "config.yaml"), nil
+	return clyConfigPath()
 }
