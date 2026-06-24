@@ -94,6 +94,7 @@ type baseBundler struct {
 	installFn       func(pkg string, verbose bool, force bool) error
 	uninstallFn     func(pkg string, verbose bool) error
 	listInstalledFn func() ([]string, error) // optional: check actual system state
+	alwaysUpgrade   bool                     // always reinstall/upgrade all desired packages
 }
 
 func (b *baseBundler) Name() string {
@@ -149,7 +150,6 @@ func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 		// Force reinstall all desired packages - uninstall first
 		toInstall = desired
 		for _, pkg := range desired {
-			// Check if already installed (compare base names if using system state)
 			isInstalled := false
 			basePkg := extractBasePkg(pkg)
 			for _, inst := range installed {
@@ -165,10 +165,12 @@ func (b *baseBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 			}
 			if isInstalled {
 				printYellow(fmt.Sprintf("Force uninstalling: %s", pkg))
-				// Ignore uninstall errors during force mode
 				_ = b.uninstallFn(pkg, verbose)
 			}
 		}
+	} else if b.alwaysUpgrade {
+		// Upgrade all desired packages without uninstalling first
+		toInstall = desired
 	} else {
 		// Only install missing packages (compare base names if using system state)
 		if useBaseNameComparison {

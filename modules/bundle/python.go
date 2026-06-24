@@ -24,11 +24,12 @@ func NewPythonBundler(s store.Store) *PythonBundler {
 		pythonFile = "~/.config/cly/bundles/Pythonfile"
 	}
 	b.baseBundler = &baseBundler{
-		name:        "python",
-		defaultFile: pythonFile,
-		store:       s,
-		installFn:   b.install,
-		uninstallFn: b.uninstall,
+		name:           "python",
+		defaultFile:    pythonFile,
+		store:          s,
+		installFn:      b.install,
+		uninstallFn:    b.uninstall,
+		alwaysUpgrade:  true,
 		listInstalledFn: func() ([]string, error) {
 			return listUvTools()
 		},
