@@ -36,6 +36,7 @@ func Register(parent *cobra.Command) {
 	cmd.AddCommand(editCmd())
 	cmd.AddCommand(tuiCmd())
 	cmd.AddCommand(searchCmd())
+	cmd.AddCommand(findSessionCmd())
 
 	parent.AddCommand(cmd)
 }
