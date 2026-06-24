@@ -22,6 +22,7 @@ var (
 	parallelFlag  bool
 	updateFlag    bool
 	uninstallFlag bool
+	trustFlag     bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -90,6 +91,7 @@ Types:
 	cmd.Flags().BoolVar(&parallelFlag, "parallel", false, "use parallel installs with TUI progress (js only)")
 	cmd.Flags().BoolVarP(&updateFlag, "update", "u", false, "sync without opening the editor")
 	cmd.Flags().BoolVar(&uninstallFlag, "uninstall", false, "uninstall all packages listed in the bundle file (js only)")
+	cmd.Flags().BoolVar(&trustFlag, "trust", false, "trust third-party taps before installing (brew only)")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))

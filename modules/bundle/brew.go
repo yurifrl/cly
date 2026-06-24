@@ -74,8 +74,11 @@ func (b *BrewBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate
 		fmt.Println()
 	}
 
-	// Always trust taps so untrusted third-party formulae can be installed.
-	trustTaps(tapLines, verbose)
+	// Trust taps only when --trust is passed, so untrusted third-party
+	// formulae can be installed without manual `brew trust`.
+	if trustFlag {
+		trustTaps(verbose)
+	}
 
 	// Determine which file to use for bundle
 	effectiveFile := bundleFile
@@ -212,14 +215,16 @@ func parseTapName(line string) string {
 	return trimmed[start+1 : start+1+end]
 }
 
-// trustTaps runs `brew trust` on each tap so formulae from third-party taps
+// trustTaps runs `brew trust` on every tapped repo so formulae from
+// third-party taps (including transitive deps not declared in the Brewfile)
 // can be installed without the "Refusing to load formula from untrusted tap" error.
-func trustTaps(tapLines []string, verbose bool) {
-	for _, line := range tapLines {
-		name := parseTapName(line)
-		if name == "" {
-			continue
-		}
+func trustTaps(verbose bool) {
+	out, err := exec.Command("brew", "tap").Output()
+	if err != nil {
+		fmt.Printf("Warning: failed to list taps: %v\n", err)
+		return
+	}
+	for _, name := range strings.Fields(string(out)) {
 		args := []string{"trust", "--tap", name}
 		if verbose {
 			fmt.Printf("$ brew %s\n", strings.Join(args, " "))
