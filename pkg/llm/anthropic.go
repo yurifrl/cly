@@ -3,9 +3,12 @@ package llm
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 )
 
 type anthropicClient struct {
@@ -13,14 +16,33 @@ type anthropicClient struct {
 	model  string
 }
 
-func newAnthropicClient(apiKey, model string) (*anthropicClient, error) {
-	if model == "" {
+func newAnthropicClient(apiKey, model string, useBedrock bool) (*anthropicClient, error) {	if model == "" {
 		model = "claude-sonnet-4-5-20250929"
 	}
 
-	client := anthropic.NewClient(
-		option.WithAPIKey(apiKey),
-	)
+	var opts []option.RequestOption
+	if useBedrock {
+		// Auth comes from the AWS chain. When AWS_BEARER_TOKEN_BEDROCK is set we
+		// force it explicitly: LoadDefaultConfig under an AWS_PROFILE otherwise
+		// resolves a different bearer provider and ignores the env token.
+		// Also strip X-Api-Key, which the SDK auto-sets from $ANTHROPIC_API_KEY
+		// and Bedrock rejects ("Invalid API Key format").
+		awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("bedrock: load aws config: %w", err)
+		}
+		if tok := os.Getenv("AWS_BEARER_TOKEN_BEDROCK"); tok != "" {
+			awsCfg.BearerAuthTokenProvider = bedrock.NewStaticBearerTokenProvider(tok)
+		}
+		opts = append(opts,
+			bedrock.WithConfig(awsCfg),
+			option.WithHeaderDel("X-Api-Key"),
+		)
+	} else {
+		opts = append(opts, option.WithAPIKey(apiKey))
+	}
+
+	client := anthropic.NewClient(opts...)
 
 	return &anthropicClient{
 		client: &client,

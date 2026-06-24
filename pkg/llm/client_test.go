@@ -128,3 +128,27 @@ func TestComplete_OpenAIClientCreation(t *testing.T) {
 	})
 	assert.True(t, ok, "openai client should implement Complete")
 }
+
+func TestNewClient_OpenRouter(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key-123")
+
+	client, err := NewClient(Config{
+		Provider: ProviderOpenRouter,
+		Model:    "anthropic/claude-3.5-sonnet",
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, client)
+}
+
+func TestNewClient_Bedrock_NoAPIKeyRequired(t *testing.T) {
+	// Bedrock authenticates via the AWS chain, so client creation must
+	// succeed even with no API key set.
+	os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, err := NewClient(Config{
+		Provider: ProviderBedrock,
+		Model:    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, client)
+}

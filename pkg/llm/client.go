@@ -44,9 +44,13 @@ type Client interface {
 type Provider string
 
 const (
-	ProviderAnthropic Provider = "anthropic"
-	ProviderOpenAI    Provider = "openai"
+	ProviderAnthropic  Provider = "anthropic"
+	ProviderOpenAI     Provider = "openai"
+	ProviderOpenRouter Provider = "openrouter"
+	ProviderBedrock    Provider = "bedrock"
 )
+
+const openRouterBaseURL = "https://openrouter.ai/api/v1"
 
 // Config holds the configuration for creating an LLM client.
 type Config struct {
@@ -54,11 +58,18 @@ type Config struct {
 	Model        string
 	APIKey       string
 	APIKeyEnv    string
+	BaseURL      string
 	SystemPrompt string
 }
 
 // NewClient creates a new LLM client based on the config.
 func NewClient(cfg Config) (Client, error) {
+	// Bedrock authenticates via the AWS chain (AWS_BEARER_TOKEN_BEDROCK or
+	// SigV4 creds), not an API key, so it skips the key requirement.
+	if cfg.Provider == ProviderBedrock {
+		return newAnthropicClient("", cfg.Model, true)
+	}
+
 	apiKey := resolveAPIKey(cfg)
 	if apiKey == "" {
 		return nil, fmt.Errorf("no API key found for provider %s: set api_key in config, %s env var, or default env var", cfg.Provider, cfg.APIKeyEnv)
@@ -66,11 +77,17 @@ func NewClient(cfg Config) (Client, error) {
 
 	switch cfg.Provider {
 	case ProviderAnthropic:
-		return newAnthropicClient(apiKey, cfg.Model)
+		return newAnthropicClient(apiKey, cfg.Model, false)
 	case ProviderOpenAI:
-		return newOpenAIClient(apiKey, cfg.Model)
+		return newOpenAIClient(apiKey, cfg.Model, cfg.BaseURL)
+	case ProviderOpenRouter:
+		baseURL := cfg.BaseURL
+		if baseURL == "" {
+			baseURL = openRouterBaseURL
+		}
+		return newOpenAIClient(apiKey, cfg.Model, baseURL)
 	default:
-		return nil, fmt.Errorf("unknown provider: %s (supported: anthropic, openai)", cfg.Provider)
+		return nil, fmt.Errorf("unknown provider: %s (supported: anthropic, openai, openrouter, bedrock)", cfg.Provider)
 	}
 }
 
@@ -94,6 +111,8 @@ func resolveAPIKey(cfg Config) string {
 		return os.Getenv("ANTHROPIC_API_KEY")
 	case ProviderOpenAI:
 		return os.Getenv("OPENAI_API_KEY")
+	case ProviderOpenRouter:
+		return os.Getenv("OPENROUTER_API_KEY")
 	}
 
 	return ""

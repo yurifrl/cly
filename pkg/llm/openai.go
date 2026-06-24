@@ -13,14 +13,17 @@ type openaiClient struct {
 	model  string
 }
 
-func newOpenAIClient(apiKey, model string) (*openaiClient, error) {
+func newOpenAIClient(apiKey, model, baseURL string) (*openaiClient, error) {
 	if model == "" {
 		model = "gpt-4o"
 	}
 
-	client := openai.NewClient(
-		option.WithAPIKey(apiKey),
-	)
+	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if baseURL != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
+
+	client := openai.NewClient(opts...)
 
 	return &openaiClient{
 		client: &client,

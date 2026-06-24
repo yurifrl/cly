@@ -8,6 +8,23 @@ app:
 theme:
   style: charm # Options: charm | dracula | catppuccin
 
+# Repo-wide AI provider. Modules can override under modules.<name>.ai
+ai:
+  provider: anthropic   # Options: anthropic | openai | openrouter | bedrock
+  providers:
+    anthropic:
+      model: claude-sonnet-4-5-20250929
+      api_key: $ANTHROPIC_API_KEY
+    openai:
+      model: gpt-4o-mini
+      api_key: $OPENAI_API_KEY
+    openrouter:         # OpenAI-compatible gateway (base_url preset)
+      model: anthropic/claude-3.5-sonnet
+      api_key: $OPENROUTER_API_KEY
+    bedrock:            # Anthropic models via AWS Bedrock
+      model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      # no api_key: uses AWS_BEARER_TOKEN_BEDROCK or AWS creds/profile
+
 modules:
   bundle:
     go_file: ~/.config/cly/bundles/Gofile

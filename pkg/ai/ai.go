@@ -26,6 +26,13 @@
 //       openai:
 //         model: gpt-4o-mini
 //         api_key: $OPENAI_API_KEY
+//       openrouter:                      # OpenAI-compatible gateway
+//         model: anthropic/claude-3.5-sonnet
+//         api_key: $OPENROUTER_API_KEY
+//         # base_url defaults to https://openrouter.ai/api/v1
+//       bedrock:                         # Anthropic models via AWS Bedrock
+//         model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+//         # no api_key: auth uses AWS_BEARER_TOKEN_BEDROCK or AWS creds/profile
 //
 //   modules:
 //     commit:
@@ -58,8 +65,9 @@ const (
 // `api_key: $ANTHROPIC_API_KEY` style references just work without extra
 // configuration.
 var providerEnv = map[string]string{
-	"anthropic": "ANTHROPIC_API_KEY",
-	"openai":    "OPENAI_API_KEY",
+	"anthropic":  "ANTHROPIC_API_KEY",
+	"openai":     "OPENAI_API_KEY",
+	"openrouter": "OPENROUTER_API_KEY",
 }
 
 // Resolved is the effective AI config after merging global defaults with
@@ -69,6 +77,7 @@ type Resolved struct {
 	Model     string
 	APIKey    string // literal key (resolved from $ENV expansion)
 	APIKeyEnv string // env var name (set when api_key is empty)
+	BaseURL   string // optional override for OpenAI-compatible endpoints
 	Enabled   bool
 }
 
@@ -147,6 +156,9 @@ func applyProviderBlock(p map[string]interface{}, r *Resolved) {
 	if v, ok := p["model"].(string); ok && v != "" {
 		r.Model = v
 	}
+	if v, ok := p["base_url"].(string); ok && v != "" {
+		r.BaseURL = v
+	}
 	if v, ok := p["api_key"].(string); ok && v != "" {
 		setKeyOrEnv(v, r)
 	}
@@ -159,6 +171,9 @@ func applyProviderBlock(p map[string]interface{}, r *Resolved) {
 func applyOverrideBlock(o map[string]interface{}, r *Resolved) {
 	if v, ok := o["model"].(string); ok && v != "" {
 		r.Model = v
+	}
+	if v, ok := o["base_url"].(string); ok && v != "" {
+		r.BaseURL = v
 	}
 	if v, ok := o["api_key"].(string); ok && v != "" {
 		setKeyOrEnv(v, r)
@@ -216,6 +231,7 @@ func NewClientWith(override map[string]interface{}) (llm.Client, error) {
 		Model:     r.Model,
 		APIKey:    r.APIKey,
 		APIKeyEnv: r.APIKeyEnv,
+		BaseURL:   r.BaseURL,
 	}
 	return llm.NewClient(cfg)
 }
@@ -226,6 +242,12 @@ func HasAPIKey(override map[string]interface{}) bool {
 	r := LoadConfigWith(override)
 	if r == nil {
 		return false
+	}
+	// Bedrock uses the AWS auth chain, not an API key.
+	if r.Provider == "bedrock" {
+		return os.Getenv("AWS_BEARER_TOKEN_BEDROCK") != "" ||
+			os.Getenv("AWS_ACCESS_KEY_ID") != "" ||
+			os.Getenv("AWS_PROFILE") != ""
 	}
 	if r.APIKey != "" {
 		return true
