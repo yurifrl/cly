@@ -3,6 +3,7 @@ package gitcommits
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -230,9 +231,14 @@ func parseDiffGitPath(line string) string {
 	return ""
 }
 
-// unquoteGitPath handles git's C-style quoting (e.g., \t, \n, \\, octal escapes).
+// unquoteGitPath handles git's C-style quoting (e.g., \t, \n, \\, octal escapes
+// like \303\243 for non-ASCII bytes). strconv.Unquote decodes the same escape
+// set git emits with core.quotepath on.
 func unquoteGitPath(s string) string {
-	// Simple common cases
+	if unq, err := strconv.Unquote("\"" + s + "\""); err == nil {
+		return unq
+	}
+	// Fallback for content strconv rejects (e.g. a stray unescaped quote).
 	s = strings.ReplaceAll(s, "\\\\", "\\")
 	s = strings.ReplaceAll(s, "\\t", "\t")
 	s = strings.ReplaceAll(s, "\\n", "\n")

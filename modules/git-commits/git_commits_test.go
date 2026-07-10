@@ -121,6 +121,7 @@ func TestParseDiffGitPath(t *testing.T) {
 		{"simple", "diff --git a/foo.go b/foo.go", "foo.go"},
 		{"nested", "diff --git a/pkg/config/config.go b/pkg/config/config.go", "pkg/config/config.go"},
 		{"path with b/", "diff --git a/a/b/c.go b/a/b/c.go", "a/b/c.go"},
+		{"octal-escaped accents", `diff --git "a/dir/Bar\303\243o-Neves.jpg" "b/dir/Bar\303\243o-Neves.jpg"`, "dir/Barão-Neves.jpg"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
