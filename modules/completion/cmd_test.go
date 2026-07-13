@@ -128,6 +128,7 @@ func TestInstallWritesConfDAliasesAtStartupLocation(t *testing.T) {
 	compContent, err := os.ReadFile(filepath.Join(completionsDir, "cly.fish"))
 	require.NoError(t, err)
 	assert.Contains(t, string(compContent), "complete -c p -w 'cly pi'")
+	assert.NotContains(t, string(compContent), `alias p "cly pi";`)
 
 	extraCompletions = nil
 	lazyGenerators = nil

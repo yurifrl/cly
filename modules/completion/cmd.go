@@ -158,14 +158,7 @@ func genFish(root *cobra.Command, w interface{ Write([]byte) (int, error) }) err
 		return err
 	}
 
-	// Keep both alias definitions and completion wrappers in the generated
-	// output. This preserves the cached-init startup path
-	// (`cly completion fish` -> ~/.cache/fish_completions/cly.fish) that some
-	// shell configs source at startup. Note: fish autoloads files in
-	// completions/ only lazily, so the install command ALSO writes the alias
-	// definitions to conf.d (see installFish) for reliable startup loading.
 	buf.WriteString("\n")
-	buf.WriteString(BuildAliasDefinitions())
 	buf.WriteString(BuildExtraCompletions())
 
 	_, err := w.Write(buf.Bytes())
