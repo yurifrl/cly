@@ -402,6 +402,36 @@ func GetBool(key string) bool {
 	return v.GetBool(key)
 }
 
+func GetStringSlice(key string) []string {
+	v := viper.New()
+	v.SetConfigType("yaml")
+
+	homeDir, _ := os.UserHomeDir()
+	configDir := filepath.Join(homeDir, ".config/cly")
+
+	v.SetEnvPrefix("CLY")
+	v.AutomaticEnv()
+
+	configFound := false
+	for _, configName := range []string{"config.local", "config"} {
+		v.SetConfigName(configName)
+		v.AddConfigPath(configDir)
+		v.AddConfigPath("modules/config")
+		v.AddConfigPath(".")
+
+		if err := v.ReadInConfig(); err == nil {
+			configFound = true
+			break
+		}
+	}
+
+	if !configFound {
+		v.ReadConfig(bytes.NewBuffer(defaultConfig))
+	}
+
+	return v.GetStringSlice(key)
+}
+
 func Set(key string, value interface{}) error {
 	homeDir, _ := os.UserHomeDir()
 

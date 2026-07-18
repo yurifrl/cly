@@ -118,6 +118,62 @@ modules:
   backup:
     # GCS bucket for backups (configure in config.local.yaml)
     gcs_bucket: ""
+    # Local directory to sync (supports ~ expansion)
+    source_dir: ~/Workdir
+    # Path patterns (Python regex) excluded from sync, one per line
+    exclude:
+      - .*node_modules/.*
+      - .*__pycache__/.*
+      - .*\.pyc$
+      - .*\.DS_Store$
+      - .*\._\.DS_Store$
+      - .*\.terraform/.*
+      - .*\.vscode/.*
+      - .*\.npm/.*
+      - .*\.yarn/.*
+      - .*venv/.*
+      - .*\.venv/.*
+      - .*env/.*
+      - .*\.env/.*
+      - .*dist/.*
+      - .*build/.*
+      - .*target/.*
+      - .*bin/.*
+      - .*obj/.*
+      - .*out/.*
+      - .*\.\#.*
+      - .*~$
+      - .*\.bak$
+      - .*\.bkp$
+      - .*\.log$
+      - .*\.pyo$
+      - .*\.pyd$
+      - .*\.terragrunt-cache/.*
+      - .*\.idea/.*
+      - .*\.cache/.*
+      - .*\.pytest_cache/.*
+      - .*\.mypy_cache/.*
+      - .*\.ruff_cache/.*
+      - .*coverage/.*
+      - .*\.coverage$
+      - .*htmlcov/.*
+      - .*\.tox/.*
+      - .*\.eggs/.*
+      - .*\.egg-info/.*
+      - .*\.direnv/.*
+      - .*tmp/.*
+      - .*temp/.*
+      - .*\.tmp$
+      - .*\.temp$
+      - .*\.swp$
+      - .*\.swo$
+      - .*\.swn$
+      - .*\.class$
+      - .*\.o$
+      - .*\.so$
+      - .*\.dylib$
+      - .*\.dll$
+      - .*\.exe$
   scraper:
     aliexpress:
       browser:

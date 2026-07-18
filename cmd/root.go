@@ -76,6 +76,7 @@ func init() {
 	aliases.Register(RootCmd)
 	backup.Register(RootCmd)
 	beads.Register(RootCmd)
+	backup.RegisterGsync(RootCmd)
 	claude.Register(RootCmd)
 	agentsession.Register(RootCmd)
 	claudetasks.Register(RootCmd)

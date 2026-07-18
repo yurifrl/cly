@@ -247,7 +247,7 @@ func runWorkdirSync(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s Authenticated as %s\n", style.GreenStyle.Render("✓"), account)
 
 	bucketPath := fmt.Sprintf("gs://%s/", bucket)
-	workdir := filepath.Join(os.Getenv("HOME"), "Workdir")
+	workdir := getWorkdir()
 
 	// Create workdir if it doesn't exist
 	if _, err := os.Stat(workdir); os.IsNotExist(err) {
@@ -395,7 +395,21 @@ func syncToGCS(workdir, bucketPath string) error {
 }
 
 func buildExcludePattern() string {
-	patterns := []string{
+	return strings.Join(excludePatterns(), "|")
+}
+
+// excludePatterns returns the configured exclude regexes, or the built-in
+// defaults when config provides none.
+func excludePatterns() []string {
+	patterns := pkgconfig.GetStringSlice("modules.backup.exclude")
+	if len(patterns) == 0 {
+		patterns = defaultExcludePatterns()
+	}
+	return patterns
+}
+
+func defaultExcludePatterns() []string {
+	return []string{
 		".*node_modules/.*",
 		".*__pycache__/.*",
 		".*\\.pyc$",
@@ -449,7 +463,6 @@ func buildExcludePattern() string {
 		".*\\.dll$",
 		".*\\.exe$",
 	}
-	return strings.Join(patterns, "|")
 }
 
 func calculateParallelProcesses() int {
@@ -470,6 +483,18 @@ func getBucket() string {
 		bucket = os.Getenv("CLY_BACKUP_GCS_BUCKET")
 	}
 	return bucket
+}
+
+// getWorkdir returns the configured local sync directory, expanding a leading ~.
+func getWorkdir() string {
+	dir := pkgconfig.GetString("modules.backup.source_dir")
+	if dir == "" {
+		dir = "~/Workdir"
+	}
+	if dir == "~" || strings.HasPrefix(dir, "~/") {
+		dir = filepath.Join(os.Getenv("HOME"), strings.TrimPrefix(dir, "~"))
+	}
+	return dir
 }
 
 func runDownload(cmd *cobra.Command, args []string) error {
