@@ -1,3 +1,6 @@
+// ⚠️  DO NOT EDIT — generated/shipped by cly.
+// Source: cly/modules/pi/embedded/cly.ts. Installed via `cly pi extensions install`.
+// Edits here are overwritten on the next install. Change the source in the cly repo.
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { spawn } from "node:child_process";
 import fs from "node:fs";

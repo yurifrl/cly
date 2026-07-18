@@ -16,14 +16,9 @@ func TestInstall_WritesPiCly(t *testing.T) {
 	if err := embedfs.Install(embedded, "embedded", dest, false, &out); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	for _, rel := range []string{
-		filepath.Join("pi-cly", "package.json"),
-		filepath.Join("pi-cly", "index.ts"),
-	} {
-		p := filepath.Join(dest, rel)
-		if _, err := os.Stat(p); err != nil {
-			t.Fatalf("missing %s: %v", p, err)
-		}
+	p := filepath.Join(dest, "cly.ts")
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("missing %s: %v", p, err)
 	}
 	if !strings.Contains(out.String(), "wrote ") {
 		t.Fatalf("expected wrote lines:\n%s", out.String())
