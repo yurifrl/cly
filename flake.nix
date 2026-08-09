@@ -61,7 +61,7 @@
       })
     // {
       overlays.default = final: prev: {
-        cly = self.packages.${prev.system}.cly;
+        cly = self.packages.${prev.stdenv.hostPlatform.system}.cly;
       };
     };
 }
