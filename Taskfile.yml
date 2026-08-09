@@ -17,6 +17,14 @@ tasks:
     cmds:
       - task --list
 
+  nix:vendor-hash:
+    desc: Recompute and lock the flake vendorHash (run when go.mod/go.sum change)
+    sources:
+      - go.mod
+      - go.sum
+    cmds:
+      - bash scripts/update-vendor-hash.sh
+
   envs:op:
     desc: Process .env.op with 1Password CLI and output to .env (skipped if .env is fresher than .env.op)
     sources:

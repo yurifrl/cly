@@ -8,6 +8,31 @@ permissions:
   contents: write
 
 jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build Linux binaries
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/yurifrl/cly/cmd.Version=${VERSION}" -o dist/cly-linux-$arch .
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/mcp-linux-$arch ./cmd/mcp
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: dist/*
+
   build-macos-amd64:
     runs-on: macos-latest
     steps:
@@ -55,7 +80,7 @@ jobs:
           path: dist/*
 
   release:
-    needs: [build-macos-amd64, build-macos-arm64]
+    needs: [build-linux, build-macos-amd64, build-macos-arm64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
