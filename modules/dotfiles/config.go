@@ -49,6 +49,7 @@ type Install struct {
 
 type Config struct {
 	BaseDir         string
+	Target          Target
 	Mappings        []Mapping
 	InstallCommands []string
 	CacheEntries    []CacheEntry
@@ -81,6 +82,15 @@ func ParseConfig(configPath string) (*Config, error) {
 		case strings.HasPrefix(line, "!"):
 			cmd := strings.TrimSpace(line[1:])
 			cfg.InstallCommands = append(cfg.InstallCommands, cmd)
+		case strings.HasPrefix(line, "@target ") || line == "@target":
+			t, err := parseTarget(line, lineNum)
+			if err != nil {
+				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
+			} else if cfg.Target.set {
+				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: duplicate @target (already set on line %d)", lineNum, cfg.Target.LineNum))
+			} else {
+				cfg.Target = t
+			}
 		case strings.HasPrefix(line, "@install "):
 			url := strings.TrimSpace(strings.TrimPrefix(line, "@install "))
 			if url != "" {

@@ -46,6 +46,12 @@ Config syntax (dotfiles.conf):
   @op account=x ./s.op -> ~/d           1Password inject (-o flag)
   @op account=x op://vault/item/field -> ~/d  1Password read secret (-o flag)
   .jsonc -> .json                       comments stripped automatically
+  @target user=u,.. os=linux,darwin arch=amd64,..   gate: skip unless this machine matches
+
+Config discovery: candidates are tried in order — dotfiles.<user>.conf then
+dotfiles.conf — and the first whose @target header matches this machine's
+user/os/arch is loaded; the search stops there. Exactly one file is loaded, and
+if none match (e.g. root, or the wrong OS) nothing is applied.
 
 Use --cache to force re-run of every @cache entry (ignores the hash skip).
 Use --install-only to run only @install directives (skips everything else).
@@ -141,6 +147,12 @@ func runEval(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// getConfigPath selects the single dotfiles config for this machine. It walks
+// candidates in priority order (dotfiles.<user>.conf, then dotfiles.conf) and
+// returns the first whose @target header matches the current user/os/arch. The
+// header is the selector: the first match wins and the search stops. If no
+// candidate matches (e.g. root, or the wrong OS), it errors instead of applying
+// an unintended config.
 func getConfigPath() (string, error) {
 	if configFlag != "" {
 		return configFlag, nil
@@ -153,7 +165,32 @@ func getConfigPath() (string, error) {
 	}
 	dotfilesDir = expandTilde(dotfilesDir)
 
-	return filepath.Join(dotfilesDir, "dotfiles.conf"), nil
+	var candidates []string
+	if u := currentUsername(); u != "" {
+		candidates = append(candidates, filepath.Join(dotfilesDir, fmt.Sprintf("dotfiles.%s.conf", u)))
+	}
+	candidates = append(candidates, filepath.Join(dotfilesDir, "dotfiles.conf"))
+
+	var rejected []string
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		parsed, err := ParseConfig(p)
+		if err != nil {
+			return "", err
+		}
+		if reason := parsed.Target.GateReason(); reason == "" {
+			return p, nil
+		} else {
+			rejected = append(rejected, fmt.Sprintf("%s: %s", filepath.Base(p), reason))
+		}
+	}
+
+	if len(rejected) > 0 {
+		return "", fmt.Errorf("no dotfiles config matches this machine:\n  %s", strings.Join(rejected, "\n  "))
+	}
+	return "", fmt.Errorf("no dotfiles config found in %s (looked for dotfiles.<user>.conf, dotfiles.conf)", dotfilesDir)
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
