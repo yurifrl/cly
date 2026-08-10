@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/mut"
@@ -125,12 +126,23 @@ type LockDiff struct {
 	RemovedOpMappings      []LockEntry
 }
 
+// lockFilePath derives the lock file from the selected config so each config
+// keeps its own state: dotfiles.conf -> dotfiles.lock, and
+// dotfiles.<user>.conf -> dotfiles.<user>.lock. This prevents a per-machine
+// config from reusing (and clobbering) the default config's lock.
 func lockFilePath() (string, error) {
 	configPath, err := getConfigPath()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(filepath.Dir(configPath), "dotfiles.lock"), nil
+	return lockPathFor(configPath), nil
+}
+
+// lockPathFor maps a config path to its sibling lock file.
+func lockPathFor(configPath string) string {
+	base := filepath.Base(configPath)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	return filepath.Join(filepath.Dir(configPath), name+".lock")
 }
 
 func legacyLockPaths() []string {

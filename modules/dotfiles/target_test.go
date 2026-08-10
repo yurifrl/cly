@@ -111,3 +111,15 @@ func TestGetConfigPathPrefersPerUser(t *testing.T) {
 		t.Fatalf("per-user filename = %q, want %q", got, want)
 	}
 }
+
+func TestLockPathFor(t *testing.T) {
+	cases := map[string]string{
+		"/d/dotfiles.conf":                  "/d/dotfiles.lock",
+		"/d/dotfiles.yuri-workstation.conf": "/d/dotfiles.yuri-workstation.lock",
+	}
+	for in, want := range cases {
+		if got := lockPathFor(in); got != want {
+			t.Fatalf("lockPathFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
