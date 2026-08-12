@@ -26,7 +26,6 @@ import (
 	"github.com/yurifrl/cly/modules/notify"
 	"github.com/yurifrl/cly/modules/piwrap"
 	"github.com/yurifrl/cly/modules/obsidian-tools"
-	"github.com/yurifrl/cly/modules/scraper/cmd"
 	"github.com/yurifrl/cly/modules/statusline"
 	"github.com/yurifrl/cly/modules/update"
 	"github.com/yurifrl/cly/modules/uuid"
@@ -100,7 +99,6 @@ func init() {
 	oi.Register(RootCmd)
 	skills.Register(RootCmd)
 	zs.Register(RootCmd)
-	cmd.Register(RootCmd)
 }
 
 func Execute() error {

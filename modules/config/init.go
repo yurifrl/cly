@@ -116,20 +116,6 @@ modules:
     # GCS bucket for backups (configure in config.local.yaml)
     gcs_bucket: ""
     show_skipped: false
-  scraper:
-    aliexpress:
-      browser:
-        headless: false
-        debug_port: 9222
-        user_data_dir: ~/.cly/scraper/chrome
-        timeout: 60s
-        wait_time: 15s
-      reviews_count: 20
-      filter_reviews_by: "all"
-      output_mode: "single"
-      output_dir: "./scraped"
-      delay_between_products: 5s
-      max_retries: 3
 `
 
 	if err := os.WriteFile(configPath, []byte(defaultContent), 0644); err != nil {

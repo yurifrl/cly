@@ -6,7 +6,6 @@ Modular Go CLI for day-to-day utilities with beautiful TUI interfaces powered by
 
 - **Claude Code Statusline** - Context window, model, cost display for Claude Code sessions
 - **UUID Generator** - Interactive UUID generation (v4, v7, multiple)
-- **AliExpress Scraper** - Browser automation for product data extraction
 - **48 TUI Demos** - Complete Bubbletea component showcase
 - **Modular Architecture** - Zero-coupling design, easy to extend
 - **Single Binary** - No runtime dependencies
@@ -43,17 +42,6 @@ cly uuid
 # Interactive selection: v4 (random), v7 (time-ordered), multiple (5x)
 ```
 
-### AliExpress Scraper
-```bash
-# Launch persistent browser (solve CAPTCHA once)
-cly scraper browser
-
-# In another terminal, scrape products
-cly scraper aliexpress --url 1005003618976317
-cly scraper aliexpress --url "1005003618976317,1005010081760632"
-cly scraper aliexpress -f products.txt
-```
-
 ### TUI Component Demos
 ```bash
 cly demo --help           # List all 48 demos
@@ -72,9 +60,6 @@ cly demo file-picker      # File picker
 | Command | Description |
 |---------|-------------|
 | `uuid` | Generate UUIDs interactively (v4, v7, multiple) |
-| `scraper` | Web scraping with browser automation |
-| `scraper browser` | Launch persistent browser for scraping |
-| `scraper aliexpress` | Scrape AliExpress product data |
 | `skills install [name...]` | Install cly-bundled AI agent skills (default `~/.agents/skills/`). Cherry-pick by name; default is all. |
 | `pi extensions install` | Install cly-bundled pi extensions (default `~/.pi/agent/extensions/`). Currently ships `pi-cly` with a `/save` slash command. |
 
