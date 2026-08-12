@@ -18,21 +18,25 @@
 // Config layout:
 //
 //   ai:
-//     provider: anthropic
-//     providers:
-//       anthropic:
-//         model: claude-sonnet-4-5-20250929
-//         api_key: $ANTHROPIC_API_KEY    # literal or $ENV / ${ENV}
-//       openai:
-//         model: gpt-4o-mini
-//         api_key: $OPENAI_API_KEY
-//       openrouter:                      # OpenAI-compatible gateway
-//         model: anthropic/claude-3.5-sonnet
-//         api_key: $OPENROUTER_API_KEY
-//         # base_url defaults to https://openrouter.ai/api/v1
-//       bedrock:                         # Anthropic models via AWS Bedrock
+//     providers:                          # list of named entries; first condition
+//       - name: aihub                     # match (highest weight, ties by list
+//         provider: openai                # order) wins; else `default: true`;
+//         base_url: https://gw.example/v1 # else first entry
+//         api_key: $AIHUB_API_KEY         # literal or $ENV / ${ENV}
+//         model: aihub/claude-sonnet-5
+//         weight: 10                      # optional, default 0
+//         condition: 'user == "yuri" && dir =~ "~/Workdir/Yuri/*"'
+//         default: true                   # fallback when no condition matches
+//       - name: bedrock                   # Anthropic models via AWS Bedrock
+//         provider: bedrock
 //         model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
 //         # no api_key: auth uses AWS_BEARER_TOKEN_BEDROCK or AWS creds/profile
+//
+// Condition fields: user, host, arch, os, dir, env.NAME. Operators:
+// ==, !=, =~ (glob), !~, &&, ||, !, parens. Bare field = truthy when set.
+// Selection context and per-entry results are recorded in a Decision
+// (LastDecision); with app.debug on, the pick and full table are logged
+// to stderr once per process.
 //
 //   modules:
 //     commit:
@@ -47,8 +51,10 @@ package ai
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/llm"
@@ -99,33 +105,52 @@ func LoadConfigWith(override map[string]interface{}) *Resolved {
 	return resolve(pkgconfig.Get().AI, override)
 }
 
-func resolve(global, override map[string]interface{}) *Resolved {
+var (
+	lastDecision *Decision
+	lastSelErr   error
+	loggedOnce   sync.Once
+)
+
+// LastDecision returns the most recent provider selection record, or nil
+// if no selection has run yet this process.
+func LastDecision() *Decision { return lastDecision }
+
+// LastSelectionError returns the most recent resolution error, or nil.
+func LastSelectionError() error { return lastSelErr }
+
+// resolveE is resolve with an error return for paths that surface config
+// problems (NewClientWith, cly ai status).
+func resolveE(global, override map[string]interface{}) (*Resolved, error) {
+	if global == nil {
+		return &Resolved{
+			Provider:  defaultProvider,
+			Model:     defaultModel,
+			APIKeyEnv: defaultAPIKeyEnv,
+			Enabled:   true,
+		}, nil
+	}
+	entries, err := parseProviders(global)
+	if err != nil {
+		lastSelErr = err
+		return nil, err
+	}
+	entry, decision := selectProvider(entries, buildContext())
+	lastDecision = decision
+	lastSelErr = nil
+	logSelection(decision, entry)
+
 	r := &Resolved{
-		Provider:  defaultProvider,
-		Model:     defaultModel,
-		APIKey:    "",
-		APIKeyEnv: defaultAPIKeyEnv,
+		Provider:  entry.Provider,
+		Model:     entry.Model,
+		APIKey:    entry.APIKey,
+		APIKeyEnv: entry.APIKeyEnv,
+		BaseURL:   entry.BaseURL,
 		Enabled:   true,
 	}
 
-	// Layer 1: global `ai:` block.
-	if global != nil {
-		if v, ok := global["provider"].(string); ok && v != "" {
-			r.Provider = v
-		}
-		if pmap, ok := descendMap(global, "providers", r.Provider); ok {
-			applyProviderBlock(pmap, r)
-		}
-	}
-	if r.APIKey == "" && r.APIKeyEnv == defaultAPIKeyEnv {
-		if env, ok := providerEnv[r.Provider]; ok {
-			r.APIKeyEnv = env
-		}
-	}
-
-	// Layer 2: caller-supplied override block. The override may switch
-	// the active provider; if so, re-base from that provider's defaults
-	// before applying the override's own model/api_key fields.
+	// Override layer: may switch the active provider type; if so, re-base
+	// from the first entry of that type before applying the override's own
+	// model/api_key fields.
 	if override != nil {
 		if v, ok := override["enabled"].(bool); ok {
 			r.Enabled = v
@@ -134,38 +159,58 @@ func resolve(global, override map[string]interface{}) *Resolved {
 			r.Provider = v
 			r.APIKey = ""
 			r.APIKeyEnv = providerEnv[v]
-			if r.APIKeyEnv == "" {
-				r.APIKeyEnv = defaultAPIKeyEnv
-			}
-			if global != nil {
-				if pmap, ok := descendMap(global, "providers", v); ok {
-					applyProviderBlock(pmap, r)
+			r.BaseURL = ""
+			for _, e := range entries {
+				if e.Provider == v {
+					r.Model = e.Model
+					r.APIKey = e.APIKey
+					r.APIKeyEnv = e.APIKeyEnv
+					r.BaseURL = e.BaseURL
+					break
 				}
 			}
 		}
 		applyOverrideBlock(override, r)
 	}
-
 	if !r.Enabled {
-		return nil
+		return nil, nil
 	}
+	return r, nil
+}
+
+// resolve keeps the historical signature: nil on error or disabled.
+// The error is retrievable via LastSelectionError.
+func resolve(global, override map[string]interface{}) *Resolved {
+	r, _ := resolveE(global, override)
 	return r
 }
 
-func applyProviderBlock(p map[string]interface{}, r *Resolved) {
-	if v, ok := p["model"].(string); ok && v != "" {
-		r.Model = v
+// logSelection prints the selection one-liner plus the full decision table
+// to stderr when app.debug is on. Logged once per process: the context and
+// entries can't change between selections in a single run.
+func logSelection(d *Decision, picked Entry) {
+	if !pkgconfig.Get().App.Debug {
+		return
 	}
-	if v, ok := p["base_url"].(string); ok && v != "" {
-		r.BaseURL = v
+	loggedOnce.Do(func() {
+		w := os.Stderr
+		fmt.Fprintf(w, "ai: picked provider %q (%s, weight %d)\n", picked.Name, d.Reason, picked.Weight)
+		fmt.Fprintf(w, "ai: context: user=%s host=%s arch=%s os=%s dir=%s\n",
+			d.Context.User, d.Context.Host, d.Context.Arch, d.Context.OS, d.Context.Dir)
+		for name, set := range d.EnvRefs {
+			fmt.Fprintf(w, "ai: context: env.%s=%s\n", name, setUnset(set))
+		}
+		for _, e := range d.Entries {
+			fmt.Fprintf(w, "ai:   %-20s matched=%-5v weight=%d %s\n", e.Name, e.Matched, e.Weight, e.Note)
+		}
+	})
+}
+
+func setUnset(b bool) string {
+	if b {
+		return "(set)"
 	}
-	if v, ok := p["api_key"].(string); ok && v != "" {
-		setKeyOrEnv(v, r)
-	}
-	if v, ok := p["api_key_env"].(string); ok && v != "" {
-		r.APIKey = ""
-		r.APIKeyEnv = v
-	}
+	return "(unset)"
 }
 
 func applyOverrideBlock(o map[string]interface{}, r *Resolved) {
@@ -201,18 +246,6 @@ func setKeyOrEnv(s string, r *Resolved) {
 	}
 }
 
-func descendMap(m map[string]interface{}, path ...string) (map[string]interface{}, bool) {
-	cur := m
-	for _, p := range path {
-		next, ok := cur[p].(map[string]interface{})
-		if !ok {
-			return nil, false
-		}
-		cur = next
-	}
-	return cur, true
-}
-
 // NewClient builds the LLM client from the global config alone.
 func NewClient() (llm.Client, error) {
 	return NewClientWith(nil)
@@ -222,7 +255,10 @@ func NewClient() (llm.Client, error) {
 // optional per-caller override block. Returns (nil, nil) when AI is
 // disabled in the override (allowing modules to opt out).
 func NewClientWith(override map[string]interface{}) (llm.Client, error) {
-	r := LoadConfigWith(override)
+	r, err := resolveE(pkgconfig.Get().AI, override)
+	if err != nil {
+		return nil, err
+	}
 	if r == nil {
 		return nil, nil
 	}
