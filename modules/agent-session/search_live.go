@@ -7,17 +7,29 @@ import (
 	"sync"
 )
 
-// liveResult is the outcome of streaming an entire .jsonl file looking for
-// query matches. The hit count is exact; the snippet is a window centered
-// on the first hit.
+// Role filter values for search.
+const (
+	roleAll       = "all"
+	roleUser      = "user"
+	roleAssistant = "assistant"
+)
+
+// roleMatches reports whether a message role passes the filter.
+func roleMatches(filter, role string) bool {
+	return filter == "" || filter == roleAll || filter == role
+}
+
+// liveResult is the outcome of streaming an entire .jsonl file. Hits is the
+// positive-term occurrence count in the (role-filtered) body; seen records
+// which query terms appeared in that body.
 type liveResult struct {
 	Hits    int
 	Snippet string
+	seen    map[string]bool
 }
 
-// liveCache memoizes liveResult per (jsonl path, query) for the lifetime of
-// the TUI process so retyping the same query — or refining it without
-// changing the early prefix — does not redo I/O.
+// liveCache memoizes liveResult per (jsonl path, query+role) for the lifetime
+// of the TUI so retyping the same query does not redo I/O.
 type liveCache struct {
 	mu sync.RWMutex
 	m  map[string]liveResult
@@ -40,45 +52,177 @@ func (c *liveCache) put(path, q string, r liveResult) {
 	c.m[c.key(path, q)] = r
 }
 
-// liveScan streams the .jsonl file and returns the exact number of times
-// `query` (case-insensitive) appears anywhere in user/assistant message
-// content, plus a short snippet centered on the first hit. Stops reading
-// once the snippet is captured; counting continues to the end (cheap).
-func liveScan(path, query string) liveResult {
-	if query == "" {
-		return liveResult{}
-	}
-	q := strings.ToLower(query)
+// liveScan streams the whole .jsonl file (honoring the role filter): records
+// which query terms appear in the body, counts positive-term occurrences, and
+// captures a snippet centered on the first positive hit.
+func liveScan(path string, pq parsedQuery, role string) liveResult {
+	res := liveResult{seen: make(map[string]bool, len(pq.terms))}
 	f, err := os.Open(path)
 	if err != nil {
-		return liveResult{}
+		return res
 	}
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 
-	var (
-		hits    int
-		snippet string
-	)
 	for scanner.Scan() {
-		raw := scanner.Bytes()
-		role, text := parseJsonlMessage(raw)
-		if role == "" || text == "" {
+		msgRole, text := parseJsonlMessage(scanner.Bytes())
+		if msgRole == "" || text == "" || !roleMatches(role, msgRole) {
 			continue
 		}
 		lower := strings.ToLower(text)
-		if !strings.Contains(lower, q) {
-			continue
+		for _, t := range pq.terms {
+			if !res.seen[t] && strings.Contains(lower, t) {
+				res.seen[t] = true
+			}
 		}
-		hits += strings.Count(lower, q)
-		if snippet == "" {
-			idx := strings.Index(lower, q)
-			snippet = windowAround(text, idx, 140)
+		for _, t := range pq.positive {
+			n := strings.Count(lower, t)
+			if n == 0 {
+				continue
+			}
+			res.Hits += n
+			if res.Snippet == "" {
+				res.Snippet = windowAround(text, strings.Index(lower, t), 140)
+			}
 		}
 	}
-	return liveResult{Hits: hits, Snippet: snippet}
+	return res
+}
+
+// liveRank scans every session's full .jsonl file in parallel and keeps those
+// the boolean query matches. Body matching is complete (whole file, role
+// filtered); an all-roles search also matches session metadata, so it stays a
+// superset of the role-filtered searches. Results are cached per query+role.
+func liveRank(idx *searchIndex, cache *liveCache, query, providerFilter, folder, role string, sort SortMode, workers int) []candidate {
+	raw := strings.TrimSpace(query)
+	pq := parseQuery(raw)
+	if pq.empty() {
+		return rankLocal(idx, "", providerFilter, folder, sort)
+	}
+	if workers <= 0 {
+		workers = 16
+	}
+	cacheKey := raw + "|" + role
+	roleAny := role == "" || role == roleAll
+
+	type job struct{ s *indexedSession }
+	type result struct {
+		s    *indexedSession
+		live liveResult
+	}
+	jobs := make(chan job)
+	results := make(chan result)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				if r, ok := cache.get(j.s.JsonlPath, cacheKey); ok {
+					results <- result{s: j.s, live: r}
+					continue
+				}
+				r := liveScan(j.s.JsonlPath, pq, role)
+				cache.put(j.s.JsonlPath, cacheKey, r)
+				results <- result{s: j.s, live: r}
+			}
+		}()
+	}
+	go func() {
+		for _, s := range idx.Sessions {
+			if providerFilter != "" && providerFilter != "all" && s.Provider != providerFilter {
+				continue
+			}
+			if !matchFolder(s.Path, folder) {
+				continue
+			}
+			jobs <- job{s: s}
+		}
+		close(jobs)
+		wg.Wait()
+		close(results)
+	}()
+
+	var out []candidate
+	for r := range results {
+		s := r.s
+		// Only all-roles search consults metadata; a role filter is body-only.
+		meta := ""
+		if roleAny {
+			meta = strings.ToLower(s.Name + " " + s.Description + " " + s.Path + " " + s.Provider)
+		}
+		present := func(field, term string) bool {
+			switch field {
+			case "name":
+				return strings.Contains(strings.ToLower(s.Name), term)
+			case "desc", "description":
+				return strings.Contains(strings.ToLower(s.Description), term)
+			case "path", "folder", "dir":
+				return strings.Contains(strings.ToLower(s.Path), term)
+			case "provider":
+				return strings.Contains(strings.ToLower(s.Provider), term)
+			default:
+				return r.live.seen[term] || (meta != "" && strings.Contains(meta, term))
+			}
+		}
+		if !pq.evalMatch(present) {
+			continue
+		}
+		metaHits := 0
+		if meta != "" {
+			for _, t := range pq.positive {
+				metaHits += strings.Count(meta, t)
+			}
+		}
+		out = append(out, candidate{
+			Session: s,
+			Score:   float64(r.live.Hits) + float64(metaHits)*1.5,
+			Hits:    r.live.Hits + metaHits,
+			Source:  "live",
+			Snippet: r.live.Snippet,
+		})
+	}
+	sortCandidates(out, sort)
+	return out
+}
+
+// allMatchSnippets streams the selected session's .jsonl file and returns up
+// to `max` windowed snippets (role-prefixed) around lines that contain any
+// positive term. Used on demand when the user expands a result (tab).
+func allMatchSnippets(path string, pq parsedQuery, role string, max int) []string {
+	if len(pq.positive) == 0 || max <= 0 {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+
+	var out []string
+	for scanner.Scan() && len(out) < max {
+		msgRole, text := parseJsonlMessage(scanner.Bytes())
+		if msgRole == "" || text == "" || !roleMatches(role, msgRole) {
+			continue
+		}
+		lower := strings.ToLower(text)
+		first := -1
+		for _, t := range pq.positive {
+			if idx := strings.Index(lower, t); idx >= 0 && (first < 0 || idx < first) {
+				first = idx
+			}
+		}
+		if first < 0 {
+			continue
+		}
+		out = append(out, msgRole+": "+windowAround(text, first, 160))
+	}
+	return out
 }
 
 func windowAround(s string, hit, width int) string {
@@ -107,84 +251,11 @@ func windowAround(s string, hit, width int) string {
 	return out
 }
 
-// liveRank is the live-grep counterpart to rankLocal. It scans every
-// indexed session's .jsonl file in parallel, returns candidates with at
-// least one hit, and uses the per-file cache to avoid re-reading on
-// repeated queries (e.g. as the user keeps typing).
-//
-// providerFilter behaves the same as rankLocal. Sort comes from the same
-// SortMode set.
-func liveRank(idx *searchIndex, cache *liveCache, query, providerFilter string, sort SortMode, workers int) []candidate {
-	q := strings.TrimSpace(query)
-	if q == "" {
-		// No query → fall back to the cheap metadata ranker so the user
-		// sees a sensible default list without paying for any I/O.
-		return rankLocal(idx, "", providerFilter, sort)
+// matchFolder reports whether a session path is inside the folder filter.
+// Empty folder means "global" (match everything).
+func matchFolder(sessionPath, folder string) bool {
+	if folder == "" {
+		return true
 	}
-	if workers <= 0 {
-		workers = 16
-	}
-
-	type job struct{ s *indexedSession }
-	type result struct {
-		s     *indexedSession
-		live  liveResult
-		score float64
-	}
-
-	jobs := make(chan job)
-	results := make(chan result)
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := range jobs {
-				if r, ok := cache.get(j.s.JsonlPath, q); ok {
-					results <- result{s: j.s, live: r}
-					continue
-				}
-				r := liveScan(j.s.JsonlPath, q)
-				cache.put(j.s.JsonlPath, q, r)
-				results <- result{s: j.s, live: r}
-			}
-		}()
-	}
-
-	go func() {
-		for _, s := range idx.Sessions {
-			if providerFilter != "" && providerFilter != "all" && s.Provider != providerFilter {
-				continue
-			}
-			jobs <- job{s: s}
-		}
-		close(jobs)
-		wg.Wait()
-		close(results)
-	}()
-
-	var out []candidate
-	for r := range results {
-		// Combine body hits with cheap metadata hits so name/path matches
-		// still rank high even when body has nothing.
-		_, metaHits := scoreSession(r.s, strings.ToLower(q))
-		// metaHits double-counts body bytes from the cached excerpt, but
-		// that excerpt is now small / disposable; what matters is that
-		// metadata-only matches survive.
-		bodyHits := r.live.Hits
-		total := metaHits + bodyHits
-		if total == 0 {
-			continue
-		}
-		score := float64(bodyHits) + float64(metaHits)*1.5
-		out = append(out, candidate{
-			Session: r.s,
-			Score:   score,
-			Hits:    total,
-			Source:  "live",
-			Snippet: r.live.Snippet,
-		})
-	}
-	sortCandidates(out, sort)
-	return out
+	return sessionPath == folder || strings.HasPrefix(sessionPath, folder+"/")
 }

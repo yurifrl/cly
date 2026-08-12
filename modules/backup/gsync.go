@@ -21,6 +21,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/pkg/style"
@@ -242,6 +243,7 @@ type folderLineMsg struct {
 	idx  int
 	op   operationType
 	file string // relative path, only for uploads
+	size int64  // bytes, only for uploads
 }
 type folderDoneMsg struct {
 	idx int
@@ -368,7 +370,7 @@ func syncFolder(ctx context.Context, p *tea.Program, idx int, bkt *storage.Bucke
 			mu.Lock()
 			res.uploaded++
 			mu.Unlock()
-			p.Send(folderLineMsg{idx: idx, op: opUpload, file: display})
+			p.Send(folderLineMsg{idx: idx, op: opUpload, file: display, size: j.info.Size()})
 		}(j)
 	}
 	wg.Wait()
@@ -451,7 +453,25 @@ type gsyncModel struct {
 	totalErr  int
 
 	recentDone []string // completed file paths (folder-prefixed), newest appended last
+	totalBytes int64
+
+	mode           int // modeSync | modeReport
+	reportMD       string
+	reportRendered string
+	reportWidth    int
 }
+
+const (
+	modeSync = iota
+	modeReport
+)
+
+// GCS US pricing (approx, USD): Class A (uploads) and Class B (metadata reads).
+const (
+	costClassA    = 0.005 / 1000  // per operation
+	costClassB    = 0.0004 / 1000 // per operation
+	costStorageGB = 0.02          // per GB-month
+)
 
 var (
 	gsHeader  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
@@ -488,7 +508,22 @@ func (m gsyncModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "ctrl+c", "q", "esc":
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "tab", "r", "s", "left", "right":
+			if m.reportMD != "" {
+				if msg.String() == "s" {
+					m.mode = modeSync
+				} else if msg.String() == "r" {
+					m.mode = modeReport
+				} else {
+					m.mode = 1 - m.mode
+				}
+				m.refreshViewport()
+				m.viewport.GotoTop()
+				return m, nil
+			}
+		case "esc":
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:
@@ -507,6 +542,9 @@ func (m gsyncModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progress.SetWidth(min(40, msg.Width-30))
 		m.refreshViewport()
 	case spinner.TickMsg:
+		if m.finished {
+			return m, nil // stop the tick loop once done
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		m.refreshViewport()
@@ -523,6 +561,7 @@ func (m gsyncModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case opUpload:
 			f.uploaded++
 			m.totalUp++
+			m.totalBytes += msg.size
 			if msg.file != "" {
 				f.current = append(f.current, msg.file)
 				if len(f.current) > 3 {
@@ -553,6 +592,9 @@ func (m gsyncModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case allDoneMsg:
 		m.finished = true
 		m.reportPath = msg.reportPath
+		if data, err := os.ReadFile(msg.reportPath); err == nil {
+			m.reportMD = string(data)
+		}
 		m.refreshViewport()
 		return m, nil
 	}
@@ -571,7 +613,31 @@ func (m *gsyncModel) refreshViewport() {
 	if !m.ready {
 		return
 	}
+	if m.mode == modeReport && m.reportMD != "" {
+		w := m.viewport.Width()
+		if m.reportRendered == "" || m.reportWidth != w {
+			m.reportRendered = renderMarkdown(m.reportMD, w)
+			m.reportWidth = w
+		}
+		m.viewport.SetContent(m.reportRendered)
+		return
+	}
 	m.viewport.SetContent(m.bodyContent())
+}
+
+func renderMarkdown(md string, width int) string {
+	if width < 20 {
+		width = 20
+	}
+	r, err := glamour.NewTermRenderer(glamour.WithEnvironmentConfig(), glamour.WithWordWrap(width-2))
+	if err != nil {
+		return md
+	}
+	out, err := r.Render(md)
+	if err != nil {
+		return md
+	}
+	return out
 }
 
 func (m gsyncModel) doneCount() int {
@@ -691,15 +757,52 @@ func (m gsyncModel) View() tea.View {
 		gsNameDim.Render(fmt.Sprintf("%d/%d folders", m.doneCount(), totalFolders)),
 		gsNameDim.Render(elapsed(m.startedAt)))
 
+	classA := m.totalUp
+	classB := processed // one Attrs lookup per processed file
+	opCost := float64(classA)*costClassA + float64(classB)*costClassB
+	uploadedGB := float64(m.totalBytes) / (1 << 30)
+	costLine := gsNameDim.Render(fmt.Sprintf("%s up · ~$%.4f ops · +$%.4f/mo storage",
+		humanBytes(m.totalBytes), opCost, uploadedGB*costStorageGB))
+
+	tabs := m.renderTabs()
+
 	foot := gsNameDim.Render("↑↓/mouse scroll · q quit")
 	if m.finished && m.reportPath != "" {
-		foot = gsNameDim.Render("↑↓ scroll · q quit · report → " + m.reportPath)
+		foot = gsNameDim.Render("tab report · ↑↓ scroll · q quit · " + m.reportPath)
 	} else {
 		foot += gsNameDim.Render(fmt.Sprintf("   ·   %d↑ %d⏭ %d✗", m.totalUp, m.totalSkip, m.totalErr))
 	}
 
-	v.SetContent(head + "\n" + bar + "\n\n" + m.viewport.View() + "\n" + foot)
+	v.SetContent(head + "\n" + bar + "\n" + tabs + "\n" + m.viewport.View() + "\n" + costLine + "\n" + foot)
 	return v
+}
+
+func (m gsyncModel) renderTabs() string {
+	active := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	inactive := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	syncTab, repTab := inactive.Render("Sync"), inactive.Render("Report")
+	if m.mode == modeSync {
+		syncTab = active.Render("Sync")
+	}
+	if m.reportMD == "" {
+		repTab = inactive.Render("Report (pending)")
+	} else if m.mode == modeReport {
+		repTab = active.Render("Report")
+	}
+	return syncTab + inactive.Render("  │  ") + repTab
+}
+
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func elapsed(start time.Time) string {

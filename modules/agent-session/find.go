@@ -39,7 +39,7 @@ func findSessionCmd() *cobra.Command {
 				if id != query && !strings.HasPrefix(id, query) {
 					continue
 				}
-				firstMsg, _ := extractExcerpt(f.Path)
+				firstMsg, _, _ := extractExcerpt(f.Path)
 				fs := foundSession{
 					ID:           id,
 					Provider:     f.Provider,

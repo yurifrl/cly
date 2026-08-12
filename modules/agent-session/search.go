@@ -3,10 +3,12 @@ package agentsession
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/pkg/ai"
+	"github.com/yurifrl/cly/pkg/config"
 )
 
 // searchCmd registers `cly agent-session search [query]`. It opens an
@@ -33,6 +35,20 @@ re-ranked by the model — without ever sending full session content.`,
 			useAI, _ := cmd.Flags().GetBool("ai")
 			refresh, _ := cmd.Flags().GetBool("refresh")
 			provider, _ := cmd.Flags().GetString(providerFlag)
+			folderFlag, _ := cmd.Flags().GetString("folder")
+
+			prefs := loadSearchPrefs()
+			cwd, _ := os.Getwd()
+			// Folder: explicit flag wins; otherwise fall back to the persisted
+			// scope preference (current dir vs global).
+			folder := resolveFolder(folderFlag, cwd)
+			if !cmd.Flags().Changed("folder") && config.GetBool(prefFolderScope) {
+				folder = cwd
+			}
+			// AI: explicit flag wins; otherwise use the persisted preference.
+			if !cmd.Flags().Changed("ai") {
+				useAI = config.GetBool(prefAI)
+			}
 
 			catalog, err := Load(filePathFn())
 			if err != nil {
@@ -57,7 +73,7 @@ re-ranked by the model — without ever sending full session content.`,
 
 			aiOn := useAI && ai.HasAPIKeyFor("agent_session.search")
 
-			chosen, err := runSearchTUI(idx, provider, query, aiOn)
+			chosen, err := runSearchTUI(idx, provider, folder, cwd, query, aiOn, prefs)
 			if err != nil {
 				return err
 			}
@@ -84,5 +100,21 @@ re-ranked by the model — without ever sending full session content.`,
 	}
 	cmd.Flags().Bool("ai", false, "Enable LLM re-rank (off by default; uses configured LLM)")
 	cmd.Flags().Bool("refresh", false, "Force a full re-scan of session files (ignore cache)")
+	cmd.Flags().StringP("folder", "f", "", "Limit search to sessions under a folder (\".\" = current dir; empty = global)")
 	return cmd
+}
+
+// resolveFolder maps the --folder flag to an absolute path filter. "" stays
+// global, "." (or any relative path) resolves against cwd.
+func resolveFolder(flag, cwd string) string {
+	if flag == "" {
+		return ""
+	}
+	if flag == "." {
+		return cwd
+	}
+	if filepath.IsAbs(flag) {
+		return filepath.Clean(flag)
+	}
+	return filepath.Join(cwd, flag)
 }

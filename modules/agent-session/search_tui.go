@@ -3,83 +3,13 @@ package agentsession
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
-
-type searchItem struct {
-	cand candidate
-}
-
-func (i searchItem) FilterValue() string {
-	return i.cand.Session.Name + " " + i.cand.Session.Description
-}
-
-type searchDelegate struct{ query string }
-
-func (d searchDelegate) Height() int                             { return 3 }
-func (d searchDelegate) Spacing() int                            { return 1 }
-func (d searchDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
-func (d searchDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	it, ok := listItem.(searchItem)
-	if !ok {
-		return
-	}
-	s := it.cand.Session
-	date := sessionDate(s).Format("2006-01-02 15:04")
-	header := fmt.Sprintf("%s · %s · %s",
-		date,
-		s.Provider,
-		shortPathSearch(s.Path),
-	)
-	name := s.Name
-	if name == "" {
-		name = synthName(s)
-	}
-	desc := s.Description
-	if it.cand.Snippet != "" {
-		desc = it.cand.Snippet
-	} else if desc == "" {
-		desc = bestSnippet(s, d.query, 140)
-	}
-	if it.cand.Why != "" {
-		desc = it.cand.Why
-	}
-
-	hitLabel := ""
-	switch {
-	case it.cand.Source == "ai":
-		hitLabel = fmt.Sprintf("ai %.2f", it.cand.Score)
-	case it.cand.Hits > 0:
-		word := "hit"
-		if it.cand.Hits != 1 {
-			word = "hits"
-		}
-		hitLabel = fmt.Sprintf("%d %s", it.cand.Hits, word)
-	}
-	hitStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(hitLabel)
-
-	cursor := "  "
-	titleStyle := lipgloss.NewStyle()
-	if index == m.Index() {
-		cursor = "▶ "
-		titleStyle = titleStyle.Bold(true).Foreground(lipgloss.Color("212"))
-	}
-	name = highlightMatches(name, d.query, titleStyle)
-	desc = highlightMatches(truncateText(desc, 140), d.query,
-		lipgloss.NewStyle().Foreground(lipgloss.Color("248")))
-	header = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(header)
-
-	fmt.Fprintf(w, "%s%s  %s\n", cursor, name, hitStyled)
-	fmt.Fprintf(w, "    %s\n", header)
-	fmt.Fprintf(w, "    %s", desc)
-}
 
 // highlightMatches wraps every case-insensitive occurrence of `query`
 // (or any whitespace-separated token of it) in `s` with an emphasis style.
@@ -161,7 +91,7 @@ type hlSpan = struct{ start, end int }
 // centered on the first occurrence of any query token, so the user sees
 // CONTEXT around the match instead of always the start of the conversation.
 func bestSnippet(s *indexedSession, query string, width int) string {
-	source := s.SearchableText
+	source := s.roleBody(roleAll)
 	if source == "" {
 		source = s.FirstUserMsg
 	}
@@ -240,19 +170,35 @@ func shortPathSearch(p string) string {
 }
 
 type searchModel struct {
-	idx       *searchIndex
-	provider  string
-	query     textinput.Model
-	list      list.Model
-	results   []candidate
-	aiOn      bool
-	aiStatus  string
-	sort      SortMode
-	live      *liveCache
-	chosen    *indexedSession
-	quit      bool
-	width     int
-	height    int
+	idx      *searchIndex
+	provider string
+	query    textinput.Model
+	results  []candidate
+	cursor   int // selected result index
+	offset   int // first visible result index (scroll)
+	aiOn     bool
+	aiStatus string
+	sort     SortMode
+	role     string // "all" | "user" | "assistant"
+	live     *liveCache
+	chosen   *indexedSession
+	quit     bool
+	width    int
+	height   int
+
+	folder   string // active folder filter ("" = global)
+	cwd      string // resolved cwd, target of the folder toggle
+	gen      int    // query generation; stale async scans are discarded
+	scanning bool
+	detail   []string // expanded match snippets for the current item
+	detailID string   // session ID whose occurrences are expanded
+	showHelp bool     // syntax help overlay toggled with F1
+
+	allResults []candidate // full ranked set before the no-path filter
+	hidden     int         // count filtered out for having no path
+	showHidden bool        // include no-path sessions (ctrl+h)
+	scanStart  time.Time   // when the current scan began (for elapsed)
+	spinner    int         // spinner frame while scanning
 }
 
 type rerankDoneMsg struct {
@@ -260,32 +206,38 @@ type rerankDoneMsg struct {
 	status  string
 }
 
-func newSearchModel(idx *searchIndex, providerFilter, initial string, aiOn bool) searchModel {
+// searchDoneMsg carries the result of a debounced async scan. Applied only
+// if gen still matches the model's current generation.
+type searchDoneMsg struct {
+	gen     int
+	results []candidate
+}
+
+// debounceMsg fires after the typing pause; triggers the async scan.
+type debounceMsg struct{ gen int }
+
+// spinnerMsg animates the scanning indicator while a scan runs.
+type spinnerMsg struct{ gen int }
+
+func newSearchModel(idx *searchIndex, providerFilter, folder, cwd, initial string, aiOn bool, prefs searchPrefs) searchModel {
 	ti := textinput.New()
-	ti.Placeholder = "search sessions (try: backups, jsonc, dotfiles, fish completions)"
+	ti.Placeholder = "search (AND OR NOT \"phrase\" (group) field:val · F1 for help)"
 	ti.SetValue(initial)
 	ti.Focus()
-
-	delegate := searchDelegate{query: initial}
-	l := list.New(nil, delegate, 0, 0)
-	l.SetShowTitle(false)
-	l.SetShowStatusBar(false)
-	l.SetShowFilter(false)
-	l.SetShowHelp(false)
-	l.SetFilteringEnabled(false)
 
 	m := searchModel{
 		idx:      idx,
 		provider: providerFilter,
 		query:    ti,
-		list:     l,
 		aiOn:     aiOn,
 		aiStatus: aiStatusInitial(aiOn),
-		sort:     SortByDate,
+		sort:     prefs.sort,
+		role:     prefs.role,
 		live:     newLiveCache(),
+		folder:   folder,
+		cwd:      cwd,
 	}
-	m.results = m.runRank(initial)
-	m.applyResults(m.results)
+	m.applyResults(m.runRank(initial))
 	return m
 }
 
@@ -294,9 +246,14 @@ func newSearchModel(idx *searchIndex, providerFilter, initial string, aiOn bool)
 // across all .jsonl files (cached per query so retyping is instant).
 func (m searchModel) runRank(query string) []candidate {
 	if strings.TrimSpace(query) == "" {
-		return rankLocal(m.idx, "", m.provider, m.sort)
+		return rankLocal(m.idx, "", m.provider, m.folder, m.sort)
 	}
-	return liveRank(m.idx, m.live, query, m.provider, m.sort, 16)
+	pq := parseQuery(query)
+	if pq.empty() {
+		return rankLocal(m.idx, "", m.provider, m.folder, m.sort)
+	}
+	// Full-file scan (complete + consistent across roles), cached per query.
+	return liveRank(m.idx, m.live, query, m.provider, m.folder, m.role, m.sort, 16)
 }
 
 func aiStatusInitial(on bool) string {
@@ -306,12 +263,43 @@ func aiStatusInitial(on bool) string {
 	return "ai: idle"
 }
 
+// applyResults swaps in a new result set (applying the no-path filter) and
+// resets the cursor/scroll.
 func (m *searchModel) applyResults(cands []candidate) {
-	items := make([]list.Item, 0, len(cands))
-	for _, c := range cands {
-		items = append(items, searchItem{cand: c})
+	m.allResults = cands
+	m.rebuildVisible()
+	m.cursor = 0
+	m.offset = 0
+	m.detail = nil
+	m.detailID = ""
+}
+
+// rebuildVisible derives m.results from m.allResults, hiding sessions with no
+// path unless showHidden is set, and recording how many were hidden.
+func (m *searchModel) rebuildVisible() {
+	if m.showHidden {
+		m.results = m.allResults
+		m.hidden = 0
+		return
 	}
-	m.list.SetItems(items)
+	vis := make([]candidate, 0, len(m.allResults))
+	hidden := 0
+	for _, c := range m.allResults {
+		if strings.TrimSpace(c.Session.Path) == "" {
+			hidden++
+			continue
+		}
+		vis = append(vis, c)
+	}
+	m.results = vis
+	m.hidden = hidden
+}
+
+func (m *searchModel) selected() (candidate, bool) {
+	if m.cursor < 0 || m.cursor >= len(m.results) {
+		return candidate{}, false
+	}
+	return m.results[m.cursor], true
 }
 
 func (m searchModel) Init() tea.Cmd { return textinput.Blink }
@@ -321,31 +309,64 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetSize(msg.Width, msg.Height-6)
+		m.clampScroll()
 	case tea.KeyMsg:
+		if m.showHelp {
+			m.showHelp = false
+			return m, nil
+		}
 		switch msg.String() {
 		case "esc", "ctrl+c":
 			m.quit = true
 			return m, tea.Quit
+		case "f1":
+			m.showHelp = true
+			return m, nil
 		case "enter":
-			if it, ok := m.list.SelectedItem().(searchItem); ok {
-				m.chosen = it.cand.Session
+			if c, ok := m.selected(); ok {
+				m.chosen = c.Session
 				return m, tea.Quit
 			}
+		case "tab":
+			m.toggleExpand()
+			return m, nil
+		case "ctrl+f":
+			if m.folder == "" {
+				m.folder = m.cwd
+			} else {
+				m.folder = ""
+			}
+			saveFolderScope(m.folder != "")
+			m.applyResults(m.runRank(m.query.Value()))
+			return m, nil
+		case "ctrl+r":
+			m.role = nextRole(m.role)
+			saveRole(m.role)
+			m.applyResults(m.runRank(m.query.Value()))
+			return m, nil
+		case "ctrl+h":
+			m.showHidden = !m.showHidden
+			m.rebuildVisible()
+			m.cursor = 0
+			m.offset = 0
+			m.detail = nil
+			m.detailID = ""
+			return m, nil
 		case "ctrl+a":
 			m.aiOn = !m.aiOn
 			m.aiStatus = aiStatusInitial(m.aiOn)
+			saveAI(m.aiOn)
 			return m, m.scheduleRerank()
 		case "ctrl+s", "alt+s":
 			m.sort = m.sort.Next()
-			m.results = m.runRank(m.query.Value())
-			m.applyResults(m.results)
+			saveSort(m.sort)
+			m.applyResults(m.runRank(m.query.Value()))
 			return m, nil
 		case "down", "ctrl+n":
-			m.list.CursorDown()
+			m.moveCursor(1)
 			return m, nil
 		case "up", "ctrl+p":
-			m.list.CursorUp()
+			m.moveCursor(-1)
 			return m, nil
 		}
 	case rerankDoneMsg:
@@ -353,9 +374,33 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.aiStatus = msg.status
 		}
 		if len(msg.results) > 0 {
-			m.results = msg.results
-			m.applyResults(m.results)
+			m.applyResults(msg.results)
 		}
+	case debounceMsg:
+		if msg.gen != m.gen {
+			return m, nil // superseded by a newer keystroke
+		}
+		query := m.query.Value()
+		gen := m.gen
+		return m, func() tea.Msg {
+			return searchDoneMsg{gen: gen, results: m.runRank(query)}
+		}
+	case searchDoneMsg:
+		if msg.gen != m.gen {
+			return m, nil // stale scan; a newer query is in flight
+		}
+		m.scanning = false
+		m.applyResults(msg.results)
+		return m, m.scheduleRerank()
+	case spinnerMsg:
+		if msg.gen != m.gen || !m.scanning {
+			return m, nil
+		}
+		m.spinner++
+		gen := m.gen
+		return m, tea.Tick(90*time.Millisecond, func(time.Time) tea.Msg {
+			return spinnerMsg{gen: gen}
+		})
 	}
 
 	prev := m.query.Value()
@@ -363,12 +408,104 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.query, qcmd = m.query.Update(msg)
 	cmds := []tea.Cmd{qcmd}
 	if m.query.Value() != prev {
-		m.results = m.runRank(m.query.Value())
-		m.list.SetDelegate(searchDelegate{query: m.query.Value()})
-		m.applyResults(m.results)
-		cmds = append(cmds, m.scheduleRerank())
+		// Debounce: bump generation and schedule the (async) scan after a
+		// short pause. The scan never runs in Update, so typing never blocks.
+		m.gen++
+		m.scanning = true
+		m.scanStart = time.Now()
+		m.detail = nil
+		m.detailID = ""
+		gen := m.gen
+		cmds = append(cmds,
+			tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+				return debounceMsg{gen: gen}
+			}),
+			tea.Tick(90*time.Millisecond, func(time.Time) tea.Msg {
+				return spinnerMsg{gen: gen}
+			}),
+		)
 	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m *searchModel) moveCursor(delta int) {
+	if len(m.results) == 0 {
+		return
+	}
+	m.cursor += delta
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	if m.cursor >= len(m.results) {
+		m.cursor = len(m.results) - 1
+	}
+	// Expansion is tied to the focused item; collapse when moving away.
+	m.detail = nil
+	m.detailID = ""
+	m.clampScroll()
+}
+
+// toggleExpand loads (once) and toggles the extra match snippets for the
+// currently selected session. They render inline directly under the selected
+// item, in the same style as the result body, so the user sees other
+// occurrences of the searched terms in place.
+func (m *searchModel) toggleExpand() {
+	c, ok := m.selected()
+	if !ok {
+		return
+	}
+	id := c.Session.ID
+	if m.detailID == id {
+		m.detail = nil
+		m.detailID = ""
+		return
+	}
+	pq := parseQuery(m.query.Value())
+	snips := allMatchSnippets(c.Session.JsonlPath, pq, m.role, 8)
+	if len(snips) == 0 {
+		snips = []string{"(no other occurrences)"}
+	}
+	m.detail = snips
+	m.detailID = id
+	m.clampScroll()
+}
+
+// visibleRows is the number of terminal rows available for result lines
+// (everything except header, filters, query, blank, and help).
+func (m searchModel) visibleRows() int {
+	r := m.height - 5
+	if r < 3 {
+		r = 3
+	}
+	return r
+}
+
+// itemRows is the rendered height of result i (3 content lines + 1 spacer,
+// plus expanded occurrence lines when it is the focused/expanded item).
+func (m searchModel) itemRows(i int) int {
+	rows := 4
+	if i == m.cursor && m.detailID != "" {
+		rows += len(m.detail)
+	}
+	return rows
+}
+
+// clampScroll adjusts offset so the cursor item is fully visible.
+func (m *searchModel) clampScroll() {
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	}
+	avail := m.visibleRows()
+	for m.offset < m.cursor {
+		h := 0
+		for i := m.offset; i <= m.cursor; i++ {
+			h += m.itemRows(i)
+		}
+		if h <= avail {
+			break
+		}
+		m.offset++
+	}
 }
 
 func (m searchModel) scheduleRerank() tea.Cmd {
@@ -396,24 +533,164 @@ var (
 	searchHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 	searchHelpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	searchStatusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	searchDescStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
+	nameStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))  // cyan
+	nameSelStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")) // pink
+	hitsStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))            // orange
+	srDateStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))            // gray
+	pathStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))            // green
+	providerPiSt  = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))             // blue
+	providerClSt  = lipgloss.NewStyle().Foreground(lipgloss.Color("170"))            // purple
+	aiScoreStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("219"))            // magenta
 )
+
+// providerBadge renders an emoji + colored provider label.
+func providerBadge(p string) string {
+	switch p {
+	case "pi":
+		return providerPiSt.Render("pi")
+	case "claude":
+		return providerClSt.Render("claude")
+	default:
+		return searchStatusStyle.Render(p)
+	}
+}
+
+// renderCandidate returns the 3 styled lines for a single result.
+func renderCandidate(c candidate, hlQuery string, selected bool) []string {
+	s := c.Session
+	name := s.Name
+	if name == "" {
+		name = synthName(s)
+	}
+	desc := s.Description
+	if c.Snippet != "" {
+		desc = c.Snippet
+	} else if desc == "" {
+		desc = bestSnippet(s, hlQuery, 140)
+	}
+	if c.Why != "" {
+		desc = c.Why
+	}
+
+	hitLabel := ""
+	switch {
+	case c.Source == "ai":
+		hitLabel = aiScoreStyle.Render(fmt.Sprintf("✨ ai %.2f", c.Score))
+	case c.Hits > 0:
+		word := "hit"
+		if c.Hits != 1 {
+			word = "hits"
+		}
+		hitLabel = hitsStyle.Render(fmt.Sprintf("🎯 %d %s", c.Hits, word))
+	}
+
+	cursor := "  "
+	titleStyle := nameStyle
+	if selected {
+		cursor = "▶ "
+		titleStyle = nameSelStyle
+	}
+
+	meta := srDateStyle.Render("🕘 "+sessionDate(s).Format("2006-01-02 15:04")) +
+		"   " + providerBadge(s.Provider)
+	if p := strings.TrimSpace(s.Path); p != "" {
+		meta += "   " + pathStyle.Render("📁 "+shortPathSearch(p))
+	}
+
+	return []string{
+		fmt.Sprintf("%s%s  %s", cursor, highlightMatches(name, hlQuery, titleStyle), hitLabel),
+		"    " + meta,
+		"    " + highlightMatches(truncateText(desc, 140), hlQuery, searchDescStyle),
+	}
+}
 
 func (m searchModel) View() tea.View {
 	if m.quit {
 		return tea.View{}
 	}
+	if m.showHelp {
+		v := tea.NewView(m.helpView())
+		v.AltScreen = true
+		return v
+	}
+	scan := ""
+	if m.scanning {
+		frames := []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+		f := frames[m.spinner%len(frames)]
+		scan = hitsStyle.Render(fmt.Sprintf(" · %c searching… %.1fs", f, time.Since(m.scanStart).Seconds()))
+	}
+	hidden := ""
+	if m.hidden > 0 {
+		hidden = searchHelpStyle.Render(fmt.Sprintf("  ·  %d hidden (ctrl+h)", m.hidden))
+	}
 	header := searchHeaderStyle.Render("cly as search") + "  " +
 		searchStatusStyle.Render(fmt.Sprintf("%d results · sort: %s · %s",
-			len(m.results), m.sort.Label(), m.aiStatus))
-	q := m.query.View()
-	help := searchHelpStyle.Render("↑↓ nav   enter resume   ctrl+s sort   ctrl+a toggle ai   esc quit")
-	v := tea.NewView(strings.Join([]string{header, q, "", m.list.View(), help}, "\n"))
+			len(m.results), m.sort.Label(), m.aiStatus)) + scan + hidden
+	folderLabel := "global"
+	if m.folder != "" {
+		folderLabel = shortPathSearch(m.folder)
+	}
+	filters := searchStatusStyle.Render(fmt.Sprintf("filters: folder:%s  role:%s  provider:%s",
+		folderLabel, m.role, m.provider))
+	hlQuery := strings.Join(parseQuery(m.query.Value()).positive, " ")
+
+	// Render the visible window of results, inlining expanded occurrences
+	// directly under the focused item.
+	var body []string
+	rows := 0
+	avail := m.visibleRows()
+	for i := m.offset; i < len(m.results); i++ {
+		ih := m.itemRows(i)
+		if rows > 0 && rows+ih > avail {
+			break
+		}
+		body = append(body, renderCandidate(m.results[i], hlQuery, i == m.cursor)...)
+		if i == m.cursor && m.detailID != "" {
+			for _, snip := range m.detail {
+				body = append(body, "    "+highlightMatches(truncateText(snip, 160), hlQuery, searchDescStyle))
+			}
+		}
+		body = append(body, "") // spacer
+		rows += ih
+	}
+	if len(m.results) == 0 {
+		body = append(body, searchStatusStyle.Render("  no matches"))
+	}
+
+	help := searchHelpStyle.Render("↑↓ nav   enter resume   tab occurrences   ctrl+f folder   ctrl+r role   ctrl+s sort   ctrl+h hidden   ctrl+a ai   F1 syntax   esc quit")
+	parts := []string{header, filters, m.query.View(), "", strings.Join(body, "\n"), help}
+	v := tea.NewView(strings.Join(parts, "\n"))
 	v.AltScreen = true
 	return v
 }
 
-func runSearchTUI(idx *searchIndex, providerFilter, query string, aiOn bool) (*indexedSession, error) {
-	m := newSearchModel(idx, providerFilter, query, aiOn)
+// helpView renders the search syntax reference (Microsoft Purview Unified
+// Catalog syntax, plus `+`=AND and `|`=OR). Toggled with '?'.
+func (m searchModel) helpView() string {
+	title := searchHeaderStyle.Render("search syntax")
+	rows := [][2]string{
+		{"customer sales", "space = OR; more matches rank higher"},
+		{"customer AND sales", "both terms present  (also: customer + sales)"},
+		{"customer OR sales", "either term present  (also: customer | sales)"},
+		{"customer NOT draft", "first present, second absent"},
+		{`"sales report"`, "exact phrase, words in order"},
+		{"(a OR b) AND c", "parentheses control precedence"},
+		{"name:customer", "field-scoped: name, description, path, provider"},
+		{"*  or empty", "match all sessions"},
+	}
+	var b []string
+	b = append(b, title, "")
+	for _, r := range rows {
+		b = append(b, "  "+searchDescStyle.Render(fmt.Sprintf("%-22s", r[0]))+"  "+searchStatusStyle.Render(r[1]))
+	}
+	b = append(b, "", searchHelpStyle.Render("F1 toggles this · press any key to close"))
+	return strings.Join(b, "\n")
+}
+
+func runSearchTUI(idx *searchIndex, providerFilter, folder, cwd, query string, aiOn bool, prefs searchPrefs) (*indexedSession, error) {
+	m := newSearchModel(idx, providerFilter, folder, cwd, query, aiOn, prefs)
 	p := tea.NewProgram(m)
 	final, err := p.Run()
 	if err != nil {

@@ -54,11 +54,14 @@ func (m SortMode) Next() SortMode {
 // `sort` controls the final ordering; relevance still drives FILTERING (a
 // non-empty query keeps only candidates with at least one hit) but not
 // necessarily the order the user sees.
-func rankLocal(idx *searchIndex, query string, providerFilter string, sort SortMode) []candidate {
+func rankLocal(idx *searchIndex, query string, providerFilter, folder string, sort SortMode) []candidate {
 	q := strings.ToLower(strings.TrimSpace(query))
 	var out []candidate
 	for _, s := range idx.Sessions {
 		if providerFilter != "" && providerFilter != "all" && s.Provider != providerFilter {
+			continue
+		}
+		if !matchFolder(s.Path, folder) {
 			continue
 		}
 		score, hits := scoreSession(s, q)
@@ -126,14 +129,14 @@ func scoreSession(s *indexedSession, q string) (float64, int) {
 	hitsDesc := countAll(s.Description, q)
 	hitsPath := countAll(s.Path, q)
 	hitsFirst := countAll(s.FirstUserMsg, q)
-	hitsBody := countAll(s.SearchableText, q)
+	hitsBody := countAll(s.roleBody(roleAll), q)
 	total := hitsName + hitsDesc + hitsPath + hitsFirst + hitsBody
 	score := float64(hitsName)*3 + float64(hitsDesc)*2 + float64(hitsPath)*1.5 +
 		float64(hitsFirst)*1.5 + float64(hitsBody)*1.0
 
 	tokens := strings.Fields(q)
 	if len(tokens) > 1 {
-		all := strings.ToLower(s.Name + " " + s.Description + " " + s.SearchableText)
+		all := strings.ToLower(s.Name + " " + s.Description + " " + s.roleBody(roleAll))
 		hits := 0
 		for _, t := range tokens {
 			if t == "" {
@@ -194,7 +197,7 @@ func buildPayload(query string, cands []candidate) ([]byte, []candidate) {
 				Date:        s.SavedAt.Format("2006-01-02"),
 				Path:        s.Path,
 				Description: truncateText(s.Description, 200),
-				Snippet:     truncateText(firstNonEmpty(s.FirstUserMsg, s.SearchableText), snippet),
+				Snippet:     truncateText(firstNonEmpty(s.FirstUserMsg, s.roleBody(roleAll)), snippet),
 			})
 		}
 		data, err := json.Marshal(req)
@@ -331,4 +334,3 @@ func extractJSON(s string) string {
 // loadSearchAIConfig was a translation shim from `ai.Resolved` back to
 // `llm.Config`. Removed: callers now use `ai.NewClient` and `ai.HasAPIKey`
 // directly so we don't have two parallel ways to express the same thing.
-

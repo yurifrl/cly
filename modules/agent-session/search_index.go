@@ -11,16 +11,31 @@ import (
 )
 
 type indexedSession struct {
-	ID             string    `json:"id"`
-	Provider       string    `json:"provider"`
-	Path           string    `json:"path"`
-	Name           string    `json:"name,omitempty"`
-	Description    string    `json:"description,omitempty"`
-	JsonlPath      string    `json:"jsonl_path"`
-	JsonlMtime     time.Time `json:"jsonl_mtime"`
-	SavedAt        time.Time `json:"saved_at,omitempty"`
-	FirstUserMsg   string    `json:"first_user_msg,omitempty"`
-	SearchableText string    `json:"searchable_text,omitempty"`
+	ID            string    `json:"id"`
+	Provider      string    `json:"provider"`
+	Path          string    `json:"path"`
+	Name          string    `json:"name,omitempty"`
+	Description   string    `json:"description,omitempty"`
+	JsonlPath     string    `json:"jsonl_path"`
+	JsonlMtime    time.Time `json:"jsonl_mtime"`
+	SavedAt       time.Time `json:"saved_at,omitempty"`
+	FirstUserMsg  string    `json:"first_user_msg,omitempty"`
+	UserText      string    `json:"user_text,omitempty"`
+	AssistantText string    `json:"assistant_text,omitempty"`
+}
+
+// roleBody returns the indexed body text for a role filter. roleAll (or "")
+// concatenates both sides so an all-roles search is always a superset of the
+// role-filtered searches.
+func (s *indexedSession) roleBody(role string) string {
+	switch role {
+	case roleUser:
+		return s.FirstUserMsg + "\n" + s.UserText
+	case roleAssistant:
+		return s.AssistantText
+	default:
+		return s.FirstUserMsg + "\n" + s.UserText + "\n" + s.AssistantText
+	}
 }
 
 type searchIndex struct {
@@ -30,9 +45,10 @@ type searchIndex struct {
 }
 
 const (
-	searchIndexVersion     = 1
-	searchExcerptMaxBytes  = 5 * 1024
-	searchFirstMsgMaxBytes = 400
+	searchIndexVersion      = 2
+	searchUserMaxBytes      = 4 * 1024
+	searchAssistantMaxBytes = 12 * 1024
+	searchFirstMsgMaxBytes  = 400
 )
 
 func searchIndexPath() string {
@@ -146,7 +162,7 @@ func rebuildSearchIndex(idx *searchIndex, catalog Sessions) error {
 			entry.Path = cat.Path
 			entry.SavedAt = cat.SavedAt
 		}
-		entry.FirstUserMsg, entry.SearchableText = extractExcerpt(f.Path)
+		entry.FirstUserMsg, entry.UserText, entry.AssistantText = extractExcerpt(f.Path)
 		idx.Sessions[id] = entry
 	}
 
@@ -166,14 +182,14 @@ func extractIDFromJsonlPath(p string) string {
 	return base
 }
 
-func extractExcerpt(path string) (firstUser, searchable string) {
+func extractExcerpt(path string) (firstUser, userText, assistantText string) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	defer f.Close()
 
-	var blob strings.Builder
+	var userBlob, asstBlob strings.Builder
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1024*1024), 4*1024*1024)
 
@@ -186,18 +202,28 @@ func extractExcerpt(path string) (firstUser, searchable string) {
 		if role == "" || text == "" {
 			continue
 		}
-		if firstUser == "" && role == "user" {
-			firstUser = truncateText(text, searchFirstMsgMaxBytes)
+		switch role {
+		case "user":
+			if firstUser == "" {
+				firstUser = truncateText(text, searchFirstMsgMaxBytes)
+			}
+			if userBlob.Len() < searchUserMaxBytes {
+				userBlob.WriteString(text)
+				userBlob.WriteString("\n")
+			}
+		case "assistant":
+			if asstBlob.Len() < searchAssistantMaxBytes {
+				asstBlob.WriteString(text)
+				asstBlob.WriteString("\n")
+			}
 		}
-		if blob.Len() < searchExcerptMaxBytes {
-			blob.WriteString(text)
-			blob.WriteString("\n")
-		}
-		if blob.Len() >= searchExcerptMaxBytes {
+		if userBlob.Len() >= searchUserMaxBytes && asstBlob.Len() >= searchAssistantMaxBytes {
 			break
 		}
 	}
-	return firstUser, truncateText(blob.String(), searchExcerptMaxBytes)
+	return firstUser,
+		truncateText(userBlob.String(), searchUserMaxBytes),
+		truncateText(asstBlob.String(), searchAssistantMaxBytes)
 }
 
 func parseJsonlMessage(line []byte) (role, text string) {
