@@ -55,6 +55,16 @@ func TestResolveNoAIBlockKeepsLibraryDefaults(t *testing.T) {
 	assert.Equal(t, defaultAPIKeyEnv, r.APIKeyEnv)
 }
 
+func TestResolveAIBlockWithoutProvidersKeepsLibraryDefaults(t *testing.T) {
+	lastDecision = nil
+	lastSelErr = nil
+	r, err := resolveE(map[string]interface{}{}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, defaultProvider, r.Provider)
+	assert.Equal(t, defaultModel, r.Model)
+	assert.Nil(t, LastDecision())
+}
+
 func TestResolveBadConfig(t *testing.T) {
 	global := listConfig(map[string]interface{}{"model": "m"}) // no name
 	r, err := resolveE(global, nil)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	agentsession "github.com/yurifrl/cly/modules/agent-session"
+	aimod "github.com/yurifrl/cly/modules/ai"
 	"github.com/yurifrl/cly/modules/agents"
 	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
@@ -72,6 +73,7 @@ func init() {
 	RootCmd.SetVersionTemplate(versionString())
 	completion.Register(RootCmd)
 	agents.Register(RootCmd)
+	aimod.Register(RootCmd)
 	aliases.Register(RootCmd)
 	backup.Register(RootCmd)
 	beads.Register(RootCmd)

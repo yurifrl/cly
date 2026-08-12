@@ -22,16 +22,22 @@ type Entry struct {
 // parseProviders validates the ai.providers list from raw config.
 // providerEnv comes from ai.go (provider -> conventional env var name).
 func parseProviders(global map[string]interface{}) ([]Entry, error) {
-	raw, ok := global["providers"].([]interface{})
+	raw, present := global["providers"]
+	if !present || raw == nil {
+		// ai: block exists but defines no providers: fall back to library defaults.
+		return nil, nil
+	}
+	list, ok := raw.([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("ai.providers must be a list of named entries (map form was removed; see docs/superpowers/specs/2026-08-12-ai-provider-conditions-design.md)")
 	}
-	if len(raw) == 0 {
+	if len(list) == 0 {
 		return nil, fmt.Errorf("ai.providers is empty: define at least one entry")
 	}
+	rawList := list
 	seen := map[string]bool{}
-	entries := make([]Entry, 0, len(raw))
-	for i, item := range raw {
+	entries := make([]Entry, 0, len(rawList))
+	for i, item := range rawList {
 		m, ok := item.(map[string]interface{})
 		if !ok {
 			return nil, fmt.Errorf("ai.providers[%d]: must be a map", i)

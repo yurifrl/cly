@@ -134,6 +134,15 @@ func resolveE(global, override map[string]interface{}) (*Resolved, error) {
 		lastSelErr = err
 		return nil, err
 	}
+	if len(entries) == 0 {
+		// ai: block present but no providers defined: library defaults.
+		return &Resolved{
+			Provider:  defaultProvider,
+			Model:     defaultModel,
+			APIKeyEnv: defaultAPIKeyEnv,
+			Enabled:   true,
+		}, nil
+	}
 	entry, decision := selectProvider(entries, buildContext())
 	lastDecision = decision
 	lastSelErr = nil

@@ -8,20 +8,26 @@ app:
 theme:
   style: charm # Options: charm | dracula | catppuccin
 
-# Repo-wide AI provider. Modules can override under modules.<name>.ai
+# Repo-wide AI providers. First condition match wins (highest weight,
+# ties by list order); otherwise the entry with default: true; otherwise
+# the first entry. Modules can override under modules.<name>.ai.
 ai:
-  provider: anthropic   # Options: anthropic | openai | openrouter | bedrock
   providers:
-    anthropic:
+    - name: anthropic          # default fallback
+      provider: anthropic
       model: claude-sonnet-4-5-20250929
       api_key: $ANTHROPIC_API_KEY
-    openai:
+      default: true
+    - name: openai
+      provider: openai
       model: gpt-4o-mini
       api_key: $OPENAI_API_KEY
-    openrouter:         # OpenAI-compatible gateway (base_url preset)
+    - name: openrouter         # OpenAI-compatible gateway (base_url preset)
+      provider: openrouter
       model: anthropic/claude-3.5-sonnet
       api_key: $OPENROUTER_API_KEY
-    bedrock:            # Anthropic models via AWS Bedrock
+    - name: bedrock            # Anthropic models via AWS Bedrock
+      provider: bedrock
       model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
       # no api_key: uses AWS_BEARER_TOKEN_BEDROCK or AWS creds/profile
 
