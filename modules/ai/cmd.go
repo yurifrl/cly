@@ -80,7 +80,7 @@ func status() error {
 		fmt.Printf("  %-20s matched=%-5v weight=%-3d %s\n", e.Name, e.Matched, e.Weight, note)
 	}
 	if !pkgconfig.Get().App.Debug {
-		fmt.Println("\n(debug off: run with CLY_APP_DEBUG=true to log selection on AI calls)")
+		fmt.Println("\n(debug off: set app.debug: true in config to log selection on AI calls)")
 	}
 	return nil
 }
