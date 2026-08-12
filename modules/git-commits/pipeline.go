@@ -313,6 +313,7 @@ func resolveLLMConfig(_ *config.Config) llm.Config {
 		Model:     r.Model,
 		APIKey:    r.APIKey,
 		APIKeyEnv: r.APIKeyEnv,
+		BaseURL:   r.BaseURL,
 	}
 }
 
