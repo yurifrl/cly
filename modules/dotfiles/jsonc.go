@@ -24,7 +24,9 @@ func IsJsoncToJson(m Mapping) bool {
 	return strings.HasSuffix(m.Source, ".jsonc") && strings.HasSuffix(m.Destination, ".json")
 }
 
-// CopyJsoncToJson reads a JSONC file, strips comments, and writes valid JSON to the destination.
+// CopyJsoncToJson reads a JSONC file, strips comments, interpolates $VAR
+// and ${VAR} env references (unless @no-interpolation appears in the first
+// 10 lines), and writes valid JSON to the destination.
 func CopyJsoncToJson(m Mapping) LinkResult {
 	result := LinkResult{Mapping: m}
 
@@ -46,6 +48,14 @@ func CopyJsoncToJson(m Mapping) LinkResult {
 		result.Error = fmt.Sprintf("failed to strip JSONC comments: %v", err)
 		return result
 	}
+
+	expanded, err := expandEnvIfAllowed(data, stripped)
+	if err != nil {
+		result.State = StateError
+		result.Error = fmt.Sprintf("failed to expand env vars: %v", err)
+		return result
+	}
+	stripped = expanded
 
 	destDir := filepath.Dir(m.Destination)
 	if _, err := os.Stat(destDir); os.IsNotExist(err) {
@@ -89,6 +99,10 @@ func CopyJsoncToJson(m Mapping) LinkResult {
 }
 
 // StripJSONC removes // line comments, /* */ block comments, and trailing commas from JSONC input.
+//
+// Note: StripJSONC does NOT expand $VAR/${VAR} env references — that happens
+// in CopyJsoncToJson / jsoncContentMatches via expandEnvIfAllowed, after the
+// @no-interpolation check.
 func StripJSONC(input []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	i := 0
@@ -153,6 +167,48 @@ func StripJSONC(input []byte) ([]byte, error) {
 
 	pretty.WriteByte('\n')
 	return pretty.Bytes(), nil
+}
+
+// expandEnvIfAllowed applies os.Expand ($VAR / ${VAR} -> os.Getenv) to the
+// stripped JSON unless the original source contains @no-interpolation in the
+// first 10 lines. Expanded output is re-validated and re-pretty-printed so
+// callers can hand it back to JSON tooling.
+func expandEnvIfAllowed(original, stripped []byte) ([]byte, error) {
+	if hasNoInterpolation(original) {
+		return stripped, nil
+	}
+	expanded := os.Expand(string(stripped), os.Getenv)
+
+	// Re-validate: expansion may inject characters that break JSON
+	// (quotes, backslashes, control chars). Resurface as an error rather
+	// than silently writing malformed content.
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, []byte(expanded), "", "  "); err != nil {
+		return nil, fmt.Errorf("expansion produced invalid JSON: %w", err)
+	}
+	pretty.WriteByte('\n')
+	return pretty.Bytes(), nil
+}
+
+// hasNoInterpolation returns true when @no-interpolation appears in the
+// first 10 lines of the raw file, mirroring modules/agents/transform.go.
+func hasNoInterpolation(src []byte) bool {
+	limit := 10
+	start := 0
+	for i := 0; i < limit; i++ {
+		end := bytes.IndexByte(src[start:], '\n')
+		if end < 0 {
+			end = len(src) - start
+		}
+		if bytes.Contains(src[start:start+end], []byte("@no-interpolation")) {
+			return true
+		}
+		if end == len(src)-start && start+end >= len(src) {
+			break
+		}
+		start += end + 1
+	}
+	return false
 }
 
 // removeTrailingCommas removes commas that appear before ] or } (with optional whitespace between).

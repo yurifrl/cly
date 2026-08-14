@@ -254,6 +254,78 @@ func TestCopyJsoncToJson(t *testing.T) {
 		assert.Zero(t, info.Mode()&os.ModeSymlink, "dest should be a regular file, not symlink")
 	})
 
+	t.Run("expands env vars", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		source := filepath.Join(tmpDir, "config.jsonc")
+		dest := filepath.Join(tmpDir, "config.json")
+
+		t.Setenv("CLY_TEST_HOME", "/Users/test")
+		t.Setenv("CLY_TEST_PATH", "/opt/tool")
+
+		content := []byte(`{
+  "home": "${CLY_TEST_HOME}",
+  "bin": "${CLY_TEST_PATH}/bin",
+  "bare": "looks like a $CLY_TEST_HOME ref",
+}`)
+		require.NoError(t, os.WriteFile(source, content, 0644))
+
+		m := Mapping{Source: source, Destination: dest}
+		result := CopyJsoncToJson(m)
+		require.Equal(t, StateLinked, result.State, "error: %s", result.Error)
+
+		data, err := os.ReadFile(dest)
+		require.NoError(t, err)
+		require.True(t, json.Valid(data))
+
+		var m2 map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m2))
+		assert.Equal(t, "/Users/test", m2["home"])
+		assert.Equal(t, "/opt/tool/bin", m2["bin"])
+		assert.Equal(t, "looks like a /Users/test ref", m2["bare"])
+	})
+
+		t.Run("no-interpolation marker skips expansion", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		source := filepath.Join(tmpDir, "config.jsonc")
+		dest := filepath.Join(tmpDir, "config.json")
+
+		t.Setenv("CLY_TEST_HOME", "/Users/test")
+
+		content := []byte(`// @no-interpolation
+{
+  "home": "${CLY_TEST_HOME}"
+}`)
+		require.NoError(t, os.WriteFile(source, content, 0644))
+
+		m := Mapping{Source: source, Destination: dest}
+		result := CopyJsoncToJson(m)
+		require.Equal(t, StateLinked, result.State, "error: %s", result.Error)
+
+		data, err := os.ReadFile(dest)
+		require.NoError(t, err)
+		require.True(t, json.Valid(data))
+
+		var m2 map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m2))
+		assert.Equal(t, "${CLY_TEST_HOME}", m2["home"])
+	})
+
+		t.Run("expansion that breaks JSON surfaces as error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		source := filepath.Join(tmpDir, "config.jsonc")
+		dest := filepath.Join(tmpDir, "config.json")
+
+		// A value containing a quote would break the resulting JSON string.
+		t.Setenv("CLY_TEST_BAD", `has "quote" inside`)
+		content := []byte(`{"key": "${CLY_TEST_BAD}"}`)
+		require.NoError(t, os.WriteFile(source, content, 0644))
+
+		m := Mapping{Source: source, Destination: dest}
+		result := CopyJsoncToJson(m)
+		require.Equal(t, StateError, result.State)
+		assert.Contains(t, result.Error, "expansion produced invalid JSON")
+	})
+
 	t.Run("missing source", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		m := Mapping{

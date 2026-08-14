@@ -334,15 +334,19 @@ func resolvePath(path, baseDir string) string {
 	return path
 }
 
+// expandTilde expands a leading ~/ to the user home, then expands any
+// $VAR or ${VAR} references via os.Expand. Used for the destination side of
+// every mapping so configs can write things like ~/foo.txt or $HOME/foo.txt
+// and both resolve to the same absolute path.
 func expandTilde(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return path
 		}
-		return filepath.Join(home, path[2:])
+		path = filepath.Join(home, path[2:])
 	}
-	return path
+	return os.Expand(path, os.Getenv)
 }
 
 func parseOpLine(cfg *Config, line string, lineNum int, baseDir string) error {

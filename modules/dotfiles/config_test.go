@@ -92,6 +92,25 @@ invalid line without arrow
 		assert.Contains(t, cfg.Errors[0], "line 2")
 	})
 
+	t.Run("expands env vars in destination", func(t *testing.T) {
+		t.Setenv("CLY_TEST_CONFIG_DIR", "/tmp/myconfig")
+
+		content := `./home/foo.txt -> $CLY_TEST_CONFIG_DIR/foo.txt
+./home/bar.txt -> ${CLY_TEST_CONFIG_DIR}/bar.txt
+./home/baz.txt -> $HOME/.config/baz.txt`
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+		cfg, err := ParseConfig(configPath)
+		require.NoError(t, err)
+		require.Len(t, cfg.Mappings, 3)
+		assert.Equal(t, "/tmp/myconfig/foo.txt", cfg.Mappings[0].Destination)
+		assert.Equal(t, "/tmp/myconfig/bar.txt", cfg.Mappings[1].Destination)
+		home, _ := os.UserHomeDir()
+		assert.Equal(t, filepath.Join(home, ".config", "baz.txt"), cfg.Mappings[2].Destination)
+	})
+
 	t.Run("expands tilde in destination", func(t *testing.T) {
 		content := `./home/.gitconfig -> ~/.gitconfig`
 		tmpDir := t.TempDir()

@@ -233,8 +233,58 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Expand $VAR/${VAR} in every string field of App and in any module
+	// string value. Tilde-prefix expansion stays at the call site (modules
+	// own their own path resolution); this just handles env vars.
+	cfg.App.Name = os.ExpandEnv(cfg.App.Name)
+	cfg.App.ConfigDir = os.ExpandEnv(cfg.App.ConfigDir)
+	cfg.App.DataDir = os.ExpandEnv(cfg.App.DataDir)
+	cfg.App.DotFilesDir = os.ExpandEnv(cfg.App.DotFilesDir)
+	expandEnvInModuleStrings(cfg.Modules)
+	expandEnvInMapStrings(cfg.AI)
+
 	globalConfig = &cfg
 	return &cfg, nil
+}
+
+// expandEnvInModuleStrings walks modules.<name>.<key> maps and expands env
+// vars in any string leaf. Nested maps and slices are walked recursively;
+// non-string scalar kinds are left alone.
+func expandEnvInModuleStrings(mods map[string]map[string]interface{}) {
+	for k, mod := range mods {
+		mods[k] = expandEnvInMapStrings(mod).(map[string]interface{})
+	}
+}
+
+// expandEnvInMapStrings returns the same map with every string leaf passed
+// through os.ExpandEnv. Slices and nested maps are recursed; other types are
+// returned unchanged.
+func expandEnvInMapStrings(in map[string]interface{}) interface{} {
+	for k, v := range in {
+		switch t := v.(type) {
+		case string:
+			in[k] = os.ExpandEnv(t)
+		case map[string]interface{}:
+			in[k] = expandEnvInMapStrings(t)
+		case []interface{}:
+			in[k] = expandEnvInSliceStrings(t)
+		}
+	}
+	return in
+}
+
+func expandEnvInSliceStrings(in []interface{}) []interface{} {
+	for i, v := range in {
+		switch t := v.(type) {
+		case string:
+			in[i] = os.ExpandEnv(t)
+		case map[string]interface{}:
+			in[i] = expandEnvInMapStrings(t)
+		case []interface{}:
+			in[i] = expandEnvInSliceStrings(t)
+		}
+	}
+	return in
 }
 
 func Get() *Config {
@@ -338,7 +388,10 @@ func (c *Config) GetStatusline() StatuslineConfig {
 	return cfg
 }
 
-func GetString(key string) string {
+// loadViper returns a viper instance with the user config (or defaults)
+// loaded. Used by the Get* accessors below; centralises the discovery logic
+// so $VAR/${VAR} expansion can be applied uniformly to string results.
+func loadViper() *viper.Viper {
 	v := viper.New()
 	v.SetConfigType("yaml")
 
@@ -348,7 +401,6 @@ func GetString(key string) string {
 	v.SetEnvPrefix("CLY")
 	v.AutomaticEnv()
 
-	// Try config.local.yaml first, then config.yaml
 	configFound := false
 	for _, configName := range []string{"config.local", "config"} {
 		v.SetConfigName(configName)
@@ -362,74 +414,27 @@ func GetString(key string) string {
 		}
 	}
 
-	// Fall back to defaults if no config found
 	if !configFound {
 		v.ReadConfig(bytes.NewBuffer(defaultConfig))
 	}
 
-	return v.GetString(key)
+	return v
+}
+
+func GetString(key string) string {
+	return os.ExpandEnv(loadViper().GetString(key))
 }
 
 func GetBool(key string) bool {
-	v := viper.New()
-	v.SetConfigType("yaml")
-
-	homeDir, _ := os.UserHomeDir()
-	configDir := filepath.Join(homeDir, ".config/cly")
-
-	v.SetEnvPrefix("CLY")
-	v.AutomaticEnv()
-
-	// Try config.local.yaml first, then config.yaml
-	configFound := false
-	for _, configName := range []string{"config.local", "config"} {
-		v.SetConfigName(configName)
-		v.AddConfigPath(configDir)
-		v.AddConfigPath("modules/config")
-		v.AddConfigPath(".")
-
-		if err := v.ReadInConfig(); err == nil {
-			configFound = true
-			break
-		}
-	}
-
-	// Fall back to defaults if no config found
-	if !configFound {
-		v.ReadConfig(bytes.NewBuffer(defaultConfig))
-	}
-
-	return v.GetBool(key)
+	return loadViper().GetBool(key)
 }
 
 func GetStringSlice(key string) []string {
-	v := viper.New()
-	v.SetConfigType("yaml")
-
-	homeDir, _ := os.UserHomeDir()
-	configDir := filepath.Join(homeDir, ".config/cly")
-
-	v.SetEnvPrefix("CLY")
-	v.AutomaticEnv()
-
-	configFound := false
-	for _, configName := range []string{"config.local", "config"} {
-		v.SetConfigName(configName)
-		v.AddConfigPath(configDir)
-		v.AddConfigPath("modules/config")
-		v.AddConfigPath(".")
-
-		if err := v.ReadInConfig(); err == nil {
-			configFound = true
-			break
-		}
+	raw := loadViper().GetStringSlice(key)
+	for i, s := range raw {
+		raw[i] = os.ExpandEnv(s)
 	}
-
-	if !configFound {
-		v.ReadConfig(bytes.NewBuffer(defaultConfig))
-	}
-
-	return v.GetStringSlice(key)
+	return raw
 }
 
 func Set(key string, value interface{}) error {

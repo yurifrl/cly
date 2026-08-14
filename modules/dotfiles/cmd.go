@@ -40,13 +40,13 @@ func Register(parent *cobra.Command) {
 		Long: `Create and manage symlinks from a declarative config file.
 
 Config syntax (dotfiles.conf):
-  ./src -> ~/dst                        symlink (dirs need trailing /)
+  ./src -> ~/dst                        symlink (dirs need trailing /); ~/ and $VAR/${VAR} both expand on the destination
   !cmd                                  run shell command (-i flag)
   @install <url>                        fetch+analyze install script (-i flag)
   @cache <command>                      runs once; re-runs only when the command text changes (sha256-keyed)
   @op account=x ./s.op -> ~/d           1Password inject (-o flag)
   @op account=x op://vault/item/field -> ~/d  1Password read secret (-o flag)
-  .jsonc -> .json                       comments stripped automatically
+  .jsonc -> .json                       comments stripped; $VAR/${VAR} env vars expanded (opt out with @no-interpolation)
 
 Per-line gating: append @target to any directive to skip it unless this machine
 matches. It gates only the line it is attached to; a bare @target line is an

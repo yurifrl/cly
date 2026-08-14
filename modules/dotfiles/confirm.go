@@ -85,7 +85,11 @@ func jsoncContentMatches(m Mapping) bool {
 	if err != nil {
 		return false
 	}
-	want, err := StripJSONC(src)
+	stripped, err := StripJSONC(src)
+	if err != nil {
+		return false
+	}
+	want, err := expandEnvIfAllowed(src, stripped)
 	if err != nil {
 		return false
 	}
