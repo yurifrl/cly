@@ -46,6 +46,43 @@ func TestBuildLock(t *testing.T) {
 	assert.Equal(t, "/home/user/.env", lock.OpMappings[0].Destination)
 }
 
+func TestBuildLock_PreservesInactiveOverlayMappings(t *testing.T) {
+	old := &DotfilesLock{Symlinks: []LockEntry{
+		{Source: "/base/old", Destination: "/home/user/base", Config: "dotfiles.conf"},
+		{Source: "/alice/old", Destination: "/home/user/alice", Config: "dotfiles.alice.conf"},
+	}}
+	cfg := &Config{
+		ConfigPaths: []string{"dotfiles.conf", "dotfiles.bob.conf"},
+		Mappings: []Mapping{
+			{Source: "/base/new", Destination: "/home/user/base", ConfigPath: "dotfiles.conf"},
+			{Source: "/bob/new", Destination: "/home/user/bob", ConfigPath: "dotfiles.bob.conf"},
+		},
+	}
+
+	lock := buildLock(cfg, old)
+
+	assert.ElementsMatch(t, []LockEntry{
+		{Source: "/base/new", Destination: "/home/user/base", Config: "dotfiles.conf"},
+		{Source: "/bob/new", Destination: "/home/user/bob", Config: "dotfiles.bob.conf"},
+		{Source: "/alice/old", Destination: "/home/user/alice", Config: "dotfiles.alice.conf"},
+	}, lock.Symlinks)
+	assert.Empty(t, diffLocks(old, lock).RemovedSymlinks,
+		"switching from alice to bob must not schedule alice's links for removal")
+}
+
+func TestBuildLock_PreservesLegacyUnownedMappings(t *testing.T) {
+	old := &DotfilesLock{Symlinks: []LockEntry{
+		{Source: "/legacy/source", Destination: "/home/user/legacy"},
+	}}
+	cfg := &Config{ConfigPaths: []string{"dotfiles.conf"}}
+
+	lock := buildLock(cfg, old)
+
+	assert.Equal(t, old.Symlinks, lock.Symlinks)
+	assert.Empty(t, diffLocks(old, lock).RemovedSymlinks,
+		"unowned legacy entries must not be deleted during the ownership migration")
+}
+
 func TestBuildLock_PreservesHashes(t *testing.T) {
 	jobA := CacheEntry{Command: "echo job-a"}
 	jobB := CacheEntry{Command: "echo job-b"}

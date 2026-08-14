@@ -228,7 +228,7 @@ func loadConfig() (*Config, []string, error) {
 		if merged.BaseDir == "" {
 			merged.BaseDir = parsed.BaseDir
 		}
-		merged.merge(parsed, filepath.Base(path))
+		merged.merge(parsed, path)
 		applied = append(applied, path)
 	}
 

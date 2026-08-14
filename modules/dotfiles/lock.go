@@ -27,6 +27,7 @@ type LockEntry struct {
 	Source      string `json:"source"`
 	Destination string `json:"destination"`
 	SourceHash  string `json:"source_hash,omitempty"`
+	Config      string `json:"config,omitempty"`
 }
 
 // CacheLockEntry stores the metadata for one @cache entry. Hash is the
@@ -361,7 +362,7 @@ func buildLock(cfg *Config, prev *DotfilesLock) *DotfilesLock {
 	lock := &DotfilesLock{}
 
 	for _, m := range cfg.Mappings {
-		entry := LockEntry{Source: m.Source, Destination: m.Destination}
+		entry := LockEntry{Source: m.Source, Destination: m.Destination, Config: m.ConfigPath}
 		if IsJsoncToJson(m) {
 			entry.SourceHash = hashFile(m.Source)
 			lock.JsoncCopies = append(lock.JsoncCopies, entry)
@@ -431,10 +432,31 @@ func buildLock(cfg *Config, prev *DotfilesLock) *DotfilesLock {
 	}
 
 	for _, op := range cfg.OpMappings {
-		lock.OpMappings = append(lock.OpMappings, LockEntry{Source: op.Source, Destination: op.Destination})
+		lock.OpMappings = append(lock.OpMappings, LockEntry{Source: op.Source, Destination: op.Destination, Config: op.ConfigPath})
 	}
 
+	preserveInactiveEntries(&lock.Symlinks, prev, cfg.ConfigPaths, func(lock *DotfilesLock) []LockEntry { return lock.Symlinks })
+	preserveInactiveEntries(&lock.JsoncCopies, prev, cfg.ConfigPaths, func(lock *DotfilesLock) []LockEntry { return lock.JsoncCopies })
+	preserveInactiveEntries(&lock.OpMappings, prev, cfg.ConfigPaths, func(lock *DotfilesLock) []LockEntry { return lock.OpMappings })
 	return lock
+}
+
+func preserveInactiveEntries(next *[]LockEntry, previous *DotfilesLock, activeConfigs []string, entries func(*DotfilesLock) []LockEntry) {
+	if previous == nil {
+		return
+	}
+	active := make(map[string]struct{}, len(activeConfigs))
+	for _, config := range activeConfigs {
+		active[config] = struct{}{}
+	}
+	for _, entry := range entries(previous) {
+		if entry.Config != "" {
+			if _, ok := active[entry.Config]; ok {
+				continue
+			}
+		}
+		*next = appendUniqueEntries(*next, []LockEntry{entry})
+	}
 }
 
 func diffLocks(old, new *DotfilesLock) LockDiff {

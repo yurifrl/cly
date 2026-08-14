@@ -16,6 +16,7 @@ type Mapping struct {
 	Destination string
 	IsDir       bool
 	LineNum     int
+	ConfigPath  string
 	// Gate is the inline `@target ...` that allowed this entry through, empty
 	// when the entry was ungated. Kept so output can show why a
 	// machine-specific line applied.
@@ -38,6 +39,7 @@ type CacheEntry struct {
 type OpMapping struct {
 	Source      string
 	Destination string
+	ConfigPath  string
 	Account     string
 	// IsReference is true when Source is a raw 1Password secret reference
 	// (e.g. op://Vault/Item/field). In that case the destination is written
@@ -63,6 +65,7 @@ type InstallCommand struct {
 
 type Config struct {
 	BaseDir         string
+	ConfigPaths     []string
 	Mappings        []Mapping
 	InstallCommands []InstallCommand
 	CacheEntries    []CacheEntry
@@ -73,14 +76,21 @@ type Config struct {
 
 // merge folds src into cfg, appending in call order so a later config's
 // entries win when both declare the same destination (last writer applies).
-func (cfg *Config) merge(src *Config, label string) {
+func (cfg *Config) merge(src *Config, configPath string) {
+	for i := range src.Mappings {
+		src.Mappings[i].ConfigPath = configPath
+	}
+	for i := range src.OpMappings {
+		src.OpMappings[i].ConfigPath = configPath
+	}
+	cfg.ConfigPaths = append(cfg.ConfigPaths, configPath)
 	cfg.Mappings = append(cfg.Mappings, src.Mappings...)
 	cfg.InstallCommands = append(cfg.InstallCommands, src.InstallCommands...)
 	cfg.CacheEntries = append(cfg.CacheEntries, src.CacheEntries...)
 	cfg.Installs = append(cfg.Installs, src.Installs...)
 	cfg.OpMappings = append(cfg.OpMappings, src.OpMappings...)
 	for _, e := range src.Errors {
-		cfg.Errors = append(cfg.Errors, fmt.Sprintf("%s: %s", label, e))
+		cfg.Errors = append(cfg.Errors, fmt.Sprintf("%s: %s", filepath.Base(configPath), e))
 	}
 }
 
