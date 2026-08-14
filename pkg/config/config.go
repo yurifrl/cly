@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -233,13 +234,14 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Expand $VAR/${VAR} in every string field of App and in any module
-	// string value. Tilde-prefix expansion stays at the call site (modules
-	// own their own path resolution); this just handles env vars.
-	cfg.App.Name = os.ExpandEnv(cfg.App.Name)
-	cfg.App.ConfigDir = os.ExpandEnv(cfg.App.ConfigDir)
-	cfg.App.DataDir = os.ExpandEnv(cfg.App.DataDir)
-	cfg.App.DotFilesDir = os.ExpandEnv(cfg.App.DotFilesDir)
+	// Expand ~/ and $VAR/${VAR} in every string field of App, in every
+	// module string value, and in top-level AI strings. Paths used to
+	// flow through per-module helpers; centralising here means modules
+	// receive ready-to-use resolved strings.
+	cfg.App.Name = ExpandPath(cfg.App.Name)
+	cfg.App.ConfigDir = ExpandPath(cfg.App.ConfigDir)
+	cfg.App.DataDir = ExpandPath(cfg.App.DataDir)
+	cfg.App.DotFilesDir = ExpandPath(cfg.App.DotFilesDir)
 	expandEnvInModuleStrings(cfg.Modules)
 	expandEnvInMapStrings(cfg.AI)
 
@@ -250,6 +252,20 @@ func Load() (*Config, error) {
 // expandEnvInModuleStrings walks modules.<name>.<key> maps and expands env
 // vars in any string leaf. Nested maps and slices are walked recursively;
 // non-string scalar kinds are left alone.
+// ExpandPath expands a leading ~/ to the user home, then expands any
+// $VAR / ${VAR} references via os.Expand. Shared by Load() and the Get*
+// accessors so config.yaml paths and dotfiles destinations resolve the same
+// way without each caller growing its own helper.
+func ExpandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	}
+	return os.Expand(path, os.Getenv)
+}
+
 func expandEnvInModuleStrings(mods map[string]map[string]interface{}) {
 	for k, mod := range mods {
 		mods[k] = expandEnvInMapStrings(mod).(map[string]interface{})
@@ -263,7 +279,7 @@ func expandEnvInMapStrings(in map[string]interface{}) interface{} {
 	for k, v := range in {
 		switch t := v.(type) {
 		case string:
-			in[k] = os.ExpandEnv(t)
+			in[k] = ExpandPath(t)
 		case map[string]interface{}:
 			in[k] = expandEnvInMapStrings(t)
 		case []interface{}:
@@ -277,7 +293,7 @@ func expandEnvInSliceStrings(in []interface{}) []interface{} {
 	for i, v := range in {
 		switch t := v.(type) {
 		case string:
-			in[i] = os.ExpandEnv(t)
+			in[i] = ExpandPath(t)
 		case map[string]interface{}:
 			in[i] = expandEnvInMapStrings(t)
 		case []interface{}:
@@ -422,7 +438,7 @@ func loadViper() *viper.Viper {
 }
 
 func GetString(key string) string {
-	return os.ExpandEnv(loadViper().GetString(key))
+	return ExpandPath(loadViper().GetString(key))
 }
 
 func GetBool(key string) bool {
@@ -432,7 +448,7 @@ func GetBool(key string) bool {
 func GetStringSlice(key string) []string {
 	raw := loadViper().GetStringSlice(key)
 	for i, s := range raw {
-		raw[i] = os.ExpandEnv(s)
+		raw[i] = ExpandPath(s)
 	}
 	return raw
 }
