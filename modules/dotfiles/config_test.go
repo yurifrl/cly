@@ -74,7 +74,7 @@ func TestParseConfig(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, cfg.Mappings, 1)
 		assert.Len(t, cfg.InstallCommands, 2)
-		assert.Equal(t, `echo "hello world"`, cfg.InstallCommands[0])
+		assert.Equal(t, `echo "hello world"`, cfg.InstallCommands[0].Command)
 	})
 
 	t.Run("reports invalid format with line number", func(t *testing.T) {

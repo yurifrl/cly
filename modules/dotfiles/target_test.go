@@ -137,11 +137,68 @@ func TestParseConfig_InlineTargetGatesIndividualDirectives(t *testing.T) {
 	if !reflect.DeepEqual(dests, wantDests) {
 		t.Fatalf("mappings = %v, want %v", dests, wantDests)
 	}
-	if want := []string{"echo darwin"}; !reflect.DeepEqual(cfg.InstallCommands, want) {
-		t.Fatalf("install commands = %v, want %v", cfg.InstallCommands, want)
+	want := []InstallCommand{{Command: "echo darwin", Gate: "@target os=darwin"}}
+	if !reflect.DeepEqual(cfg.InstallCommands, want) {
+		t.Fatalf("install commands = %+v, want %+v", cfg.InstallCommands, want)
 	}
 	if len(cfg.CacheEntries) != 1 || cfg.CacheEntries[0].Command != "echo cached" {
 		t.Fatalf("cache entries = %+v, want only 'echo cached'", cfg.CacheEntries)
+	}
+}
+
+// The matching gate is recorded on each entry so output can show why a
+// machine-specific line applied; ungated entries keep an empty gate.
+func TestParseConfig_MatchedGateIsRecordedOnEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dotfiles.conf")
+	content := strings.Join([]string{
+		"./mac -> " + filepath.Join(dir, "mac.out") + " @target os=darwin arch=arm64",
+		"./always -> " + filepath.Join(dir, "always.out"),
+		"@cache echo c @target os=darwin",
+		"@install https://example.com/i.sh @target os=darwin",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withContext(t, "bob", "darwin", "arm64")
+
+	cfg, err := ParseConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Errors) != 0 {
+		t.Fatalf("unexpected parse errors: %v", cfg.Errors)
+	}
+	if len(cfg.Mappings) != 2 {
+		t.Fatalf("want 2 mappings, got %+v", cfg.Mappings)
+	}
+	if got, want := cfg.Mappings[0].Gate, "@target os=darwin arch=arm64"; got != want {
+		t.Fatalf("gated mapping gate = %q, want %q", got, want)
+	}
+	if got := cfg.Mappings[1].Gate; got != "" {
+		t.Fatalf("ungated mapping must have no gate, got %q", got)
+	}
+	if got, want := cfg.CacheEntries[0].Gate, "@target os=darwin"; got != want {
+		t.Fatalf("cache gate = %q, want %q", got, want)
+	}
+	if got, want := cfg.Installs[0].Gate, "@target os=darwin"; got != want {
+		t.Fatalf("install gate = %q, want %q", got, want)
+	}
+}
+
+// A gated `!cmd` must be locked under its bare command text; if the gate leaked
+// into the identity, the same line would look like a new command per machine
+// and re-run forever.
+func TestBuildLock_GateIsNotPartOfInstallCommandIdentity(t *testing.T) {
+	cfg := &Config{
+		InstallCommands: []InstallCommand{{Command: "brew install jq", Gate: "@target os=darwin"}},
+	}
+
+	lock := buildLock(cfg, nil)
+
+	want := []string{"brew install jq"}
+	if !reflect.DeepEqual(lock.InstallCommands, want) {
+		t.Fatalf("lock install commands = %v, want %v", lock.InstallCommands, want)
 	}
 }
 
@@ -183,9 +240,9 @@ func TestParseConfig_InlineTargetOnlySplitsTrailingGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"echo '@target os=darwin is the syntax'"}
+	want := []InstallCommand{{Command: "echo '@target os=darwin is the syntax'"}}
 	if !reflect.DeepEqual(cfg.InstallCommands, want) {
-		t.Fatalf("quoted @target must stay part of the command: got %v, want %v", cfg.InstallCommands, want)
+		t.Fatalf("quoted @target must stay part of the command: got %+v, want %+v", cfg.InstallCommands, want)
 	}
 }
 

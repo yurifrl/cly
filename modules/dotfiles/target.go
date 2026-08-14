@@ -5,14 +5,14 @@ import (
 	"os/user"
 	"runtime"
 	"strings"
+
+	"github.com/yurifrl/cly/pkg/style"
 )
 
-// Target is the optional `@target` notation that gates whether a config applies
-// to the current machine. Each field is an allow-list; an empty field means "no
-// constraint on this axis". A config with no `@target` at all is unconstrained.
+// Target is an inline `@target` gate. Each field is an allow-list; an empty
+// field means "no constraint on this axis".
 //
-//	@target user=yuri-workstation os=linux
-//	@target user=yuri os=darwin arch=arm64
+//	./file -> ~/file @target user=yuri os=darwin
 //
 // Values are comma-separated (OR within an axis); axes are ANDed together.
 type Target struct {
@@ -48,6 +48,16 @@ func effectiveUsername() string {
 		return userFlag
 	}
 	return currentUsername()
+}
+
+// gateSuffix renders a matched inline gate for output, so a machine-specific
+// entry shows why it applied instead of looking unconditional. Empty for
+// ungated entries.
+func gateSuffix(gate string) string {
+	if gate == "" {
+		return ""
+	}
+	return " " + style.SubtleStyle.Render("("+gate+")")
 }
 
 // splitInlineGate peels a trailing `@target ...` gate off a directive line,

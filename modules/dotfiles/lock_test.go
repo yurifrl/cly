@@ -16,7 +16,7 @@ func TestBuildLock(t *testing.T) {
 			{Source: "/dotfiles/.zshrc", Destination: "/home/user/.zshrc"},
 			{Source: "/dotfiles/settings.jsonc", Destination: "/home/user/settings.json"},
 		},
-		InstallCommands: []string{"brew install fzf", "brew install ripgrep"},
+		InstallCommands: []InstallCommand{{Command: "brew install fzf"}, {Command: "brew install ripgrep"}},
 		CacheEntries: []CacheEntry{
 			{Command: "echo fzf"},
 		},

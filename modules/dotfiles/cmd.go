@@ -294,9 +294,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	if len(cfg.InstallCommands) > 0 || len(cfg.Installs) > 0 {
 		if installFlag || allFlag {
-			for _, cmdStr := range cfg.InstallCommands {
-				fmt.Printf("%s %s\n", style.BlueStyle.Render("⚡ Executing:"), cmdStr)
-				if err := executeCommand(cmdStr, cfg.BaseDir); err != nil {
+			for _, ic := range cfg.InstallCommands {
+				fmt.Printf("%s %s%s\n", style.BlueStyle.Render("⚡ Executing:"), ic.Command, gateSuffix(ic.Gate))
+				if err := executeCommand(ic.Command, cfg.BaseDir); err != nil {
 					fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
 					if failFastFlag {
 						return fmt.Errorf("install command failed: %w", err)
@@ -473,9 +473,9 @@ func printResult(m Mapping, r LinkResult) {
 					dest)
 			}
 		}
-		fmt.Printf("%s %s -> %s\n",
+		fmt.Printf("%s %s -> %s%s\n",
 			style.GreenStyle.Render("✅ Symlink:"),
-			src, dest)
+			src, dest, gateSuffix(m.Gate))
 	case StateMissing:
 		fmt.Printf("  %s Source '%s' does not exist, skipping\n",
 			style.YellowStyle.Render("⚠️  Warning:"),
@@ -519,9 +519,9 @@ func printJsoncResult(m Mapping, r LinkResult) {
 					dest)
 			}
 		}
-		fmt.Printf("%s %s -> %s\n",
+		fmt.Printf("%s %s -> %s%s\n",
 			style.GreenStyle.Render("✅ Copied (jsonc→json):"),
-			src, dest)
+			src, dest, gateSuffix(m.Gate))
 	case StateMissing:
 		fmt.Printf("  %s Source '%s' does not exist, skipping\n",
 			style.YellowStyle.Render("⚠️  Warning:"),

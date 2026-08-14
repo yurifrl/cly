@@ -16,6 +16,10 @@ type Mapping struct {
 	Destination string
 	IsDir       bool
 	LineNum     int
+	// Gate is the inline `@target ...` that allowed this entry through, empty
+	// when the entry was ungated. Kept so output can show why a
+	// machine-specific line applied.
+	Gate string
 }
 
 // CacheEntry models a single `@cache` directive. The whole rest-of-line
@@ -28,6 +32,7 @@ type Mapping struct {
 type CacheEntry struct {
 	Command string
 	LineNum int
+	Gate    string
 }
 
 type OpMapping struct {
@@ -40,17 +45,26 @@ type OpMapping struct {
 	// `op inject` is used.
 	IsReference bool
 	LineNum     int
+	Gate        string
 }
 
 type Install struct {
 	URL     string
 	LineNum int
+	Gate    string
+}
+
+// InstallCommand is a `!cmd` line. Command is the lock identity, so the gate is
+// kept beside it rather than inside the text.
+type InstallCommand struct {
+	Command string
+	Gate    string
 }
 
 type Config struct {
 	BaseDir         string
 	Mappings        []Mapping
-	InstallCommands []string
+	InstallCommands []InstallCommand
 	CacheEntries    []CacheEntry
 	Installs        []Install
 	OpMappings      []OpMapping
@@ -67,6 +81,30 @@ func (cfg *Config) merge(src *Config, label string) {
 	cfg.OpMappings = append(cfg.OpMappings, src.OpMappings...)
 	for _, e := range src.Errors {
 		cfg.Errors = append(cfg.Errors, fmt.Sprintf("%s: %s", label, e))
+	}
+}
+
+// entryCounts snapshots the length of every entry slice.
+func (cfg *Config) entryCounts() [5]int {
+	return [5]int{len(cfg.Mappings), len(cfg.InstallCommands), len(cfg.CacheEntries), len(cfg.Installs), len(cfg.OpMappings)}
+}
+
+// stampGate records gate on every entry appended since the given snapshot.
+func (cfg *Config) stampGate(before [5]int, gate string) {
+	for i := before[0]; i < len(cfg.Mappings); i++ {
+		cfg.Mappings[i].Gate = gate
+	}
+	for i := before[1]; i < len(cfg.InstallCommands); i++ {
+		cfg.InstallCommands[i].Gate = gate
+	}
+	for i := before[2]; i < len(cfg.CacheEntries); i++ {
+		cfg.CacheEntries[i].Gate = gate
+	}
+	for i := before[3]; i < len(cfg.Installs); i++ {
+		cfg.Installs[i].Gate = gate
+	}
+	for i := before[4]; i < len(cfg.OpMappings); i++ {
+		cfg.OpMappings[i].Gate = gate
 	}
 }
 
@@ -95,6 +133,7 @@ func ParseConfig(configPath string) (*Config, error) {
 			continue
 		}
 
+		gateText := ""
 		if directive, gate, hasGate := splitInlineGate(line); hasGate {
 			t, err := parseTarget(gate, lineNum)
 			if err != nil {
@@ -104,13 +143,19 @@ func ParseConfig(configPath string) (*Config, error) {
 			if reason := t.GateReason(); reason != "" {
 				continue
 			}
+			gateText = gate
 			line = directive
 		}
+
+		// Snapshot the entry counts so the gate can be stamped onto whatever this
+		// line produced (a glob mapping yields several) without threading a gate
+		// parameter through every parse helper.
+		before := cfg.entryCounts()
 
 		switch {
 		case strings.HasPrefix(line, "!"):
 			cmd := strings.TrimSpace(line[1:])
-			cfg.InstallCommands = append(cfg.InstallCommands, cmd)
+			cfg.InstallCommands = append(cfg.InstallCommands, InstallCommand{Command: cmd})
 		case strings.HasPrefix(line, "@install "):
 			url := strings.TrimSpace(strings.TrimPrefix(line, "@install "))
 			if url != "" {
@@ -128,6 +173,10 @@ func ParseConfig(configPath string) (*Config, error) {
 			if err := parseMappingLine(cfg, line, lineNum, baseDir); err != nil {
 				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
 			}
+		}
+
+		if gateText != "" {
+			cfg.stampGate(before, gateText)
 		}
 	}
 

@@ -96,7 +96,7 @@ func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 		}
 
 		if !opts.Force && prev.Hash == newHash {
-			fmt.Printf("  %s cache %s: %s\n", style.SubtleStyle.Render("✓"), short, display)
+			fmt.Printf("  %s cache %s: %s%s\n", style.SubtleStyle.Render("✓"), short, display, gateSuffix(entry.Gate))
 			// Make sure FlaggedForDelete is cleared (entry is in cfg) and
 			// Command is up-to-date (legacy entries may lack it).
 			prev.FlaggedForDelete = ""
@@ -107,7 +107,7 @@ func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 			continue
 		}
 
-		fmt.Printf("  %s cache %s: %s\n", style.BlueStyle.Render("⚙️"), short, display)
+		fmt.Printf("  %s cache %s: %s%s\n", style.BlueStyle.Render("⚙️"), short, display, gateSuffix(entry.Gate))
 		runErr := mut.ExecDir(cfg.BaseDir, cacheShell, "-c", entry.Command)
 		exitCode := 0
 		if runErr != nil {

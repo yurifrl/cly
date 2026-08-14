@@ -411,7 +411,12 @@ func buildLock(cfg *Config, prev *DotfilesLock) *DotfilesLock {
 		}
 	}
 
-	lock.InstallCommands = append(lock.InstallCommands, cfg.InstallCommands...)
+	// The lock stores the bare command text: it is the entry's identity, so an
+	// inline gate must not change it or a gated line would look like a new
+	// command on every machine.
+	for _, ic := range cfg.InstallCommands {
+		lock.InstallCommands = append(lock.InstallCommands, ic.Command)
+	}
 
 	if prev != nil {
 		prevInstalls := make(map[string]InstallManifest, len(prev.Installs))

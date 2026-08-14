@@ -53,9 +53,9 @@ func ApplyOpMappings(cfg *Config, failFast bool) error {
 		}
 
 		if m.IsReference {
-			fmt.Printf("%s %s -> %s\n",
+			fmt.Printf("%s %s -> %s%s\n",
 				style.BlueStyle.Render("🔑 op read:"),
-				m.Source, shortenPath(m.Destination))
+				m.Source, shortenPath(m.Destination), gateSuffix(m.Gate))
 
 			if err := opReadRun(account, m.Source, m.Destination); err != nil {
 				fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
@@ -73,9 +73,9 @@ func ApplyOpMappings(cfg *Config, failFast bool) error {
 			continue
 		}
 
-		fmt.Printf("%s %s -> %s\n",
+		fmt.Printf("%s %s -> %s%s\n",
 			style.BlueStyle.Render("🔑 op inject:"),
-			shortenPath(m.Source), shortenPath(m.Destination))
+			shortenPath(m.Source), shortenPath(m.Destination), gateSuffix(m.Gate))
 
 		if err := opInjectRun(account, m.Source, m.Destination); err != nil {
 			fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), err)
