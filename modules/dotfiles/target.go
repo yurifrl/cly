@@ -33,11 +33,21 @@ var currentContext = func() (string, string, string) {
 	return name, runtime.GOOS, runtime.GOARCH
 }
 
-// currentUsername is the identity used both to pick dotfiles.<user>.conf and to
-// evaluate a `@target user=` constraint, so the two always agree.
+// currentUsername is the OS-detected user.
 func currentUsername() string {
 	name, _, _ := currentContext()
 	return name
+}
+
+// effectiveUsername is the identity used both to pick dotfiles.<user>.conf and
+// to evaluate a `@target user=` constraint, so the two always agree. --user
+// overrides the detected user, which is what makes `dotfiles --user bob`
+// reproduce bob's setup on any machine.
+func effectiveUsername() string {
+	if userFlag != "" {
+		return userFlag
+	}
+	return currentUsername()
 }
 
 func parseTarget(line string, lineNum int) (Target, error) {
@@ -83,7 +93,8 @@ func (t Target) GateReason() string {
 	if !t.set {
 		return ""
 	}
-	usr, goos, arch := currentContext()
+	_, goos, arch := currentContext()
+	usr := effectiveUsername()
 	if len(t.Users) > 0 && !contains(t.Users, usr) {
 		return fmt.Sprintf("config targets user=%s but current user is %q", strings.Join(t.Users, ","), usr)
 	}

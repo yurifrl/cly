@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,16 +127,31 @@ type LockDiff struct {
 	RemovedOpMappings      []LockEntry
 }
 
-// lockFilePath derives the lock file from the selected config so each config
-// keeps its own state: dotfiles.conf -> dotfiles.lock, and
-// dotfiles.<user>.conf -> dotfiles.<user>.lock. This prevents a per-machine
-// config from reusing (and clobbering) the default config's lock.
+// lockFilePath returns the single lock for the merged config set. Because the
+// base config and the per-user overlay are now applied together, their applied
+// artifacts must be tracked in one place — otherwise the removal diff would
+// never see overlay-managed symlinks and would leave them orphaned. The lock
+// lives next to the base config.
 func lockFilePath() (string, error) {
-	configPath, err := getConfigPath()
+	_, applied, err := loadConfig()
 	if err != nil {
 		return "", err
 	}
-	return lockPathFor(configPath), nil
+	if len(applied) == 0 {
+		return "", fmt.Errorf("no dotfiles config applied; cannot resolve lock path")
+	}
+	return lockPathFor(baseConfigPath(applied)), nil
+}
+
+// baseConfigPath picks dotfiles.conf out of the applied set, falling back to
+// the first applied config when only an overlay matched.
+func baseConfigPath(applied []string) string {
+	for _, p := range applied {
+		if filepath.Base(p) == "dotfiles.conf" {
+			return p
+		}
+	}
+	return applied[0]
 }
 
 // lockPathFor maps a config path to its sibling lock file.
@@ -157,8 +173,8 @@ func legacyLockPaths() []string {
 		filepath.Join(dir, "dotfiles.lock"),
 		filepath.Join(dir, "dotfiles.json"),
 	}
-	if configPath, err := getConfigPath(); err == nil {
-		paths = append(paths, filepath.Join(filepath.Dir(configPath), "dotfiles.lock.json"))
+	if _, applied, err := loadConfig(); err == nil && len(applied) > 0 {
+		paths = append(paths, filepath.Join(filepath.Dir(baseConfigPath(applied)), "dotfiles.lock.json"))
 	}
 	return paths
 }
@@ -191,6 +207,7 @@ func loadLock(path string) (*DotfilesLock, error) {
 	if os.IsNotExist(err) {
 		lock := &DotfilesLock{}
 		migrateJobsState(lock)
+		adoptPerUserLock(lock, path)
 		return lock, nil
 	}
 	if err != nil {
@@ -201,7 +218,94 @@ func loadLock(path string) (*DotfilesLock, error) {
 		lock = DotfilesLock{}
 	}
 	migrateJobsState(&lock)
+	adoptPerUserLock(&lock, path)
 	return &lock, nil
+}
+
+// adoptPerUserLock folds a pre-existing dotfiles.<user>.lock into the single
+// merged lock and removes it. Before per-user configs became an overlay they
+// each kept their own lock; those files still list real symlinks, jsonc copies
+// and op outputs on disk. Dropping them would strand those artifacts — the
+// removal diff would never see them again — so they are adopted once.
+func adoptPerUserLock(lock *DotfilesLock, basePath string) {
+	user := effectiveUsername()
+	if user == "" {
+		return
+	}
+	userPath := filepath.Join(filepath.Dir(basePath), fmt.Sprintf("dotfiles.%s.lock", user))
+	if userPath == basePath {
+		return
+	}
+	data, err := os.ReadFile(userPath)
+	if err != nil {
+		return
+	}
+	var prior DotfilesLock
+	if err := json.Unmarshal(data, &prior); err != nil {
+		return
+	}
+
+	lock.Symlinks = appendUniqueEntries(lock.Symlinks, prior.Symlinks)
+	lock.JsoncCopies = appendUniqueEntries(lock.JsoncCopies, prior.JsoncCopies)
+	lock.OpMappings = appendUniqueEntries(lock.OpMappings, prior.OpMappings)
+	lock.InstallCommands = appendUniqueStrings(lock.InstallCommands, prior.InstallCommands)
+
+	seenCache := make(map[string]bool, len(lock.Cache))
+	for _, e := range lock.Cache {
+		seenCache[e.Hash] = true
+	}
+	for _, e := range prior.Cache {
+		if e.Hash != "" && !seenCache[e.Hash] {
+			lock.Cache = append(lock.Cache, e)
+			seenCache[e.Hash] = true
+		}
+	}
+
+	seenInstalls := make(map[string]bool, len(lock.Installs))
+	for _, e := range lock.Installs {
+		seenInstalls[e.URL] = true
+	}
+	for _, e := range prior.Installs {
+		if !seenInstalls[e.URL] {
+			lock.Installs = append(lock.Installs, e)
+			seenInstalls[e.URL] = true
+		}
+	}
+
+	// Persist before dropping the source so a crash cannot lose the entries.
+	if err := saveLock(basePath, lock); err != nil {
+		return
+	}
+	_ = mut.Remove(userPath)
+}
+
+// appendUniqueEntries appends entries whose Destination is not already tracked.
+func appendUniqueEntries(dst, src []LockEntry) []LockEntry {
+	seen := make(map[string]bool, len(dst))
+	for _, e := range dst {
+		seen[e.Destination] = true
+	}
+	for _, e := range src {
+		if !seen[e.Destination] {
+			dst = append(dst, e)
+			seen[e.Destination] = true
+		}
+	}
+	return dst
+}
+
+func appendUniqueStrings(dst, src []string) []string {
+	seen := make(map[string]bool, len(dst))
+	for _, s := range dst {
+		seen[s] = true
+	}
+	for _, s := range src {
+		if !seen[s] {
+			dst = append(dst, s)
+			seen[s] = true
+		}
+	}
+	return dst
 }
 
 // migrateJobsState merges hashes from the legacy jobs-state.json into the

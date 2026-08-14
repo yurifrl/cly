@@ -56,6 +56,24 @@ type Config struct {
 	Installs        []Install
 	OpMappings      []OpMapping
 	Errors          []string
+	// Skipped records configs that parsed cleanly but were gated out by a
+	// non-matching @target, so a sync can report them instead of leaving the
+	// user wondering why a file had no effect.
+	Skipped []string
+}
+
+// merge folds src into cfg, appending in call order so a later config's
+// entries win when both declare the same destination (last writer applies).
+func (cfg *Config) merge(src *Config, label string) {
+	cfg.Mappings = append(cfg.Mappings, src.Mappings...)
+	cfg.InstallCommands = append(cfg.InstallCommands, src.InstallCommands...)
+	cfg.CacheEntries = append(cfg.CacheEntries, src.CacheEntries...)
+	cfg.Installs = append(cfg.Installs, src.Installs...)
+	cfg.OpMappings = append(cfg.OpMappings, src.OpMappings...)
+	cfg.Skipped = append(cfg.Skipped, src.Skipped...)
+	for _, e := range src.Errors {
+		cfg.Errors = append(cfg.Errors, fmt.Sprintf("%s: %s", label, e))
+	}
 }
 
 func ParseConfig(configPath string) (*Config, error) {

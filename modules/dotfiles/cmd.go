@@ -20,15 +20,16 @@ var (
 	opFlag          bool
 	allFlag         bool
 	cacheFlag       bool
-	installOnlyFlag    bool
-	installNoAIFlag    bool
-	reinstallFlag      bool
+	installOnlyFlag bool
+	installNoAIFlag bool
+	reinstallFlag   bool
 	forceFlag       bool
 	verboseFlag     bool
 	dryRunFlag      bool
 	failFastFlag    bool
 	bypassAIFlag    bool
 	configFlag      string
+	userFlag        string
 	noItFlag        bool
 )
 
@@ -48,10 +49,17 @@ Config syntax (dotfiles.conf):
   .jsonc -> .json                       comments stripped automatically
   @target user=u,.. os=linux,darwin arch=amd64,..   gate: skip unless this machine matches
 
-Config discovery: candidates are tried in order — dotfiles.<user>.conf then
-dotfiles.conf — and the first whose @target header matches this machine's
-user/os/arch is loaded; the search stops there. Exactly one file is loaded, and
-if none match (e.g. root, or the wrong OS) nothing is applied.
+Config discovery: dotfiles.conf is ALWAYS applied. dotfiles.<user>.conf is an
+additional overlay applied on top of it, so shared entries live in the base file
+and per-user extras live in the overlay. Overlay entries are applied last, so on
+a conflicting destination the overlay wins.
+
+Use --user <name> to apply another user's overlay (and to drive @target user=)
+instead of the detected username.
+
+A config whose @target header does not match this machine is skipped with a
+note; the remaining configs still apply. If nothing matches, the run errors
+rather than silently doing nothing.
 
 Use --cache to force re-run of every @cache entry (ignores the hash skip).
 Use --install-only to run only @install directives (skips everything else).
@@ -60,7 +68,7 @@ Use --install-no-ai to run only @install directives, skipping LLM analysis.
 Maintenance:
   cly dotfiles prune                    dry-run cleanup of stale cache entries
   cly dotfiles prune --apply            actually drop entries no longer in the conf`,
-		RunE:  runSync,
+		RunE: runSync,
 	}
 
 	cmd.Flags().BoolVarP(&installFlag, "install", "i", false, "Execute install commands (lines starting with !)")
@@ -73,6 +81,7 @@ Maintenance:
 	cmd.PersistentFlags().BoolVar(&failFastFlag, "fail-fast", false, "Abort sync on the first error (default: print the error and continue)")
 	cmd.PersistentPreRun = func(c *cobra.Command, args []string) { mut.SetDryRun(dryRunFlag) }
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
+	cmd.PersistentFlags().StringVar(&userFlag, "user", "", "Apply this user's dotfiles.<user>.conf overlay and @target user= gates (default: current user)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
 	cmd.Flags().BoolVar(&bypassAIFlag, "bypass-ai", false, "Skip LLM analysis for @install directives (no uninstall manifest)")
 	cmd.Flags().BoolVar(&installOnlyFlag, "install-only", false, "Run only @install directives (skips symlinks, jobs, op)")
@@ -147,71 +156,119 @@ func runEval(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// getConfigPath selects the single dotfiles config for this machine. It walks
-// candidates in priority order (dotfiles.<user>.conf, then dotfiles.conf) and
-// returns the first whose @target header matches the current user/os/arch. The
-// header is the selector: the first match wins and the search stops. If no
-// candidate matches (e.g. root, or the wrong OS), it errors instead of applying
-// an unintended config.
-func getConfigPath() (string, error) {
+// configCandidates returns the base config followed by the per-user overlay.
+// The base (dotfiles.conf) is always in the list; the overlay
+// (dotfiles.<user>.conf) is additive on top of it. With --config the given
+// file is the last entry and its *sibling* dotfiles.conf is the base, so a
+// config pointed at a scratch directory can never pull in the real one.
+func configCandidates() []string {
+	dir := dotfilesDirPath()
+	base := filepath.Join(dir, "dotfiles.conf")
+	overlayName := ""
+	if u := effectiveUsername(); u != "" {
+		overlayName = filepath.Join(dir, fmt.Sprintf("dotfiles.%s.conf", u))
+	}
+
 	if configFlag != "" {
-		return configFlag, nil
+		explicit := expandTilde(configFlag)
+		base = filepath.Join(filepath.Dir(explicit), "dotfiles.conf")
+		if explicit == base {
+			overlayName = ""
+			if u := effectiveUsername(); u != "" {
+				overlayName = filepath.Join(filepath.Dir(explicit), fmt.Sprintf("dotfiles.%s.conf", u))
+			}
+		} else {
+			overlayName = explicit
+		}
 	}
 
-	cfg := pkgconfig.Get()
-	dotfilesDir := "~/DotFiles"
-	if cfg != nil && cfg.App.DotFilesDir != "" {
-		dotfilesDir = cfg.App.DotFilesDir
+	candidates := []string{base}
+	if overlayName != "" && overlayName != base {
+		candidates = append(candidates, overlayName)
 	}
-	dotfilesDir = expandTilde(dotfilesDir)
+	return candidates
+}
 
-	var candidates []string
-	if u := currentUsername(); u != "" {
-		candidates = append(candidates, filepath.Join(dotfilesDir, fmt.Sprintf("dotfiles.%s.conf", u)))
+func dotfilesDirPath() string {
+	dir := "~/DotFiles"
+	if cfg := pkgconfig.Get(); cfg != nil && cfg.App.DotFilesDir != "" {
+		dir = cfg.App.DotFilesDir
 	}
-	candidates = append(candidates, filepath.Join(dotfilesDir, "dotfiles.conf"))
+	return expandTilde(dir)
+}
 
+// loadConfig parses every applicable config and merges them into one Config.
+// dotfiles.conf is always applied; dotfiles.<user>.conf is applied in addition
+// when present, and its entries come last so they win on conflict. A file whose
+// @target does not match this machine is skipped (recorded in cfg.Skipped)
+// rather than aborting the run. It returns the merged config and the config
+// paths that were actually applied, in order.
+func loadConfig() (*Config, []string, error) {
+	candidates := configCandidates()
+
+	if configFlag != "" {
+		explicit := expandTilde(configFlag)
+		if _, err := os.Stat(explicit); os.IsNotExist(err) {
+			return nil, nil, fmt.Errorf("config not found: %s\nCreate it or use --config /path/to/dotfiles.conf", explicit)
+		}
+	}
+
+	merged := &Config{}
+	var applied []string
 	var rejected []string
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err != nil {
+	found := false
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		parsed, err := ParseConfig(p)
+		found = true
+		parsed, err := ParseConfig(path)
 		if err != nil {
-			return "", err
+			return nil, nil, err
 		}
-		if reason := parsed.Target.GateReason(); reason == "" {
-			return p, nil
-		} else {
-			rejected = append(rejected, fmt.Sprintf("%s: %s", filepath.Base(p), reason))
+		label := filepath.Base(path)
+		if reason := parsed.Target.GateReason(); reason != "" {
+			rejected = append(rejected, fmt.Sprintf("%s: %s", label, reason))
+			merged.Skipped = append(merged.Skipped, fmt.Sprintf("%s skipped (%s)", label, reason))
+			continue
 		}
+		if merged.BaseDir == "" {
+			merged.BaseDir = parsed.BaseDir
+		}
+		merged.merge(parsed, label)
+		applied = append(applied, path)
 	}
 
-	if len(rejected) > 0 {
-		return "", fmt.Errorf("no dotfiles config matches this machine:\n  %s", strings.Join(rejected, "\n  "))
+	if len(applied) == 0 {
+		if len(rejected) > 0 {
+			return nil, nil, fmt.Errorf("no dotfiles config matches this machine:\n  %s", strings.Join(rejected, "\n  "))
+		}
+		if !found {
+			return nil, nil, fmt.Errorf("config not found: %s\nCreate it or use --config /path/to/dotfiles.conf", strings.Join(candidates, ", "))
+		}
 	}
-	return "", fmt.Errorf("no dotfiles config found in %s (looked for dotfiles.<user>.conf, dotfiles.conf)", dotfilesDir)
+	return merged, applied, nil
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
-	configPath, err := getConfigPath()
-	if err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("config not found: %s\nCreate it or use --config /path/to/dotfiles.conf", configPath)
-	}
-
-	cfg, err := ParseConfig(configPath)
+	cfg, applied, err := loadConfig()
 	if err != nil {
 		return err
 	}
 
 	// Load previous lock before applying anything.
-	lockFile, _ := lockFilePath()
+	lockFile := lockPathFor(baseConfigPath(applied))
 	oldLock, _ := loadLock(lockFile)
 
+	if len(applied) > 1 || verboseFlag {
+		for _, p := range applied {
+			fmt.Printf("%s %s\n", style.BlueStyle.Render("📄 Config:"), shortenPath(p))
+		}
+	}
+	for _, s := range cfg.Skipped {
+		fmt.Printf("%s %s\n", style.YellowStyle.Render("⏭️ "), s)
+	}
 	for _, e := range cfg.Errors {
 		fmt.Printf("⚠️  %s\n", e)
 	}
@@ -361,21 +418,16 @@ func applyDiff(diff LockDiff) {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	configPath, err := getConfigPath()
+	cfg, applied, err := loadConfig()
 	if err != nil {
 		return err
 	}
 
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("config not found: %s", configPath)
+	fmt.Printf("Dotfiles: %s\n", strings.Join(applied, ", "))
+	for _, s := range cfg.Skipped {
+		fmt.Printf("  skipped: %s\n", s)
 	}
-
-	cfg, err := ParseConfig(configPath)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Dotfiles: %s\n\n", configPath)
+	fmt.Println()
 
 	for _, m := range cfg.Mappings {
 		result := CheckStatus(m)
@@ -396,16 +448,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runUnlink(cmd *cobra.Command, args []string) error {
-	configPath, err := getConfigPath()
-	if err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("config not found: %s", configPath)
-	}
-
-	cfg, err := ParseConfig(configPath)
+	cfg, _, err := loadConfig()
 	if err != nil {
 		return err
 	}
@@ -560,17 +603,17 @@ func executeCommand(cmdStr, baseDir string) error {
 	return mut.ExecDir(baseDir, "fish", "-c", cmdStr)
 }
 
-
 // runPrune implements `cly dotfiles prune`. By default it is a dry run that
 // reports stale @cache lock entries; --apply commits the deletions. The
 // orphan symlink/jsonc/op/install paths are already handled by the normal
 // sync diff/apply machinery (see applyDiff), so prune intentionally only
 // touches the cache section.
 func runPrune(cmd *cobra.Command, args []string) error {
-	configPath, err := getConfigPath()
+	cfg, applied, err := loadConfig()
 	if err != nil {
 		return err
 	}
+	configPath := baseConfigPath(applied)
 
 	apply, _ := cmd.Flags().GetBool("apply")
 	maxAge, _ := cmd.Flags().GetDuration("max-age")
@@ -578,16 +621,7 @@ func runPrune(cmd *cobra.Command, args []string) error {
 		maxAge = cacheGracePeriod
 	}
 
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("config not found: %s", configPath)
-	}
-
-	cfg, err := ParseConfig(configPath)
-	if err != nil {
-		return err
-	}
-
-	lockFile, _ := lockFilePath()
+	lockFile := lockPathFor(configPath)
 	lock, _ := loadLock(lockFile)
 
 	cfgHashes := make(map[string]bool, len(cfg.CacheEntries))

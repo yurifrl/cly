@@ -89,7 +89,9 @@ func TestParseConfigTarget(t *testing.T) {
 	}
 }
 
-func TestGetConfigPathPrefersPerUser(t *testing.T) {
+// The base config is always a candidate and the per-user file is an additional
+// overlay ordered after it, so the base can never be displaced by the overlay.
+func TestConfigCandidatesBaseThenUserOverlay(t *testing.T) {
 	dir := t.TempDir()
 	base := filepath.Join(dir, "dotfiles.conf")
 	userConf := filepath.Join(dir, "dotfiles.yuri-workstation.conf")
@@ -100,15 +102,20 @@ func TestGetConfigPathPrefersPerUser(t *testing.T) {
 	}
 
 	prevFlag := configFlag
-	configFlag = ""
+	configFlag = base
 	t.Cleanup(func() { configFlag = prevFlag })
 
 	withContext(t, "yuri-workstation", "linux", "amd64")
-	// Discovery reads the configured dotfiles dir via pkg/config; assert the
-	// filename selection directly to avoid depending on global config.
-	want := filepath.Base(userConf)
-	if got := "dotfiles." + currentUsername() + ".conf"; got != want {
-		t.Fatalf("per-user filename = %q, want %q", got, want)
+
+	got := configCandidates()
+	want := []string{base, userConf}
+	if len(got) != len(want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("candidates = %v, want %v", got, want)
+		}
 	}
 }
 
