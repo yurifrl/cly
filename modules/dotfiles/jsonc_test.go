@@ -349,3 +349,68 @@ func TestCopyJsoncToJson(t *testing.T) {
 		assert.Contains(t, result.Error, "not valid JSON")
 	})
 }
+
+func TestApplyJsoncMapping_RespectsNoInterpolation(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	confPath := filepath.Join(tmpDir, "dotfiles.conf")
+	require.NoError(t, os.WriteFile(confPath, []byte("# empty config\n"), 0644))
+	prevConfigFlag := configFlag
+	configFlag = confPath
+	t.Cleanup(func() { configFlag = prevConfigFlag })
+
+	source := filepath.Join(tmpDir, "config.jsonc")
+	dest := filepath.Join(tmpDir, "config.json")
+
+	t.Setenv("CLY_TEST_DOTFILES_DIR", "/Users/test/dotfiles")
+
+	content := []byte("// @no-interpolation\n{\n  \"home\": \"${CLY_TEST_DOTFILES_DIR}/foo\"\n}")
+	require.NoError(t, os.WriteFile(source, content, 0644))
+
+	m := Mapping{Source: source, Destination: dest}
+	res, err := ApplyJsoncMapping(m)
+	require.NoError(t, err)
+	assert.Equal(t, StateLinked, res.State)
+
+	data, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	assert.True(t, json.Valid(data))
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, "${CLY_TEST_DOTFILES_DIR}/foo", got["home"])
+}
+
+func TestApplyJsoncMapping_ExpandsEnvVars(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// lockFilePath() derives the lock path from whatever dotfiles.conf the
+	// loader picks up. Point it at a config inside t.TempDir() so the test
+	// lock lands there instead of ~/DotFiles.
+	confPath := filepath.Join(tmpDir, "dotfiles.conf")
+	require.NoError(t, os.WriteFile(confPath, []byte("# empty config\n"), 0644))
+	prevConfigFlag := configFlag
+	configFlag = confPath
+	t.Cleanup(func() { configFlag = prevConfigFlag })
+
+	source := filepath.Join(tmpDir, "config.jsonc")
+	dest := filepath.Join(tmpDir, "config.json")
+
+	t.Setenv("CLY_TEST_DOTFILES_DIR", "/Users/test/dotfiles")
+
+	content := []byte("{\n  // comment\n  \"home\": \"${CLY_TEST_DOTFILES_DIR}/foo\",\n}")
+	require.NoError(t, os.WriteFile(source, content, 0644))
+
+	m := Mapping{Source: source, Destination: dest}
+	res, err := ApplyJsoncMapping(m)
+	require.NoError(t, err)
+	assert.Equal(t, StateLinked, res.State)
+
+	data, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	assert.True(t, json.Valid(data))
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, "/Users/test/dotfiles/foo", got["home"])
+}

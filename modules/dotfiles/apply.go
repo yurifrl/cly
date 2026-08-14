@@ -39,9 +39,16 @@ func ApplyJsoncMapping(m Mapping) (LinkResult, error) {
 	if serr != nil {
 		return LinkResult{}, fmt.Errorf("strip jsonc: %w", serr)
 	}
+	// Env expansion happens after stripping so the comparison below reflects
+	// what will actually be written. expandEnvIfAllowed no-ops when the
+	// source carries @no-interpolation.
+	expanded, eerr := expandEnvIfAllowed(src, stripped)
+	if eerr != nil {
+		return LinkResult{}, fmt.Errorf("expand env vars: %w", eerr)
+	}
 
 	// No-op short-circuit: existing dst already matches.
-	if existing, err := os.ReadFile(m.Destination); err == nil && bytes.Equal(existing, stripped) {
+	if existing, err := os.ReadFile(m.Destination); err == nil && bytes.Equal(existing, expanded) {
 		fmt.Printf("%s %s (no changes)\n",
 			style.GreenStyle.Render("✅ Up to date:"),
 			shortenPath(m.Destination))
