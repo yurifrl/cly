@@ -3,6 +3,8 @@ package dotfiles
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -71,12 +73,54 @@ func TestTargetGateReason(t *testing.T) {
 	}
 }
 
-func TestParseConfigTarget(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "dotfiles.conf")
+// A bare @target line used to gate the whole file. That made no sense in
+// dotfiles.conf, which always applies, so it is now rejected outright and
+// gating is expressed per directive instead.
+func TestParseConfig_StandaloneTargetIsAnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dotfiles.conf")
 	if err := os.WriteFile(path, []byte("@target user=yuri os=darwin\n./a -> ~/a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
+	cfg, err := ParseConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Errors) != 1 {
+		t.Fatalf("want exactly one error, got %v", cfg.Errors)
+	}
+	if !strings.Contains(cfg.Errors[0], "@target must be attached to a directive") {
+		t.Fatalf("error should explain the inline form, got %q", cfg.Errors[0])
+	}
+	// The mapping on the following line is unaffected by the bad gate line.
+	if len(cfg.Mappings) != 1 {
+		for _, m := range cfg.Mappings {
+			t.Logf("mapping: %+v", m)
+		}
+		t.Fatalf("want the ./a mapping to still parse, got %d", len(cfg.Mappings))
+	}
+}
+
+// Inline @target gates one directive at a time; non-matching lines are dropped
+// silently, which is what lets os/arch gating live in a config that always
+// applies.
+func TestParseConfig_InlineTargetGatesIndividualDirectives(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dotfiles.conf")
+	content := strings.Join([]string{
+		"./darwin -> " + filepath.Join(dir, "darwin.out") + " @target os=darwin",
+		"./linux -> " + filepath.Join(dir, "linux.out") + " @target os=linux",
+		"./always -> " + filepath.Join(dir, "always.out"),
+		"!echo darwin @target os=darwin",
+		"!echo linux @target os=linux",
+		"@cache echo cached @target arch=arm64",
+		"@cache echo skipped @target arch=s390x",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withContext(t, "bob", "darwin", "arm64")
+
 	cfg, err := ParseConfig(path)
 	if err != nil {
 		t.Fatal(err)
@@ -84,8 +128,64 @@ func TestParseConfigTarget(t *testing.T) {
 	if len(cfg.Errors) != 0 {
 		t.Fatalf("unexpected parse errors: %v", cfg.Errors)
 	}
-	if !cfg.Target.set || len(cfg.Target.Users) != 1 || len(cfg.Target.OSes) != 1 {
-		t.Fatalf("target not parsed into config: %+v", cfg.Target)
+
+	var dests []string
+	for _, m := range cfg.Mappings {
+		dests = append(dests, filepath.Base(m.Destination))
+	}
+	wantDests := []string{"darwin.out", "always.out"}
+	if !reflect.DeepEqual(dests, wantDests) {
+		t.Fatalf("mappings = %v, want %v", dests, wantDests)
+	}
+	if want := []string{"echo darwin"}; !reflect.DeepEqual(cfg.InstallCommands, want) {
+		t.Fatalf("install commands = %v, want %v", cfg.InstallCommands, want)
+	}
+	if len(cfg.CacheEntries) != 1 || cfg.CacheEntries[0].Command != "echo cached" {
+		t.Fatalf("cache entries = %+v, want only 'echo cached'", cfg.CacheEntries)
+	}
+}
+
+// The gate must not swallow a malformed @target: a typo should surface as an
+// error rather than silently dropping the directive it was attached to.
+func TestParseConfig_InlineTargetReportsSyntaxErrors(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dotfiles.conf")
+	if err := os.WriteFile(path, []byte("./x -> "+dir+"/x.out @target platform=darwin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := ParseConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Errors) != 1 {
+		t.Fatalf("want exactly one error, got %v", cfg.Errors)
+	}
+	if !strings.Contains(cfg.Errors[0], "unknown @target key") {
+		t.Fatalf("error should name the bad key, got %q", cfg.Errors[0])
+	}
+	if len(cfg.Mappings) != 0 {
+		t.Fatalf("a directive with a broken gate must not be applied, got %+v", cfg.Mappings)
+	}
+}
+
+// A destination containing the literal text "@target" must not be mistaken for
+// a gate; only a trailing gate token counts.
+func TestParseConfig_InlineTargetOnlySplitsTrailingGate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dotfiles.conf")
+	if err := os.WriteFile(path, []byte("!echo '@target os=darwin is the syntax'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withContext(t, "bob", "darwin", "arm64")
+
+	cfg, err := ParseConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"echo '@target os=darwin is the syntax'"}
+	if !reflect.DeepEqual(cfg.InstallCommands, want) {
+		t.Fatalf("quoted @target must stay part of the command: got %v, want %v", cfg.InstallCommands, want)
 	}
 }
 

@@ -85,33 +85,42 @@ func TestLoadConfig_UserFlagSelectsOverlayAndTargetUser(t *testing.T) {
 	assert.Equal(t, []string{dir + "/base.out", dir + "/alice.out"}, destinations(cfg))
 }
 
-func TestLoadConfig_NonMatchingOverlayTargetSkipsOnlyOverlay(t *testing.T) {
+// Gating is per directive, so an arch-specific entry in the overlay drops out
+// on a non-matching machine while everything else in both files still applies.
+func TestLoadConfig_InlineGatesDropOnlyTheGatedEntry(t *testing.T) {
 	dir := t.TempDir()
-	writeConf(t, filepath.Join(dir, "dotfiles.conf"), "./base -> "+dir+"/base.out\n")
-	writeConf(t, filepath.Join(dir, "dotfiles.bob.conf"), "@target arch=arm64\n./arm -> "+dir+"/arm.out\n")
+	writeConf(t, filepath.Join(dir, "dotfiles.conf"),
+		"./base -> "+dir+"/base.out\n./mac -> "+dir+"/mac.out @target os=darwin\n")
+	writeConf(t, filepath.Join(dir, "dotfiles.bob.conf"),
+		"./bob -> "+dir+"/bob.out\n./arm -> "+dir+"/arm.out @target arch=arm64\n")
 
 	withConfigFlag(t, filepath.Join(dir, "dotfiles.conf"))
 	withContext(t, "bob", "linux", "amd64")
 
 	cfg, paths, err := loadConfig()
 	require.NoError(t, err)
-	assert.Equal(t, []string{filepath.Join(dir, "dotfiles.conf")}, paths,
-		"an arch-gated overlay must not prevent the base config from applying")
-	assert.Equal(t, []string{dir + "/base.out"}, destinations(cfg))
-	require.Len(t, cfg.Skipped, 1)
-	assert.Contains(t, cfg.Skipped[0], "dotfiles.bob.conf")
+	assert.Equal(t, []string{
+		filepath.Join(dir, "dotfiles.conf"),
+		filepath.Join(dir, "dotfiles.bob.conf"),
+	}, paths, "both configs always apply; only individual gated lines drop out")
+	assert.Equal(t, []string{dir + "/base.out", dir + "/bob.out"}, destinations(cfg))
 }
 
-func TestLoadConfig_NonMatchingBaseTargetIsAnError(t *testing.T) {
+// A config full of gated-out directives still applies as a file, so the lock
+// path stays stable instead of collapsing onto the overlay.
+func TestLoadConfig_FullyGatedConfigStillCountsAsApplied(t *testing.T) {
 	dir := t.TempDir()
-	writeConf(t, filepath.Join(dir, "dotfiles.conf"), "@target os=windows\n./win -> "+dir+"/win.out\n")
+	writeConf(t, filepath.Join(dir, "dotfiles.conf"), "./win -> "+dir+"/win.out @target os=windows\n")
+	writeConf(t, filepath.Join(dir, "dotfiles.bob.conf"), "./bob -> "+dir+"/bob.out\n")
 
 	withConfigFlag(t, filepath.Join(dir, "dotfiles.conf"))
 	withContext(t, "bob", "linux", "amd64")
 
-	_, _, err := loadConfig()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no dotfiles config matches this machine")
+	cfg, applied, err := loadConfig()
+	require.NoError(t, err)
+	assert.Equal(t, []string{dir + "/bob.out"}, destinations(cfg))
+	assert.Equal(t, filepath.Join(dir, "dotfiles.lock"), lockPathFor(baseConfigPath(applied)),
+		"the lock must stay next to the base config even when every base entry is gated out")
 }
 
 func TestLoadConfig_ExplicitUserConfigAlsoLoadsSiblingBase(t *testing.T) {

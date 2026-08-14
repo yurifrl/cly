@@ -50,6 +50,22 @@ func effectiveUsername() string {
 	return currentUsername()
 }
 
+// splitInlineGate peels a trailing `@target ...` gate off a directive line,
+// returning the directive and the gate text. Only a gate introduced by
+// whitespace counts, so a quoted or embedded "@target" inside a command stays
+// part of the command.
+func splitInlineGate(line string) (directive, gate string, found bool) {
+	idx := strings.LastIndex(line, " @target")
+	if idx < 0 {
+		return line, "", false
+	}
+	after := line[idx+len(" @target"):]
+	if after != "" && !strings.HasPrefix(after, " ") {
+		return line, "", false
+	}
+	return strings.TrimSpace(line[:idx]), strings.TrimSpace(line[idx+1:]), true
+}
+
 func parseTarget(line string, lineNum int) (Target, error) {
 	rest := strings.TrimSpace(strings.TrimPrefix(line, "@target"))
 	if rest == "" {

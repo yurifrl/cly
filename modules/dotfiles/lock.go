@@ -143,8 +143,10 @@ func lockFilePath() (string, error) {
 	return lockPathFor(baseConfigPath(applied)), nil
 }
 
-// baseConfigPath picks dotfiles.conf out of the applied set, falling back to
-// the first applied config when only an overlay matched.
+// baseConfigPath picks dotfiles.conf out of the applied set so the lock always
+// lands in one place. configCandidates always puts the base first, and gating
+// can no longer drop a whole file, so the fallback only covers a --config
+// pointed straight at an overlay with no sibling base on disk.
 func baseConfigPath(applied []string) string {
 	for _, p := range applied {
 		if filepath.Base(p) == "dotfiles.conf" {

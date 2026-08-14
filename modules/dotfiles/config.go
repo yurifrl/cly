@@ -49,17 +49,12 @@ type Install struct {
 
 type Config struct {
 	BaseDir         string
-	Target          Target
 	Mappings        []Mapping
 	InstallCommands []string
 	CacheEntries    []CacheEntry
 	Installs        []Install
 	OpMappings      []OpMapping
 	Errors          []string
-	// Skipped records configs that parsed cleanly but were gated out by a
-	// non-matching @target, so a sync can report them instead of leaving the
-	// user wondering why a file had no effect.
-	Skipped []string
 }
 
 // merge folds src into cfg, appending in call order so a later config's
@@ -70,7 +65,6 @@ func (cfg *Config) merge(src *Config, label string) {
 	cfg.CacheEntries = append(cfg.CacheEntries, src.CacheEntries...)
 	cfg.Installs = append(cfg.Installs, src.Installs...)
 	cfg.OpMappings = append(cfg.OpMappings, src.OpMappings...)
-	cfg.Skipped = append(cfg.Skipped, src.Skipped...)
 	for _, e := range src.Errors {
 		cfg.Errors = append(cfg.Errors, fmt.Sprintf("%s: %s", label, e))
 	}
@@ -96,19 +90,27 @@ func ParseConfig(configPath string) (*Config, error) {
 			continue
 		}
 
+		if strings.HasPrefix(line, "@target") {
+			cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: @target must be attached to a directive, for example './file -> ~/file @target os=darwin'", lineNum))
+			continue
+		}
+
+		if directive, gate, hasGate := splitInlineGate(line); hasGate {
+			t, err := parseTarget(gate, lineNum)
+			if err != nil {
+				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
+				continue
+			}
+			if reason := t.GateReason(); reason != "" {
+				continue
+			}
+			line = directive
+		}
+
 		switch {
 		case strings.HasPrefix(line, "!"):
 			cmd := strings.TrimSpace(line[1:])
 			cfg.InstallCommands = append(cfg.InstallCommands, cmd)
-		case strings.HasPrefix(line, "@target ") || line == "@target":
-			t, err := parseTarget(line, lineNum)
-			if err != nil {
-				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
-			} else if cfg.Target.set {
-				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: duplicate @target (already set on line %d)", lineNum, cfg.Target.LineNum))
-			} else {
-				cfg.Target = t
-			}
 		case strings.HasPrefix(line, "@install "):
 			url := strings.TrimSpace(strings.TrimPrefix(line, "@install "))
 			if url != "" {

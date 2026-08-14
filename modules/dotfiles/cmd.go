@@ -47,7 +47,13 @@ Config syntax (dotfiles.conf):
   @op account=x ./s.op -> ~/d           1Password inject (-o flag)
   @op account=x op://vault/item/field -> ~/d  1Password read secret (-o flag)
   .jsonc -> .json                       comments stripped automatically
-  @target user=u,.. os=linux,darwin arch=amd64,..   gate: skip unless this machine matches
+
+Per-line gating: append @target to any directive to skip it unless this machine
+matches. It gates only the line it is attached to; a bare @target line is an
+error.
+  ./mac/cfg -> ~/.cfg @target os=darwin
+  !brew install jq @target os=darwin arch=arm64
+  ./work -> ~/.work @target user=alice,bob
 
 Config discovery: dotfiles.conf is ALWAYS applied. dotfiles.<user>.conf is an
 additional overlay applied on top of it, so shared entries live in the base file
@@ -56,10 +62,6 @@ a conflicting destination the overlay wins.
 
 Use --user <name> to apply another user's overlay (and to drive @target user=)
 instead of the detected username.
-
-A config whose @target header does not match this machine is skipped with a
-note; the remaining configs still apply. If nothing matches, the run errors
-rather than silently doing nothing.
 
 Use --cache to force re-run of every @cache entry (ignores the hash skip).
 Use --install-only to run only @install directives (skips everything else).
@@ -199,10 +201,9 @@ func dotfilesDirPath() string {
 
 // loadConfig parses every applicable config and merges them into one Config.
 // dotfiles.conf is always applied; dotfiles.<user>.conf is applied in addition
-// when present, and its entries come last so they win on conflict. A file whose
-// @target does not match this machine is skipped (recorded in cfg.Skipped)
-// rather than aborting the run. It returns the merged config and the config
-// paths that were actually applied, in order.
+// when present, and its entries come last so they win on conflict. Gating is
+// per directive (a trailing `@target`), so a config that exists always
+// contributes. It returns the merged config and the applied paths, in order.
 func loadConfig() (*Config, []string, error) {
 	candidates := configCandidates()
 
@@ -215,38 +216,24 @@ func loadConfig() (*Config, []string, error) {
 
 	merged := &Config{}
 	var applied []string
-	var rejected []string
-	found := false
 
 	for _, path := range candidates {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		found = true
 		parsed, err := ParseConfig(path)
 		if err != nil {
 			return nil, nil, err
 		}
-		label := filepath.Base(path)
-		if reason := parsed.Target.GateReason(); reason != "" {
-			rejected = append(rejected, fmt.Sprintf("%s: %s", label, reason))
-			merged.Skipped = append(merged.Skipped, fmt.Sprintf("%s skipped (%s)", label, reason))
-			continue
-		}
 		if merged.BaseDir == "" {
 			merged.BaseDir = parsed.BaseDir
 		}
-		merged.merge(parsed, label)
+		merged.merge(parsed, filepath.Base(path))
 		applied = append(applied, path)
 	}
 
 	if len(applied) == 0 {
-		if len(rejected) > 0 {
-			return nil, nil, fmt.Errorf("no dotfiles config matches this machine:\n  %s", strings.Join(rejected, "\n  "))
-		}
-		if !found {
-			return nil, nil, fmt.Errorf("config not found: %s\nCreate it or use --config /path/to/dotfiles.conf", strings.Join(candidates, ", "))
-		}
+		return nil, nil, fmt.Errorf("config not found: %s\nCreate it or use --config /path/to/dotfiles.conf", strings.Join(candidates, ", "))
 	}
 	return merged, applied, nil
 }
@@ -265,9 +252,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 		for _, p := range applied {
 			fmt.Printf("%s %s\n", style.BlueStyle.Render("📄 Config:"), shortenPath(p))
 		}
-	}
-	for _, s := range cfg.Skipped {
-		fmt.Printf("%s %s\n", style.YellowStyle.Render("⏭️ "), s)
 	}
 	for _, e := range cfg.Errors {
 		fmt.Printf("⚠️  %s\n", e)
@@ -423,11 +407,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Dotfiles: %s\n", strings.Join(applied, ", "))
-	for _, s := range cfg.Skipped {
-		fmt.Printf("  skipped: %s\n", s)
-	}
-	fmt.Println()
+	fmt.Printf("Dotfiles: %s\n\n", strings.Join(applied, ", "))
 
 	for _, m := range cfg.Mappings {
 		result := CheckStatus(m)
