@@ -80,6 +80,20 @@ func TestParseConfig_Op(t *testing.T) {
 		assert.Contains(t, m.Destination, ".config/thing.json")
 	})
 
+	t.Run("parses @op with quoted op:// reference containing spaces", func(t *testing.T) {
+		content := `@op "op://Private/Some Item/field" -> ~/out.txt`
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+		cfg, err := ParseConfig(configPath)
+		require.NoError(t, err)
+		require.Len(t, cfg.OpMappings, 1)
+		m := cfg.OpMappings[0]
+		assert.True(t, m.IsReference)
+		assert.Equal(t, "op://Private/Some Item/field", m.Source)
+	})
+
 	t.Run("parses formatter pipeline before trailing target gate", func(t *testing.T) {
 		content := `@op account=my.1password.com "op://Private/GitHub/private_key" -> ~/.ssh/github-signing | format-ssh @target os=darwin`
 		tmpDir := t.TempDir()
