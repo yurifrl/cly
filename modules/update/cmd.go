@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	defaultSourceDir  = "/Users/yuri/Workdir/Yuri/cly"
+	defaultSourceDir  = "~/Workdir/Yuri/cly"
 	defaultInstallDir = "~/.local/bin"
 	binaryName        = "cly"
 	localVersionFile  = ".local-version"
@@ -30,6 +30,7 @@ var (
 	remote      bool
 	bumpFlag    string
 	piNoExt     bool
+	sourceFlag  string
 )
 
 func Register(parent *cobra.Command) {
@@ -51,6 +52,7 @@ Use --remote to download the latest GitHub release instead.`,
 
 	cmd.Flags().BoolVar(&remote, "remote", false, "Download latest release from GitHub instead of building locally")
 	cmd.Flags().BoolVar(&piNoExt, "pi-no-extension", false, "Skip installing bundled pi extensions after update")
+	cmd.Flags().StringVarP(&sourceFlag, "source", "s", "", "Override source directory for local build")
 	cmd.Flags().StringVarP(&bumpFlag, "bump", "b", "", "Cut a real release tag: patch, minor, or major")
 	cmd.Flags().Lookup("bump").NoOptDefVal = "patch"
 
@@ -97,6 +99,18 @@ func runUpdate(cmd *cobra.Command) error {
 
 func updateLocal(cmd *cobra.Command) error {
 	sourceDir := getSourceDir()
+
+	// Pull latest changes before building
+	fmt.Printf("%s Pulling latest changes...\n", style.BlueStyle.Render("⚡"))
+	pullCmd := exec.Command("git", "pull", "--rebase")
+	pullCmd.Dir = sourceDir
+	pullCmd.Stdout = os.Stdout
+	pullCmd.Stderr = os.Stderr
+	if err := pullCmd.Run(); err != nil {
+		fmt.Printf("%s git pull failed (non-fatal): %v\n",
+			style.YellowStyle.Render("⚠️"), err)
+	}
+
 	installDir := expandPath(defaultInstallDir)
 	destPath := filepath.Join(installDir, binaryName)
 
@@ -384,13 +398,16 @@ func gitOutputIn(dir string, args ...string) (string, error) {
 }
 
 func getSourceDir() string {
+	if sourceFlag != "" {
+		return expandPath(sourceFlag)
+	}
 	if dir := config.GetString("modules.update.source_dir"); dir != "" {
 		return expandPath(dir)
 	}
 	if dir := config.GetString("modules.install.source_dir"); dir != "" {
 		return expandPath(dir)
 	}
-	return defaultSourceDir
+	return expandPath(defaultSourceDir)
 }
 
 func installCompletions(clyPath string) {
