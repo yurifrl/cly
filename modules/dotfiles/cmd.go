@@ -44,8 +44,10 @@ Config syntax (dotfiles.conf):
   !cmd                                  run shell command (-i flag)
   @install <url>                        fetch+analyze install script (-i flag)
   @cache <command>                      runs once; re-runs only when the command text changes (sha256-keyed)
-  @op account=x ./s.op -> ~/d           1Password inject (-o flag)
-  @op account=x op://vault/item/field -> ~/d  1Password read secret (-o flag)
+  @op account=x ./s.op -> ~/d                       1Password inject (-o flag)
+  @op account=x op://vault/item/field -> ~/d         1Password read secret (-o flag)
+  @op account=x op://vault/item/field -> ~/key | format-ssh @target os=linux
+                                                       format output (private mode 0600 + derived .pub)
   .jsonc -> .json                       comments stripped; $VAR/${VAR} env vars expanded (opt out with @no-interpolation)
 
 Per-line gating: append @target to any directive to skip it unless this machine

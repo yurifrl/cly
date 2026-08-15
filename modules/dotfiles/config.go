@@ -46,6 +46,7 @@ type OpMapping struct {
 	// with `op read --out-file`. Otherwise Source is a template file path and
 	// `op inject` is used.
 	IsReference bool
+	Formatters  []string
 	LineNum     int
 	Gate        string
 }
@@ -371,7 +372,19 @@ func parseOpLine(cfg *Config, line string, lineNum int, baseDir string) error {
 	}
 
 	source := strings.TrimSpace(parts[0])
-	destination := strings.TrimSpace(parts[1])
+	destinationAndPipeline := strings.Split(parts[1], "|")
+	destination := strings.TrimSpace(destinationAndPipeline[0])
+	formatters := make([]string, 0, len(destinationAndPipeline)-1)
+	for _, segment := range destinationAndPipeline[1:] {
+		formatter := strings.TrimSpace(segment)
+		if formatter == "" {
+			return fmt.Errorf("@op formatter is empty")
+		}
+		if !isOpFormatter(formatter) {
+			return fmt.Errorf("unknown @op formatter %q", formatter)
+		}
+		formatters = append(formatters, formatter)
+	}
 
 	if source == "" || destination == "" {
 		return fmt.Errorf("@op source or destination is empty")
@@ -391,6 +404,7 @@ func parseOpLine(cfg *Config, line string, lineNum int, baseDir string) error {
 		Destination: destination,
 		Account:     account,
 		IsReference: isRef,
+		Formatters:  formatters,
 		LineNum:     lineNum,
 	})
 
