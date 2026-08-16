@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 	agentsession "github.com/yurifrl/cly/modules/agent-session"
-	aimod "github.com/yurifrl/cly/modules/ai"
 	"github.com/yurifrl/cly/modules/agents"
+	aimod "github.com/yurifrl/cly/modules/ai"
 	"github.com/yurifrl/cly/modules/aliases"
 	"github.com/yurifrl/cly/modules/backup"
 	"github.com/yurifrl/cly/modules/beads"
@@ -18,6 +18,7 @@ import (
 	"github.com/yurifrl/cly/modules/config"
 	"github.com/yurifrl/cly/modules/demo"
 	"github.com/yurifrl/cly/modules/dotfiles"
+	"github.com/yurifrl/cly/modules/envs"
 	"github.com/yurifrl/cly/modules/every"
 	gitcommits "github.com/yurifrl/cly/modules/git-commits"
 	"github.com/yurifrl/cly/modules/helpy"
@@ -25,14 +26,14 @@ import (
 	"github.com/yurifrl/cly/modules/mcp"
 	"github.com/yurifrl/cly/modules/memwatch"
 	"github.com/yurifrl/cly/modules/notify"
-	"github.com/yurifrl/cly/modules/piwrap"
 	"github.com/yurifrl/cly/modules/obsidian-tools"
+	"github.com/yurifrl/cly/modules/oi"
+	"github.com/yurifrl/cly/modules/piwrap"
+	"github.com/yurifrl/cly/modules/skills"
 	"github.com/yurifrl/cly/modules/statusline"
 	"github.com/yurifrl/cly/modules/update"
 	"github.com/yurifrl/cly/modules/uuid"
 	"github.com/yurifrl/cly/modules/zl"
-	"github.com/yurifrl/cly/modules/oi"
-	"github.com/yurifrl/cly/modules/skills"
 	"github.com/yurifrl/cly/modules/zs"
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
@@ -86,6 +87,7 @@ func init() {
 	config.Register(RootCmd)
 	dotfiles.Register(RootCmd)
 	every.Register(RootCmd)
+	envs.Register(RootCmd)
 	gitcommits.Register(RootCmd)
 	helpy.Register(RootCmd)
 	llmchat.Register(RootCmd)
