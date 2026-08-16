@@ -10,7 +10,7 @@ import (
 const (
 	defaultAccount = "my.1password.com"
 	defaultVault   = "Private"
-	defaultProfile = "work"
+	defaultProfile = "all"
 )
 
 type Config struct {
@@ -115,7 +115,7 @@ func SelectFields(fields []Field, profile string) []Field {
 		if !validEnvironmentLabel(field.Label) || field.Value == "" || field.Value == "null" {
 			continue
 		}
-		if (field.Section == "work" || field.Section == "personal") && field.Section != profile {
+		if (field.Section == "work" || field.Section == "personal") && profile != "all" && field.Section != profile {
 			continue
 		}
 		selected = append(selected, field)

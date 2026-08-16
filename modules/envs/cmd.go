@@ -24,7 +24,7 @@ func Register(parent *cobra.Command) {
 	}
 	cmd.Flags().StringVar(&configPath, "config", defaultConfigPath(), "Path to environment loader JSON config")
 	cmd.Flags().StringVar(&cachePath, "cache", defaultCacheDir(), "Directory for generated shell caches")
-	cmd.Flags().StringVar(&profile, "profile", "", "Environment profile: work or personal")
+	cmd.Flags().StringVar(&profile, "profile", "", "Environment profile: all, work, or personal")
 	cmd.Flags().StringVar(&opBinary, "op", "op", "Path to the 1Password CLI")
 	cmd.Flags().BoolVar(&reload, "reload", false, "Refresh the 1Password cache")
 	cmd.Flags().BoolVar(&plain, "plain", false, "Disable the interactive terminal interface")
@@ -43,8 +43,8 @@ func run(ctx context.Context, configPath, cachePath, profile, opBinary string, r
 	if profile == "" {
 		profile = config.DefaultProfile
 	}
-	if profile != "work" && profile != "personal" {
-		return fmt.Errorf("invalid profile %q: expected work or personal", profile)
+	if profile != "all" && profile != "work" && profile != "personal" {
+		return fmt.Errorf("invalid profile %q: expected all, work, or personal", profile)
 	}
 	if err := os.MkdirAll(cachePath, 0o700); err != nil {
 		return fmt.Errorf("create cache: %w", err)
@@ -80,7 +80,7 @@ func defaultConfigPath() string {
 }
 
 func defaultCacheDir() string {
-	return filepath.Join(os.TempDir(), "1pass-load-envs")
+	return "/tmp/1pass-load-envs"
 }
 
 func isTerminal() bool {
