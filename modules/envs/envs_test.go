@@ -18,13 +18,11 @@ func TestSelectFieldsHonorsProfileSections(t *testing.T) {
 		{Label: "server", Value: "ignored"},
 	}
 
-	selected := SelectFields(fields, "work")
-
 	require.Equal(t, []Field{
 		{Label: "ROOT", Value: "root"},
 		{Label: "WORK", Value: "work", Section: "work"},
 		{Label: "DEV", Value: "dev", Section: "dev"},
-	}, selected)
+	}, SelectFields(fields, "work"))
 }
 
 func TestSelectFieldsAllProfileIncludesEveryProfileSection(t *testing.T) {
@@ -35,6 +33,12 @@ func TestSelectFieldsAllProfileIncludesEveryProfileSection(t *testing.T) {
 
 	require.Equal(t, fields, SelectFields(fields, "all"))
 }
+
+func TestFishLiteralPreservesDollarSigns(t *testing.T) {
+	require.Equal(t, "'a$%&b'", fishLiteral("a$%&b"))
+	require.Equal(t, "'it\\'s safe'", fishLiteral("it's safe"))
+}
+
 func TestOpCommandPassesOnlyTheMatchingEphemeralSession(t *testing.T) {
 	command := opCommand(context.Background(), "op", sessions{
 		"personal": "personal-token",

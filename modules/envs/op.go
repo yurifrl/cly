@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type fetchResult struct {
@@ -64,6 +65,25 @@ func downloadAttachments(ctx context.Context, opBinary, destination string, secr
 		count++
 	}
 	return count, nil
+}
+
+func resolveEval(ctx context.Context, fields []Field) []Field {
+	resolved := make([]Field, 0, len(fields))
+	for _, field := range fields {
+		if strings.HasPrefix(field.Value, "eval:") {
+			command := exec.CommandContext(ctx, "sh", "-c", strings.TrimPrefix(field.Value, "eval:"))
+			output, err := command.Output()
+			if err != nil {
+				continue
+			}
+			field.Value = strings.TrimRight(string(output), "\n")
+			if field.Value == "" {
+				continue
+			}
+		}
+		resolved = append(resolved, field)
+	}
+	return resolved
 }
 
 func opCommand(ctx context.Context, opBinary string, tokens sessions, account string, args ...string) *exec.Cmd {
