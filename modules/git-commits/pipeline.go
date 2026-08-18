@@ -10,20 +10,19 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yurifrl/cly/pkg/ai"
 	"github.com/yurifrl/cly/pkg/config"
-	"github.com/yurifrl/cly/pkg/llm"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
 type pipelineOpts struct {
-	DryRun   bool
-	Yes      bool
-	All      bool
-	JSON     bool
-	NoVerify bool
-	Push     bool
-	Strategy string
-	Prompt   string
-	Ignored  bool
+	DryRun      bool
+	Yes         bool
+	All         bool
+	JSON        bool
+	NoVerify    bool
+	Push        bool
+	Strategy    string
+	Prompt      string
+	Ignored     bool
 	NoSubmodule bool
 }
 
@@ -133,10 +132,9 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	}
 
 	// Create LLM client
-	llmCfg := resolveLLMConfig(cfg)
-	client, err := llm.NewClient(llmCfg)
+	client, err := ai.NewClientWith(ai.LookupModuleOverride("git-commits"))
 	if err != nil {
-		return fmt.Errorf("failed to create AI client: %w\nSet ANTHROPIC_API_KEY or OPENAI_API_KEY", err)
+		return fmt.Errorf("failed to create AI client: %w\nCheck the configured AI providers and their credentials", err)
 	}
 
 	// Step 1: Analyze changeset
@@ -298,23 +296,6 @@ execute:
 	}
 
 	return err
-}
-
-// resolveLLMConfig delegates to `pkg/ai`. The `cfg` arg is kept for
-// back-compat but ignored; pkg/ai always reads the live process config.
-// commit-specific AI overrides live under `modules.git-commits.ai`.
-func resolveLLMConfig(_ *config.Config) llm.Config {
-	r := ai.LoadConfigWith(ai.LookupModuleOverride("git-commits"))
-	if r == nil {
-		return llm.Config{}
-	}
-	return llm.Config{
-		Provider:  llm.Provider(r.Provider),
-		Model:     r.Model,
-		APIKey:    r.APIKey,
-		APIKeyEnv: r.APIKeyEnv,
-		BaseURL:   r.BaseURL,
-	}
 }
 
 // buildRevisionPrompt creates a new custom prompt that includes the previous plan

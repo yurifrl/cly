@@ -4,33 +4,33 @@
 //
 // Architecture:
 //
-//   pkg/ai          ←  reads top-level `ai:` config block. Knows about
-//                       providers, models, api_key resolution. Period.
+//	pkg/ai          ←  reads top-level `ai:` config block. Knows about
+//	                    providers, models, api_key resolution. Period.
 //
-//   modules/foo     →  owns its own config under `modules.foo.*`. If
-//                       module foo wants to override AI settings, it puts
-//                       them under `modules.foo.ai` and passes that map
-//                       to ai.NewClientWith / ai.LoadConfigWith.
+//	modules/foo     →  owns its own config under `modules.foo.*`. If
+//	                    module foo wants to override AI settings, it puts
+//	                    them under `modules.foo.ai` and passes that map
+//	                    to ai.NewClientWith / ai.LoadConfigWith.
 //
 // AI is therefore a sibling of App and Theme in the config struct, NOT a
 // pseudo-module. Modules depend on ai; ai never depends on a module.
 //
 // Config layout:
 //
-//   ai:
-//     providers:                          # list of named entries; first condition
-//       - name: aihub                     # match (highest weight, ties by list
-//         provider: openai                # order) wins; else `default: true`;
-//         base_url: https://gw.example/v1 # else first entry
-//         api_key: $AIHUB_API_KEY         # literal or $ENV / ${ENV}
-//         model: aihub/claude-sonnet-5
-//         weight: 10                      # optional, default 0
-//         condition: 'user == "yuri" && dir =~ "~/Workdir/Yuri/*"'
-//         default: true                   # fallback when no condition matches
-//       - name: bedrock                   # Anthropic models via AWS Bedrock
-//         provider: bedrock
-//         model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
-//         # no api_key: auth uses AWS_BEARER_TOKEN_BEDROCK or AWS creds/profile
+//	ai:
+//	  providers:                          # list of named entries; first condition
+//	    - name: aihub                     # match (highest weight, ties by list
+//	      provider: openai                # order) wins; else `default: true`;
+//	      base_url: https://gw.example/v1 # else first entry
+//	      api_key: $AIHUB_API_KEY         # literal or $ENV / ${ENV}
+//	      model: aihub/claude-sonnet-5
+//	      weight: 10                      # optional, default 0
+//	      condition: 'user == "yuri" && dir =~ "~/Workdir/Yuri/*"'
+//	      default: true                   # fallback when no condition matches
+//	    - name: bedrock                   # Anthropic models via AWS Bedrock
+//	      provider: bedrock
+//	      model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+//	      # no api_key: auth uses AWS_BEARER_TOKEN_BEDROCK or AWS creds/profile
 //
 // Condition fields: user, host, arch, os, dir, env.NAME. Operators:
 // ==, !=, =~ (glob), !~, &&, ||, !, parens. Bare field = truthy when set.
@@ -38,15 +38,15 @@
 // (LastDecision); with app.debug on, the pick and full table are logged
 // to stderr once per process.
 //
-//   modules:
-//     commit:
-//       ai:                              # commit-local override
-//         provider: openai
-//         model: gpt-4o-mini
-//     agent_session:
-//       search:
-//         ai:
-//           provider: anthropic
+//	modules:
+//	  commit:
+//	    ai:                              # commit-local override
+//	      provider: openai
+//	      model: gpt-4o-mini
+//	  agent_session:
+//	    search:
+//	      ai:
+//	        provider: anthropic
 package ai
 
 import (
@@ -271,14 +271,42 @@ func NewClientWith(override map[string]interface{}) (llm.Client, error) {
 	if r == nil {
 		return nil, nil
 	}
-	cfg := llm.Config{
-		Provider:  llm.Provider(r.Provider),
-		Model:     r.Model,
-		APIKey:    r.APIKey,
-		APIKeyEnv: r.APIKeyEnv,
-		BaseURL:   r.BaseURL,
+
+	candidates := []llm.Candidate{}
+	addCandidate := func(name string, resolved *Resolved) error {
+		client, err := llm.NewClient(llm.Config{
+			Provider: llm.Provider(resolved.Provider), Model: resolved.Model,
+			APIKey: resolved.APIKey, APIKeyEnv: resolved.APIKeyEnv, BaseURL: resolved.BaseURL,
+		})
+		if err != nil {
+			return err
+		}
+		candidates = append(candidates, llm.Candidate{Name: name, Client: client})
+		return nil
 	}
-	return llm.NewClient(cfg)
+	if err := addCandidate(fmt.Sprintf("%s/%s", r.Provider, r.Model), r); err != nil {
+		return nil, err
+	}
+
+	entries, err := parseProviders(pkgconfig.Get().AI)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range orderProviders(entries, buildContext()) {
+		fallback := &Resolved{Provider: entry.Provider, Model: entry.Model, APIKey: entry.APIKey, APIKeyEnv: entry.APIKeyEnv, BaseURL: entry.BaseURL, Enabled: true}
+		if fallback.Provider == r.Provider && fallback.Model == r.Model && fallback.BaseURL == r.BaseURL {
+			continue
+		}
+		if err := addCandidate(entry.Name, fallback); err != nil {
+			fmt.Fprintf(os.Stderr, "ai: skipping unavailable fallback %q: %v\n", entry.Name, err)
+		}
+	}
+	if len(candidates) == 1 {
+		return candidates[0].Client, nil
+	}
+	return llm.NewFallbackClient(candidates, func(failure llm.AttemptFailure) {
+		fmt.Fprintf(os.Stderr, "ai: %s failed; trying next configured model: %v\n", failure.Candidate, failure.Err)
+	}), nil
 }
 
 // HasAPIKey reports whether the resolved config will yield a usable key
@@ -326,8 +354,8 @@ func (errDisabled) Error() string { return "ai is disabled in module config" }
 //
 // Usage:
 //
-//   mod := pkgconfig.Get().Modules["commit"]
-//   client, err := ai.NewClientWith(ai.ModuleOverride(mod))
+//	mod := pkgconfig.Get().Modules["commit"]
+//	client, err := ai.NewClientWith(ai.ModuleOverride(mod))
 func ModuleOverride(moduleConfig map[string]interface{}) map[string]interface{} {
 	if moduleConfig == nil {
 		return nil
@@ -342,8 +370,8 @@ func ModuleOverride(moduleConfig map[string]interface{}) map[string]interface{} 
 // the AI override block at `modules.<modulePath>.ai`". Accepts a dotted
 // path so nested module trees work too:
 //
-//   ai.LookupModuleOverride("commit")                   -> modules.commit.ai
-//   ai.LookupModuleOverride("agent_session.search")     -> modules.agent_session.search.ai
+//	ai.LookupModuleOverride("commit")                   -> modules.commit.ai
+//	ai.LookupModuleOverride("agent_session.search")     -> modules.agent_session.search.ai
 //
 // Returns nil when any segment is missing or `ai` is absent. Combined
 // with NewClientWith / HasAPIKey this lets callers skip the manual map
@@ -369,8 +397,10 @@ func LookupModuleOverride(modulePath string) map[string]interface{} {
 }
 
 // NewClientFor is sugar for the most common shape:
-//   override := ai.LookupModuleOverride("commit")
-//   client, err := ai.NewClientWith(override)
+//
+//	override := ai.LookupModuleOverride("commit")
+//	client, err := ai.NewClientWith(override)
+//
 // collapsed into a single call.
 func NewClientFor(modulePath string) (llm.Client, error) {
 	return NewClientWith(LookupModuleOverride(modulePath))

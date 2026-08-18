@@ -4,20 +4,19 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/yurifrl/cly/pkg/config"
-	"github.com/yurifrl/cly/pkg/llm"
+	"github.com/yurifrl/cly/pkg/ai"
 )
 
 var (
-	dryRunFlag   bool
-	yesFlag      bool
-	allFlag      bool
-	jsonFlag     bool
-	noVerifyFlag bool
-	yoloFlag     bool
-	strategyFlag string
-	promptFlag   string
-	ignoredFlag  bool
+	dryRunFlag      bool
+	yesFlag         bool
+	allFlag         bool
+	jsonFlag        bool
+	noVerifyFlag    bool
+	yoloFlag        bool
+	strategyFlag    string
+	promptFlag      string
+	ignoredFlag     bool
 	noSubmoduleFlag bool
 )
 
@@ -58,12 +57,12 @@ AI provider: %s (configure via modules.git-commits.ai in config)`,
 
 func run(cmd *cobra.Command, args []string) error {
 	return runPipeline(cmd, pipelineOpts{
-		DryRun:   dryRunFlag,
-		Yes:      yesFlag || yoloFlag,
-		All:      allFlag || yoloFlag,
-		JSON:     jsonFlag,
-		NoVerify: noVerifyFlag,
-		Prompt:   promptFlag,
+		DryRun:      dryRunFlag,
+		Yes:         yesFlag || yoloFlag,
+		All:         allFlag || yoloFlag,
+		JSON:        jsonFlag,
+		NoVerify:    noVerifyFlag,
+		Prompt:      promptFlag,
 		Push:        yoloFlag,
 		Strategy:    strategyFlag,
 		Ignored:     ignoredFlag,
@@ -73,15 +72,9 @@ func run(cmd *cobra.Command, args []string) error {
 
 // activeLLMSummary returns a short human-readable description of the active LLM.
 func activeLLMSummary() string {
-	cfg := resolveLLMConfig(config.Get())
-	model := cfg.Model
-	if model == "" {
-		switch cfg.Provider {
-		case llm.ProviderOpenAI:
-			model = "gpt-4o"
-		case llm.ProviderAnthropic:
-			model = "claude-3-5-sonnet-latest"
-		}
+	resolved := ai.LoadConfigWith(ai.LookupModuleOverride("git-commits"))
+	if resolved == nil {
+		return "disabled"
 	}
-	return fmt.Sprintf("%s / %s", cfg.Provider, model)
+	return fmt.Sprintf("%s / %s", resolved.Provider, resolved.Model)
 }

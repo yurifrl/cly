@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-16 Location-Aware AI Model Failover
+
+### Changed
+- `pkg/ai` now builds every AI request as an ordered fallback chain: the location-selected model first, then all other configured providers. Any request failure logs the failed candidate and tries the next one; exhaustion returns a combined error.
+- `modules/git-commits` now uses the shared AI client factory, so `git wip` can recover from a depleted or unavailable primary model without violating normal location-based selection.
+- Added fallback-client and provider-order tests.
+
 ## 2026-05-22 Piwrap Pre-Creates Named Pi Session File
 - Session ID: 019e5057-19ae-7ddc-a9e2-42abd19c8053
 - Session File: /Users/yuri/.pi/agent/sessions/--Users-yuri-Workdir-Yuri-cly--/2026-05-22T15-39-06-030Z_019e5057-19ae-7ddc-a9e2-42abd19c8053.jsonl

@@ -2,6 +2,7 @@ package ai
 
 import (
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -68,6 +69,35 @@ func selectProvider(entries []Entry, ctx *Context) (Entry, *Decision) {
 	d.Picked = entries[0].Name
 	d.Reason = "first entry"
 	return entries[0], d
+}
+
+// orderProviders returns every configured entry in request-attempt order.
+// The normal location-aware selection remains first; all other entries follow
+// by matching weight, default status, then configuration order.
+func orderProviders(entries []Entry, ctx *Context) []Entry {
+	ordered := append([]Entry(nil), entries...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return providerRank(ordered[i], ctx) < providerRank(ordered[j], ctx)
+	})
+	return ordered
+}
+
+func providerRank(entry Entry, ctx *Context) int {
+	if entry.cond != nil && entry.cond.eval(ctx) {
+		return -1_000_000 - entry.Weight
+	}
+	if entry.Default {
+		return 0
+	}
+	return 1_000_000
+}
+
+func entryNames(entries []Entry) []string {
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = entry.Name
+	}
+	return names
 }
 
 // collectEnvRefs records env var names mentioned in a condition and

@@ -66,31 +66,27 @@ func TestResolveAIBlockWithoutProvidersKeepsLibraryDefaults(t *testing.T) {
 }
 
 func TestResolveBadConfig(t *testing.T) {
-	global := listConfig(map[string]interface{}{"model": "m"}) // no name
+	global := listConfig(map[string]interface{}{"model": "m"})
 	r, err := resolveE(global, nil)
 	assert.Error(t, err)
 	assert.Nil(t, r)
-	// LoadConfigWith-style behavior: nil on error
 	assert.Nil(t, resolve(global, nil))
-	// error retrievable for NewClientWith path
 	require.Error(t, LastSelectionError())
 }
 
 func TestResolveModuleOverrideOnPickedEntry(t *testing.T) {
 	global := listConfig(
-		map[string]interface{}{"name": "only", "provider": "openai",
-			"model": "base-model", "api_key": "$ONLY_KEY"},
+		map[string]interface{}{"name": "only", "provider": "openai", "model": "base-model", "api_key": "$ONLY_KEY"},
 	)
 	override := map[string]interface{}{"model": "override-model"}
 	r, err := resolveE(global, override)
 	require.NoError(t, err)
-	assert.Equal(t, "openai", r.Provider)      // provider from picked entry
-	assert.Equal(t, "override-model", r.Model) // model from override
-	assert.Equal(t, "ONLY_KEY", r.APIKeyEnv)   // key from picked entry
+	assert.Equal(t, "openai", r.Provider)
+	assert.Equal(t, "override-model", r.Model)
+	assert.Equal(t, "ONLY_KEY", r.APIKeyEnv)
 }
 
 func TestResolveModuleOverrideSwitchesProviderType(t *testing.T) {
-	// override provider: bedrock re-bases to the first bedrock entry
 	global := listConfig(
 		map[string]interface{}{"name": "oa", "provider": "openai", "model": "m1"},
 		map[string]interface{}{"name": "br", "provider": "bedrock", "model": "m2"},
@@ -107,4 +103,25 @@ func TestResolveOverrideDisabled(t *testing.T) {
 	r, err := resolveE(global, map[string]interface{}{"enabled": false})
 	require.NoError(t, err)
 	assert.Nil(t, r)
+}
+
+func TestOrderProvidersKeepsLocationMatchFirstAndIncludesAllOthers(t *testing.T) {
+	ctx := buildContext()
+	entries := []Entry{
+		{Name: "default", Default: true},
+		{Name: "low-match", Weight: 1, Condition: `user == "` + ctx.User + `"`},
+		{Name: "high-match", Weight: 10, Condition: `user == "` + ctx.User + `"`},
+		{Name: "unmatched", Condition: `user == "definitely-not-me-zzz"`},
+	}
+	for i := range entries {
+		if entries[i].Condition != "" {
+			cond, err := parseCondition(entries[i].Condition)
+			require.NoError(t, err)
+			entries[i].cond = cond
+		}
+	}
+
+	ordered := orderProviders(entries, ctx)
+
+	assert.Equal(t, []string{"high-match", "low-match", "default", "unmatched"}, entryNames(ordered))
 }
