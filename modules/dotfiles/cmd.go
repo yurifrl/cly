@@ -21,13 +21,11 @@ var (
 	allFlag         bool
 	cacheFlag       bool
 	installOnlyFlag bool
-	installNoAIFlag bool
 	reinstallFlag   bool
 	forceFlag       bool
 	verboseFlag     bool
 	dryRunFlag      bool
 	failFastFlag    bool
-	bypassAIFlag    bool
 	configFlag      string
 	userFlag        string
 	noItFlag        bool
@@ -67,7 +65,6 @@ instead of the detected username.
 
 Use --cache to force re-run of every @cache entry (ignores the hash skip).
 Use --install-only to run only @install directives (skips everything else).
-Use --install-no-ai to run only @install directives, skipping LLM analysis.
 
 Maintenance:
   cly dotfiles prune                    dry-run cleanup of stale cache entries
@@ -87,9 +84,7 @@ Maintenance:
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 	cmd.PersistentFlags().StringVar(&userFlag, "user", "", "Apply this user's dotfiles.<user>.conf overlay and @target user= gates (default: current user)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
-	cmd.Flags().BoolVar(&bypassAIFlag, "bypass-ai", false, "Skip LLM analysis for @install directives (no uninstall manifest)")
 	cmd.Flags().BoolVar(&installOnlyFlag, "install-only", false, "Run only @install directives (skips symlinks, jobs, op)")
-	cmd.Flags().BoolVar(&installNoAIFlag, "install-no-ai", false, "Run only @install directives, skip LLM analysis")
 	cmd.Flags().BoolVar(&reinstallFlag, "reinstall", false, "Force reinstall @install directives even if SHA unchanged")
 
 	statusCmd := &cobra.Command{
@@ -270,8 +265,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 		pruneStaleCacheEntries(cacheLock, cfg, time.Now().UTC(), false)
 		return saveLock(lockFile, cacheLock)
 	}
-	if installOnlyFlag || installNoAIFlag {
-		return runInstallsOnly(cfg, installNoAIFlag || bypassAIFlag)
+	if installOnlyFlag {
+		return runInstallsOnly(cfg)
 	}
 
 	if !mut.DryRun() && !noItFlag {
@@ -308,7 +303,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 			if len(cfg.Installs) > 0 {
 				fmt.Printf("\n%s Applying %d @install directive(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Installs))
 				if err := ApplyInstalls(cfg, InstallOptions{
-					BypassAI:  bypassAIFlag,
 					Reinstall: reinstallFlag,
 					FailFast:  failFastFlag,
 				}); err != nil {
@@ -563,13 +557,13 @@ func shortenPath(path string) string {
 	return path
 }
 
-func runInstallsOnly(cfg *Config, bypassAI bool) error {
+func runInstallsOnly(cfg *Config) error {
 	if len(cfg.Installs) == 0 {
 		fmt.Println("No @install directives declared.")
 		return nil
 	}
 	fmt.Printf("%s Applying %d @install directive(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Installs))
-	return ApplyInstalls(cfg, InstallOptions{BypassAI: bypassAI, Reinstall: reinstallFlag, FailFast: failFastFlag})
+	return ApplyInstalls(cfg, InstallOptions{Reinstall: reinstallFlag, FailFast: failFastFlag})
 }
 
 func executeCommand(cmdStr, baseDir string) error {

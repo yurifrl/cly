@@ -1,8 +1,8 @@
 package dotfiles
 
 import (
-	"github.com/yurifrl/cly/pkg/mut"
 	"fmt"
+	"github.com/yurifrl/cly/pkg/mut"
 	"io"
 	"net/http"
 	"os"

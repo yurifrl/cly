@@ -1,8 +1,8 @@
 package dotfiles
 
 import (
-	"github.com/yurifrl/cly/pkg/mut"
 	"fmt"
+	"github.com/yurifrl/cly/pkg/mut"
 	"os"
 	"path/filepath"
 )
@@ -19,12 +19,12 @@ const (
 )
 
 type LinkResult struct {
-	Mapping        Mapping
-	State          LinkState
-	Error          string
+	Mapping         Mapping
+	State           LinkState
+	Error           string
 	RemovedExisting bool
-	BackupPath     string
-	CreatedDir     bool
+	BackupPath      string
+	CreatedDir      bool
 }
 
 func CreateSymlink(m Mapping) LinkResult {

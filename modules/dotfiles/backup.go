@@ -21,9 +21,9 @@ import (
 //     -> ~/.local/share/cly/backups/dotfiles-20261120-143015/Users/yuri/.hammerspoon/init.lua
 
 var (
-	backupMu      sync.Mutex
-	backupRoot    string
-	backupErr     error
+	backupMu       sync.Mutex
+	backupRoot     string
+	backupErr      error
 	backupComputed bool // path is computed (cheap)
 	backupCreated  bool // dir is created on disk
 )

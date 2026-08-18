@@ -284,7 +284,7 @@ func TestCopyJsoncToJson(t *testing.T) {
 		assert.Equal(t, "looks like a /Users/test ref", m2["bare"])
 	})
 
-		t.Run("no-interpolation marker skips expansion", func(t *testing.T) {
+	t.Run("no-interpolation marker skips expansion", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		source := filepath.Join(tmpDir, "config.jsonc")
 		dest := filepath.Join(tmpDir, "config.json")
@@ -310,7 +310,7 @@ func TestCopyJsoncToJson(t *testing.T) {
 		assert.Equal(t, "${CLY_TEST_HOME}", m2["home"])
 	})
 
-		t.Run("expansion that breaks JSON surfaces as error", func(t *testing.T) {
+	t.Run("expansion that breaks JSON surfaces as error", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		source := filepath.Join(tmpDir, "config.jsonc")
 		dest := filepath.Join(tmpDir, "config.json")

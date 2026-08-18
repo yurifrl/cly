@@ -92,8 +92,8 @@ func TestApplyCache_ForceBypassesHash(t *testing.T) {
 	}
 	lock := &DotfilesLock{}
 	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{}))
-	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{}))                // skipped
-	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{Force: true}))     // re-runs
+	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{}))            // skipped
+	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{Force: true})) // re-runs
 	data, err := os.ReadFile(counter)
 	require.NoError(t, err)
 	assert.Equal(t, "x\nx\n", string(data), "force should re-run; non-force should skip")
