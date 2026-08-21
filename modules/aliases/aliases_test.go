@@ -131,3 +131,25 @@ func TestSkipAnnotationDisablesAllAliases(t *testing.T) {
 		assert.NotEqual(t, "bd", e.Alias)
 	}
 }
+
+func TestExistingPiKeepsBinaryAndGetsCobraAlias(t *testing.T) {
+	root := &cobra.Command{Use: "cly"}
+	root.AddCommand(&cobra.Command{
+		Use:     "pi",
+		Aliases: []string{"p"},
+	})
+
+	entries := GenerateAliases(root, func(name string) (string, error) {
+		if name == "pi" {
+			return "/usr/local/bin/pi", nil
+		}
+		return "", fmt.Errorf("not found")
+	})
+
+	aliases := map[string]string{}
+	for _, entry := range entries {
+		aliases[entry.Alias] = entry.Command
+	}
+	assert.NotContains(t, aliases, "pi")
+	assert.Equal(t, "cly pi", aliases["p"])
+}

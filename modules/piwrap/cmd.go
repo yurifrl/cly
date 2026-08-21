@@ -4,7 +4,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/yurifrl/cly/modules/aliases"
 )
 
 // Register attaches `cly pi` (alias `p`) to parent. Flag parsing is
@@ -19,11 +18,6 @@ func Register(parent *cobra.Command) {
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,
-		Annotations: map[string]string{
-			// Intentionally shadow the real `pi` binary: `alias pi "cly pi"`.
-			// The wrapper still execs the real pi via exec.LookPath internally.
-			aliases.AnnotationForceAlias: "true",
-		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := Run(args)
 			if err != nil {

@@ -46,7 +46,7 @@ func planBackups(cfg *Config, oldLock *DotfilesLock) []backupPlan {
 		isSymlink := info.Mode()&os.ModeSymlink != 0
 		if isSymlink {
 			target, err := os.Readlink(m.Destination)
-			if err == nil && target == m.Source {
+			if err == nil && target == expectedDestTarget(m.Source) {
 				continue // already-correct symlink, no backup needed
 			}
 		}

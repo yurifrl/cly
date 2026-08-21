@@ -75,6 +75,61 @@ func TestCreateSymlink(t *testing.T) {
 		assert.Equal(t, source2, link)
 	})
 
+	t.Run("links to real file when source is a symlink", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		realSource := filepath.Join(tmpDir, "real.txt")
+		source := filepath.Join(tmpDir, "source.txt")
+		dest := filepath.Join(tmpDir, "dest.txt")
+		require.NoError(t, os.WriteFile(realSource, []byte("real"), 0644))
+		require.NoError(t, os.Symlink(realSource, source))
+
+		mapping := Mapping{Source: source, Destination: dest, IsDir: false}
+		result := CreateSymlink(mapping)
+
+		assert.Equal(t, StateLinked, result.State)
+		link, err := os.Readlink(dest)
+		require.NoError(t, err)
+		assert.Equal(t, realSource, link)
+	})
+
+	t.Run("resolves relative and chained source symlinks", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		realSource := filepath.Join(tmpDir, "a.txt")
+		mid := filepath.Join(tmpDir, "b.txt")
+		source := filepath.Join(tmpDir, "c.txt")
+		dest := filepath.Join(tmpDir, "dest.txt")
+		require.NoError(t, os.WriteFile(realSource, []byte("a"), 0644))
+		require.NoError(t, os.Symlink("a.txt", mid))
+		require.NoError(t, os.Symlink("b.txt", source))
+
+		mapping := Mapping{Source: source, Destination: dest, IsDir: false}
+		result := CreateSymlink(mapping)
+
+		assert.Equal(t, StateLinked, result.State)
+		link, err := os.Readlink(dest)
+		require.NoError(t, err)
+		assert.Equal(t, realSource, link)
+	})
+
+	t.Run("replaces dest symlink pointing at the link name", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		realSource := filepath.Join(tmpDir, "real.txt")
+		source := filepath.Join(tmpDir, "source.txt")
+		dest := filepath.Join(tmpDir, "dest.txt")
+		require.NoError(t, os.WriteFile(realSource, []byte("real"), 0644))
+		require.NoError(t, os.Symlink(realSource, source))
+		require.NoError(t, os.Symlink(source, dest)) // old behavior target
+
+		mapping := Mapping{Source: source, Destination: dest, IsDir: false}
+		result := CreateSymlink(mapping)
+
+		assert.Equal(t, StateLinked, result.State)
+		assert.True(t, result.RemovedExisting)
+		link, err := os.Readlink(dest)
+		require.NoError(t, err)
+		assert.Equal(t, realSource, link)
+	})
+
 	t.Run("force overrides existing file", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		source := filepath.Join(tmpDir, "source.txt")
@@ -145,6 +200,37 @@ func TestCheckStatus(t *testing.T) {
 		result := CheckStatus(mapping)
 
 		assert.Equal(t, StateLinked, result.State)
+	})
+
+	t.Run("linked when dest symlink points at resolved source target", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		realSource := filepath.Join(tmpDir, "real.txt")
+		source := filepath.Join(tmpDir, "source.txt")
+		dest := filepath.Join(tmpDir, "dest.txt")
+		require.NoError(t, os.WriteFile(realSource, []byte("real"), 0644))
+		require.NoError(t, os.Symlink(realSource, source))
+		require.NoError(t, os.Symlink(realSource, dest))
+
+		mapping := Mapping{Source: source, Destination: dest}
+		result := CheckStatus(mapping)
+
+		assert.Equal(t, StateLinked, result.State)
+	})
+
+	t.Run("conflict when dest symlink points at the source link name", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		realSource := filepath.Join(tmpDir, "real.txt")
+		source := filepath.Join(tmpDir, "source.txt")
+		dest := filepath.Join(tmpDir, "dest.txt")
+		require.NoError(t, os.WriteFile(realSource, []byte("real"), 0644))
+		require.NoError(t, os.Symlink(realSource, source))
+		require.NoError(t, os.Symlink(source, dest))
+
+		mapping := Mapping{Source: source, Destination: dest}
+		result := CheckStatus(mapping)
+
+		assert.Equal(t, StateConflict, result.State)
+		assert.Contains(t, result.Error, "instead of")
 	})
 
 	t.Run("missing when source does not exist", func(t *testing.T) {

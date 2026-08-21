@@ -27,6 +27,35 @@ type LinkResult struct {
 	CreatedDir      bool
 }
 
+// expectedDestTarget returns the string a destination symlink should carry:
+// the source path itself, or the resolved target when the source leaf is a
+// symlink (follows relative and absolute links, chains included, capped
+// against cycles).
+func expectedDestTarget(source string) string {
+	cur := source
+	visited := map[string]bool{}
+	for hops := 0; hops < 40; hops++ {
+		info, err := os.Lstat(cur)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return cur
+		}
+		if visited[cur] {
+			return cur // cycle; os.Stat on such a source errors earlier
+		}
+		visited[cur] = true
+		target, err := os.Readlink(cur)
+		if err != nil {
+			return cur
+		}
+		if filepath.IsAbs(target) {
+			cur = filepath.Clean(target)
+		} else {
+			cur = filepath.Clean(filepath.Join(filepath.Dir(cur), target))
+		}
+	}
+	return cur
+}
+
 func CreateSymlink(m Mapping) LinkResult {
 	result := LinkResult{Mapping: m}
 
@@ -48,12 +77,14 @@ func CreateSymlink(m Mapping) LinkResult {
 		return result
 	}
 
+	linkTarget := expectedDestTarget(m.Source)
+
 	destInfo, err := os.Lstat(m.Destination)
 	if err == nil {
 		// Already-correct symlink? No-op. Don't move, don't recreate — we
 		// would only end up briefly removing it and putting it right back.
 		if destInfo.Mode()&os.ModeSymlink != 0 {
-			if target, lerr := os.Readlink(m.Destination); lerr == nil && target == m.Source {
+			if target, lerr := os.Readlink(m.Destination); lerr == nil && target == linkTarget {
 				result.State = StateLinked
 				return result
 			}
@@ -85,7 +116,7 @@ func CreateSymlink(m Mapping) LinkResult {
 		return result
 	}
 
-	if err := mut.Symlink(m.Source, m.Destination); err != nil {
+	if err := mut.Symlink(linkTarget, m.Destination); err != nil {
 		result.State = StateError
 		result.Error = fmt.Sprintf("failed to create symlink: %v", err)
 		return result
@@ -127,11 +158,12 @@ func CheckStatus(m Mapping) LinkResult {
 			return result
 		}
 
-		if target == m.Source {
+		expected := expectedDestTarget(m.Source)
+		if target == expected {
 			result.State = StateLinked
 		} else {
 			result.State = StateConflict
-			result.Error = fmt.Sprintf("symlink points to %s instead of %s", target, m.Source)
+			result.Error = fmt.Sprintf("symlink points to %s instead of %s", target, expected)
 		}
 		return result
 	}
