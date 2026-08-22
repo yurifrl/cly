@@ -23,6 +23,7 @@ var (
 	updateFlag    bool
 	uninstallFlag bool
 	trustFlag     bool
+	forceCleanup  bool
 )
 
 // Register adds the bundle command and subcommands to the root command.
@@ -86,7 +87,8 @@ Types:
 	cmd.Flags().BoolVar(&upgradeFlag, "upgrade", false, "force upgrade packages to latest (js only)")
 	cmd.Flags().BoolVar(&noUpdateFlag, "no-update", false, "skip brew upgrade (brew only)")
 	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "install taps first (brew only)")
-	cmd.Flags().BoolVar(&noCleanupFlag, "no-cleanup", false, "skip cleanup after sync")
+	cmd.Flags().BoolVar(&noCleanupFlag, "no-cleanup", false, "skip force-cleanup after sync")
+	cmd.Flags().BoolVar(&forceCleanup, "force-cleanup", true, "run cleanup --force after sync (default: true)")
 	cmd.Flags().BoolVar(&masFlag, "mas", false, "install Mac App Store apps (brew only)")
 	cmd.Flags().BoolVar(&parallelFlag, "parallel", false, "use parallel installs with TUI progress (js only)")
 	cmd.Flags().BoolVarP(&updateFlag, "update", "u", false, "sync without opening the editor")
@@ -174,7 +176,10 @@ func runSync(bundlers map[string]Bundler, bundleType string) error {
 
 	if bundleType == "all" {
 		return runAll(bundlers, func(b Bundler) error {
-			return b.Sync(getBundleFile(b), verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag)
+			if err := b.Sync(getBundleFile(b), verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag); err != nil {
+				return err
+			}
+			return runPostSyncCleanup(b)
 		})
 	}
 
@@ -187,7 +192,11 @@ func runSync(bundlers map[string]Bundler, bundleType string) error {
 		return err
 	}
 
-	return bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag)
+	if err := bundler.Sync(getBundleFile(bundler), verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag); err != nil {
+		return err
+	}
+
+	return runPostSyncCleanup(bundler)
 }
 
 func runCheck(bundlers map[string]Bundler, bundleType string) error {
@@ -299,5 +308,17 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 	}
 
 	fmt.Println("\n=== Syncing ===")
-	return bundler.Sync(bundleFile, verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag)
+	if err := bundler.Sync(bundleFile, verboseFlag, forceFlag, noUpdateFlag, tapsFlag, masFlag); err != nil {
+		return err
+	}
+
+	return runPostSyncCleanup(bundler)
+}
+
+func runPostSyncCleanup(bundler Bundler) error {
+	if noCleanupFlag || !forceCleanup {
+		return nil
+	}
+	fmt.Println("\n=== Cleanup (--force) ===")
+	return bundler.Cleanup(getBundleFile(bundler), verboseFlag, true)
 }
