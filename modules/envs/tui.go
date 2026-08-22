@@ -34,10 +34,11 @@ type model struct {
 	spinner   spinner.Model
 	launchctl bool
 	fish      bool
+	sections  bool
 	err       error
 }
 
-func newModel(ctx context.Context, config Config, profile, opBinary string, tokens sessions, launchctl, fish bool) model {
+func newModel(ctx context.Context, config Config, profile, opBinary string, tokens sessions, launchctl, fish, sections bool) model {
 	indicator := spinner.New()
 	indicator.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7DD3FC"))
 	return model{
@@ -50,6 +51,7 @@ func newModel(ctx context.Context, config Config, profile, opBinary string, toke
 		spinner:   indicator,
 		launchctl: launchctl,
 		fish:      fish,
+		sections:  sections,
 	}
 }
 
@@ -116,7 +118,7 @@ func (m *model) runPlain() error {
 		m.fields = append(m.fields, selected...)
 		m.variables += len(selected)
 	}
-	writeOutput(os.Stdout, m.fields, m.fish)
+	writeOutput(os.Stdout, m.fields, m.fish, m.sections)
 	if !m.fish {
 		fmt.Fprintf(os.Stderr, "✓ Loaded %d variables from %d items\n", m.variables, m.total)
 	}
@@ -144,18 +146,24 @@ func envQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
-func writeOutput(w *os.File, fields []Field, fish bool) {
+func writeOutput(w *os.File, fields []Field, fish, sections bool) {
 	for _, field := range fields {
-		// Prefixed version based on section
-		prefix := "GENERAL_"
-		if field.Section != "" {
-			prefix = strings.ToUpper(field.Section) + "_"
+		// Section-prefixed version (only if --sections)
+		if sections {
+			prefix := "GENERAL_"
+			if field.Section != "" {
+				prefix = strings.ToUpper(field.Section) + "_"
+			}
+			if fish {
+				fmt.Fprintf(w, "set -gx %s %s\n", prefix+field.Label, fishLiteral(field.Value))
+			} else {
+				fmt.Fprintf(w, "%s%s=%s\n", prefix, field.Label, envQuote(field.Value))
+			}
 		}
+		// Plain version (always)
 		if fish {
-			fmt.Fprintf(w, "set -gx %s %s\n", prefix+field.Label, fishLiteral(field.Value))
 			fmt.Fprintf(w, "set -gx %s %s\n", field.Label, fishLiteral(field.Value))
 		} else {
-			fmt.Fprintf(w, "%s%s=%s\n", prefix, field.Label, envQuote(field.Value))
 			fmt.Fprintf(w, "%s=%s\n", field.Label, envQuote(field.Value))
 		}
 	}

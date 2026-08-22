@@ -11,14 +11,14 @@ import (
 
 func Register(parent *cobra.Command) {
 	var configPath, profile, opBinary string
-	var launchctl, fish bool
+	var launchctl, fish, sections bool
 
 	cmd := &cobra.Command{
 		Use:   "envs",
 		Short: "Load environment variables from 1Password",
 		Long:  "Fetches secrets from 1Password in parallel and outputs environment variables to stdout.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run(cmd.Context(), configPath, profile, opBinary, launchctl, fish)
+			return run(cmd.Context(), configPath, profile, opBinary, launchctl, fish, sections)
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", defaultConfigPath(), "Path to environment loader JSON config")
@@ -26,11 +26,12 @@ func Register(parent *cobra.Command) {
 	cmd.Flags().StringVar(&opBinary, "op", "op", "Path to the 1Password CLI")
 	cmd.Flags().BoolVar(&launchctl, "launchctl", false, "Inject vars via launchctl setenv (available to all GUI apps)")
 	cmd.Flags().BoolVar(&fish, "fish", false, "Output fish-compatible set -gx format")
+	cmd.Flags().BoolVar(&sections, "sections", false, "Also output section-prefixed vars (GENERAL_*, WORK_*, etc.)")
 	registerInstallApp(cmd)
 	parent.AddCommand(cmd)
 }
 
-func run(ctx context.Context, configPath, profile, opBinary string, launchctl, fish bool) error {
+func run(ctx context.Context, configPath, profile, opBinary string, launchctl, fish, sections bool) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -51,7 +52,7 @@ func run(ctx context.Context, configPath, profile, opBinary string, launchctl, f
 		return err
 	}
 
-	mdl := newModel(ctx, config, profile, opBinary, tokens, launchctl, fish)
+	mdl := newModel(ctx, config, profile, opBinary, tokens, launchctl, fish, sections)
 	if !isTerminal() {
 		return mdl.runPlain()
 	}
@@ -61,7 +62,7 @@ func run(ctx context.Context, configPath, profile, opBinary string, launchctl, f
 		return err
 	}
 	m := finalModel.(model)
-	writeOutput(os.Stdout, m.fields, m.fish)
+	writeOutput(os.Stdout, m.fields, m.fish, m.sections)
 	return nil
 }
 
