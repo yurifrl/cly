@@ -20,8 +20,9 @@ func RenderPlan(plan *CommitPlan) string {
 	b.WriteString("\n\n")
 
 	for i, g := range plan.Groups {
-		// Commit number and title
+		// Commit number and title (with total size of the group's files)
 		b.WriteString(style.GreenStyle.Render(fmt.Sprintf("%d. %s", i+1, g.Title)))
+		b.WriteString(style.SubtleStyle.Render(fmt.Sprintf(" (%s)", humanSize(groupSize(g)))))
 		b.WriteString("\n")
 
 		// Summary

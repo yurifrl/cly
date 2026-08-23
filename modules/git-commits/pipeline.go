@@ -147,7 +147,7 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("   Found %d file(s)\n", len(cs.Files))
+	fmt.Printf("   Found %d file(s) (%s)\n", len(cs.Files), humanSize(changesetSize(cs)))
 
 	if !opts.Ignored && len(ignorePatterns) > 0 {
 		removed, err := filterIgnored(cs, ignorePatterns, preStaged)
@@ -224,7 +224,12 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 			return RenderJSON(plan)
 		}
 
+		var planSize int64
+		for _, g := range plan.Groups {
+			planSize += groupSize(g)
+		}
 		fmt.Print(RenderPlan(plan))
+		fmt.Println(style.SubtleStyle.Render(fmt.Sprintf("   total commits size: %s", humanSize(planSize))))
 
 		if opts.DryRun {
 			fmt.Println(style.YellowStyle.Render("(dry run — no changes made)"))
@@ -273,10 +278,11 @@ execute:
 				r.Files,
 				r.Err)
 		} else {
-			fmt.Printf("%s %s (%d files)\n",
+			fmt.Printf("%s %s (%d files, %s)\n",
 				style.GreenStyle.Render("✓ "+r.SHA),
 				r.Title,
-				r.Files)
+				r.Files,
+				humanSize(r.Size))
 			successCount++
 		}
 	}
@@ -289,7 +295,7 @@ execute:
 			return fmt.Errorf("failed to get current branch: %w", err)
 		}
 		fmt.Println(style.BlueStyle.Render(fmt.Sprintf("🚀 Pushing to %s...", branch)))
-		if out, err := gitExec("push", "origin", branch); err != nil {
+		if out, err := gitExecPush("push", "origin", branch); err != nil {
 			return fmt.Errorf("git push failed: %s: %w", strings.TrimSpace(out), err)
 		}
 		fmt.Println(style.GreenStyle.Render("✓ Pushed!"))

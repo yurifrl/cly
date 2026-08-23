@@ -2,6 +2,7 @@ package gitcommits
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -328,4 +329,18 @@ func gitExec(args ...string) (string, error) {
 func isLockContention(output string) bool {
 	return strings.Contains(output, "index.lock") &&
 		strings.Contains(output, "File exists")
+}
+
+// gitExecPush runs git push without an interactive stdin and with terminal
+// prompts disabled. gitExec inherits the process stdin, which lets git or an
+// auth helper (SSH passphrase, credential prompt) block on a hidden prompt —
+// stdout/stderr are captured, so the user sees a hang. Detaching stdin makes
+// auth come from the agent/keychain and fail fast with a real error instead.
+func gitExecPush(args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoRoot()
+	cmd.Stdin = nil // /dev/null: no hidden interactive prompt can block
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }

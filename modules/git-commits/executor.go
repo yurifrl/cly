@@ -12,6 +12,7 @@ type CommitResult struct {
 	Title   string
 	SHA     string
 	Files   int
+	Size    int64 // On-disk size of the group's files in bytes
 	Skipped bool
 	Err     error
 }
@@ -68,6 +69,7 @@ func Execute(plan *CommitPlan, noVerify bool) ([]CommitResult, error) {
 			Title: group.Title,
 			SHA:   sha,
 			Files: len(group.Files),
+			Size:  groupSize(group),
 		})
 	}
 
