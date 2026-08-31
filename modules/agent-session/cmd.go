@@ -76,10 +76,16 @@ func loadScopedSessions(cmd *cobra.Command) (Sessions, error) {
 	return sessions, nil
 }
 
+// providerFromCmd resolves the -p flag to a concrete provider. "all"
+// (the default filter) and "" fall back to the configured default
+// provider so resume/upsert-style commands always have a real provider.
 func providerFromCmd(cmd *cobra.Command) (Provider, error) {
 	providerName, err := cmd.Flags().GetString(providerFlag)
 	if err != nil {
 		return Provider{}, err
+	}
+	if name := normalizeProvider(providerName); name == "all" {
+		providerName = defaultProvider()
 	}
 	provider, err := providerByName(providerName)
 	if err != nil {

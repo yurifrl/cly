@@ -54,12 +54,18 @@ function getSessionId(ctx: any, cwd: string): string {
 		const id = readIdFromSessionFile(file);
 		if (id) return id;
 
-		// Fallback: scan session dir for latest file (same as checkpoint.ts)
+		// Fallback: scan pi session dir (same as checkpoint.ts), then the
+		// omp session dir (sessions may have been created under omp).
 		const home = process.env.HOME || "";
 		const trimmed = cwd.replace(/^\/+|\/+$/g, "");
-		const encoded = "--" + trimmed.replace(/\//g, "-") + "--";
-		const sessionDir = path.join(home, ".pi", "agent", "sessions", encoded);
-		if (fs.existsSync(sessionDir)) {
+		const piEncoded = "--" + trimmed.replace(/\//g, "-") + "--";
+		const ompEncoded = "-" + trimmed.replace(/\//g, "-");
+		const sessionDirs = [
+			path.join(home, ".pi", "agent", "sessions", piEncoded),
+			path.join(home, ".omp", "agent", "sessions", ompEncoded),
+		];
+		for (const sessionDir of sessionDirs) {
+			if (!fs.existsSync(sessionDir)) continue;
 			const candidates = fs.readdirSync(sessionDir)
 				.filter(function (n) { return n.endsWith(".jsonl"); })
 				.map(function (n) { return path.join(sessionDir, n); })

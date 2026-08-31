@@ -55,13 +55,13 @@ func TestFindByIDAny(t *testing.T) {
 		assert.Nil(t, found)
 	})
 
-	t.Run("defaults provider to claude for legacy entries", func(t *testing.T) {
+	t.Run("defaults provider for legacy entries", func(t *testing.T) {
 		sessions := Sessions{
 			"legacy": Entry{ID: "uuid-legacy", Name: "legacy"},
 		}
 		found := FindByIDAny(sessions, "uuid-legacy")
 		require.NotNil(t, found)
-		assert.Equal(t, "claude", found.Provider)
+		assert.Equal(t, defaultProviderFallback, found.Provider)
 	})
 }
 

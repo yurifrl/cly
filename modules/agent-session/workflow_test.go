@@ -41,13 +41,13 @@ func TestWorkflow_UpsertAndVerify(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &result))
 	assert.Equal(t, "test-id-123", result.ID)
 	assert.Equal(t, "my-session", result.Name)
-	assert.Equal(t, "claude", result.Provider)
+	assert.Equal(t, defaultProviderFallback, result.Provider)
 	assert.Equal(t, "a test session", result.Description)
 
 	sessions, err := Load(filePathFn())
 	require.NoError(t, err)
 	require.Len(t, sessions, 1)
-	entry := FindByNameForProvider(sessions, "claude", "my-session")
+	entry := FindByNameForProvider(sessions, defaultProviderFallback, "my-session")
 	require.NotNil(t, entry)
 	assert.Equal(t, "test-id-123", entry.ID)
 }
@@ -138,7 +138,7 @@ func TestWorkflow_UpsertByIDOnly(t *testing.T) {
 	var result Entry
 	require.NoError(t, json.Unmarshal([]byte(out), &result))
 	assert.Equal(t, "id-only", result.ID)
-	assert.Equal(t, "claude", result.Provider)
+	assert.Equal(t, defaultProviderFallback, result.Provider)
 	assert.NotEmpty(t, result.Path)
 }
 
@@ -197,7 +197,7 @@ func TestWorkflow_RmByFilter(t *testing.T) {
 	require.NoError(t, err)
 	active := filterDeleted(sessions, false)
 	assert.Len(t, active, 1)
-	assert.NotNil(t, FindByNameForProvider(active, "claude", "new-session"))
+	assert.NotNil(t, FindByNameForProvider(active, defaultProviderFallback, "new-session"))
 }
 
 func TestWorkflow_RmDryRun(t *testing.T) {

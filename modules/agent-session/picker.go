@@ -263,9 +263,9 @@ func runPicker(sessions Sessions, allowYolo bool) (*Entry, bool, error) {
 	return pm.chosen, pm.yolo, nil
 }
 
-// activePiSessionIDs scans ~/.pi/agent/sessions/ for .jsonl files modified
-// within the last 10 minutes and extracts their session UUIDs.
-// Filename pattern: <timestamp>_<uuid>.jsonl
+// activePiSessionIDs scans ~/.omp/agent/sessions/ and ~/.pi/agent/sessions/
+// for .jsonl files modified within the last 10 minutes and extracts their
+// session UUIDs. Filename pattern: <timestamp>_<uuid>.jsonl
 func activePiSessionIDs() map[string]bool {
 	ids := make(map[string]bool)
 	home, err := os.UserHomeDir()
@@ -273,11 +273,20 @@ func activePiSessionIDs() map[string]bool {
 		return ids
 	}
 
-	sessionsDir := filepath.Join(home, ".pi", "agent", "sessions")
-	cutoff := time.Now().Add(-10 * time.Minute)
+	ompDir := filepath.Join(home, ".omp", "agent", "sessions")
+	piDir := filepath.Join(home, ".pi", "agent", "sessions")
 
-	// Walk all subdirectories
-	_ = filepath.Walk(sessionsDir, func(path string, info os.FileInfo, err error) error {
+	cutoff := time.Now().Add(-10 * time.Minute)
+	// Walk all subdirectories in both roots
+	_ = walkSessionJsonl(ompDir, cutoff, ids)
+	_ = walkSessionJsonl(piDir, cutoff, ids)
+
+	return ids
+}
+
+// walkSessionJsonl walks root and records recently-modified session UUIDs.
+func walkSessionJsonl(root string, cutoff time.Time, ids map[string]bool) error {
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
 		}
@@ -295,6 +304,4 @@ func activePiSessionIDs() map[string]bool {
 		}
 		return nil
 	})
-
-	return ids
 }

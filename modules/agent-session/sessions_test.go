@@ -57,7 +57,7 @@ func TestLoadCreatesDir(t *testing.T) {
 
 func TestFindByName_DefaultProvider(t *testing.T) {
 	sessions := Sessions{
-		"alpha":       Entry{ID: "1", Name: "alpha", Path: "/a"}, // legacy entry, implicit claude
+		"alpha":       Entry{ID: "1", Name: "alpha", Path: "/a"}, // legacy entry, implicit provider
 		"pi:alpha":    Entry{ID: "2", Name: "alpha", Provider: "pi", Path: "/b"},
 		"claude:beta": Entry{ID: "3", Name: "beta", Provider: "claude", Path: "/c"},
 	}
@@ -65,7 +65,7 @@ func TestFindByName_DefaultProvider(t *testing.T) {
 	found := FindByName(sessions, "alpha")
 	require.NotNil(t, found)
 	assert.Equal(t, "1", found.ID)
-	assert.Equal(t, "claude", found.Provider)
+	assert.Equal(t, defaultProviderFallback, found.Provider)
 
 	notFound := FindByName(sessions, "gamma")
 	assert.Nil(t, notFound)
@@ -113,8 +113,8 @@ func TestUpsertEntryMigratesLegacyKey(t *testing.T) {
 		"alpha": Entry{ID: "old", Name: "alpha", Path: "/a"},
 	}
 
-	upsertEntry(sessions, Entry{ID: "new", Name: "alpha", Provider: "claude", Path: "/a"})
+	upsertEntry(sessions, Entry{ID: "new", Name: "alpha", Provider: defaultProviderFallback, Path: "/a"})
 	assert.NotContains(t, sessions, "alpha")
-	assert.Contains(t, sessions, "claude:alpha")
-	assert.Equal(t, "new", sessions["claude:alpha"].ID)
+	assert.Contains(t, sessions, defaultProviderFallback+":alpha")
+	assert.Equal(t, "new", sessions[defaultProviderFallback+":alpha"].ID)
 }

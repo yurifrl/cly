@@ -27,6 +27,7 @@ import (
 	"github.com/yurifrl/cly/modules/notify"
 	"github.com/yurifrl/cly/modules/obsidian-tools"
 	"github.com/yurifrl/cly/modules/oi"
+	"github.com/yurifrl/cly/modules/ompwrap"
 	"github.com/yurifrl/cly/modules/piwrap"
 	"github.com/yurifrl/cly/modules/skills"
 	"github.com/yurifrl/cly/modules/statusline"
@@ -92,6 +93,7 @@ func init() {
 	mcp.Register(RootCmd)
 	bundle.Register(RootCmd)
 	notify.Register(RootCmd)
+	ompwrap.Register(RootCmd)
 	piwrap.Register(RootCmd)
 	memwatch.Register(RootCmd)
 	obsidiantools.Register(RootCmd)

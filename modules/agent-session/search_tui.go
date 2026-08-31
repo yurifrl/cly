@@ -541,6 +541,7 @@ var (
 	srDateStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))            // gray
 	pathStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))            // green
 	providerPiSt  = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))             // blue
+	providerOmpSt = lipgloss.NewStyle().Foreground(lipgloss.Color("120"))             // green
 	providerClSt  = lipgloss.NewStyle().Foreground(lipgloss.Color("170"))            // purple
 	aiScoreStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("219"))            // magenta
 )
@@ -548,6 +549,8 @@ var (
 // providerBadge renders an emoji + colored provider label.
 func providerBadge(p string) string {
 	switch p {
+	case "omp":
+		return providerOmpSt.Render("omp")
 	case "pi":
 		return providerPiSt.Render("pi")
 	case "claude":

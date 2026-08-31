@@ -14,11 +14,16 @@ func TestProviderByName_Defaults(t *testing.T) {
 	assert.Equal(t, "claude", provider.Command)
 	assert.Equal(t, []string{"-r", "{id}"}, provider.ResumeArgs)
 
+	provider, err = providerByName("omp")
+	require.NoError(t, err)
+	assert.Equal(t, "omp", provider.Name)
+	assert.Equal(t, "omp", provider.Command)
+	assert.Equal(t, []string{"--resume", "{id}"}, provider.ResumeArgs)
+
 	provider, err = providerByName("pi")
 	require.NoError(t, err)
 	assert.Equal(t, "pi", provider.Name)
 	assert.Equal(t, "pi", provider.Command)
-	assert.Equal(t, []string{"--session", "{id}"}, provider.ResumeArgs)
 }
 
 func TestProviderByName_Unknown(t *testing.T) {
@@ -31,4 +36,11 @@ func TestAvailableProviders(t *testing.T) {
 	providers := availableProviders()
 	assert.Contains(t, providers, "claude")
 	assert.Contains(t, providers, "pi")
+	assert.Contains(t, providers, "omp")
+
+	// omp is the default provider (stub out config lookup).
+	origFn := defaultProviderFn
+	defaultProviderFn = func() string { return defaultProviderFallback }
+	t.Cleanup(func() { defaultProviderFn = origFn })
+	assert.Equal(t, "omp", defaultProvider())
 }

@@ -95,6 +95,16 @@ func discoverJsonl() ([]jsonlFile, error) {
 		return nil, err
 	}
 	var out []jsonlFile
+	ompRoot := filepath.Join(home, ".omp", "agent", "sessions")
+	if matches, _ := filepath.Glob(filepath.Join(ompRoot, "*", "*.jsonl")); len(matches) > 0 {
+		for _, p := range matches {
+			st, err := os.Stat(p)
+			if err != nil {
+				continue
+			}
+			out = append(out, jsonlFile{Path: p, Provider: "omp", Mtime: st.ModTime()})
+		}
+	}
 
 	piRoot := filepath.Join(home, ".pi", "agent", "sessions")
 	if matches, _ := filepath.Glob(filepath.Join(piRoot, "*", "*.jsonl")); len(matches) > 0 {

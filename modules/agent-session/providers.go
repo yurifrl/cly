@@ -12,7 +12,7 @@ import (
 	"github.com/yurifrl/cly/pkg/session"
 )
 
-const defaultProviderFallback = "claude"
+const defaultProviderFallback = "omp"
 
 // defaultProviderFn is overridable in tests.
 var defaultProviderFn = func() string {
@@ -40,6 +40,10 @@ func detectProviderByID(id string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
+	}
+	// omp: ~/.omp/agent/sessions/<project>/*<id>.jsonl
+	if matches, _ := filepath.Glob(filepath.Join(home, ".omp", "agent", "sessions", "*", "*"+id+".jsonl")); len(matches) > 0 {
+		return "omp"
 	}
 	// pi: ~/.pi/agent/sessions/<project>/*<id>.jsonl
 	if matches, _ := filepath.Glob(filepath.Join(home, ".pi", "agent", "sessions", "*", "*"+id+".jsonl")); len(matches) > 0 {
@@ -82,6 +86,11 @@ func defaultProviders() map[string]Provider {
 			Name:       "pi",
 			Command:    "pi",
 			ResumeArgs: []string{"--session", "{id}"},
+		},
+		"omp": {
+			Name:       "omp",
+			Command:    "omp",
+			ResumeArgs: []string{"--resume", "{id}"},
 		},
 	}
 }

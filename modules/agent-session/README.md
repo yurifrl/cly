@@ -1,6 +1,6 @@
 # agent-session
 
-Manage saved AI agent sessions across providers (Claude, Pi, etc.).
+Manage saved AI agent sessions across providers (omp, pi, claude).
 
 Dual-surface: **CLI commands always output JSON** for agents and scripts. **TUI** (`cly as` or `cly as tui`) for interactive use.
 
@@ -24,7 +24,7 @@ All commands scope to the **current directory** by default. Use flags to change:
 |------|--------|
 | `-a` / `--all` | All sessions, any directory |
 | `--directory /path` | Scope to a specific directory |
-| `-p <provider>` | Filter by provider (claude, pi, all) |
+| `-p <provider>` | Filter by provider (omp, pi, claude, all) |
 
 These are persistent — they work on every subcommand.
 
@@ -36,7 +36,7 @@ These are persistent — they work on every subcommand.
 cly as ls                       # Current dir, JSON array
 cly as ls -a                    # All sessions
 cly as ls --filter "deploy"     # Name substring match (case-insensitive)
-cly as ls -a -p pi              # All Pi sessions
+cly as ls -a -p omp            # All omp sessions
 ```
 
 Output is always JSON:
@@ -188,7 +188,11 @@ Providers are configurable in `~/.config/cly/config.yaml`:
 ```yaml
 modules:
   agent_session:
+    default_provider: omp # omp | pi | claude
     providers:
+      omp:
+        command: omp
+        resume_args: ["--resume", "{id}"]
       claude:
         command: claude
         resume_args: ["-r", "{id}"]
@@ -198,7 +202,13 @@ modules:
         resume_args: ["--session", "{id}"]
 ```
 
-Default providers: `claude` and `pi`.
+Default providers: `omp` (default), `pi`, and `claude`. When `-p all`
+(the default filter) needs a concrete provider — resume, upsert — it
+falls back to `default_provider`.
+
+Sessions are detected by ID across `~/.omp/agent/sessions/`,
+`~/.pi/agent/sessions/`, and `~/.claude/projects/` so saved IDs
+resolve to the right provider regardless of the filter.
 
 ## File Layout
 

@@ -58,5 +58,5 @@ func TestPickerHeadlineIncludesProvider(t *testing.T) {
 
 func TestProviderTagDefaultsToClaude(t *testing.T) {
 	tag := providerTag("")
-	assert.True(t, strings.Contains(tag, "claude"))
+	assert.True(t, strings.Contains(tag, defaultProviderFallback))
 }

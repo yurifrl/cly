@@ -153,3 +153,25 @@ func TestExistingPiKeepsBinaryAndGetsCobraAlias(t *testing.T) {
 	assert.NotContains(t, aliases, "pi")
 	assert.Equal(t, "cly pi", aliases["p"])
 }
+
+func TestExistingOmpKeepsBinaryAndGetsCobraAlias(t *testing.T) {
+	root := &cobra.Command{Use: "cly"}
+	root.AddCommand(&cobra.Command{
+		Use:     "omp",
+		Aliases: []string{"o"},
+	})
+
+	entries := GenerateAliases(root, func(name string) (string, error) {
+		if name == "omp" {
+			return "/opt/homebrew/bin/omp", nil
+		}
+		return "", fmt.Errorf("not found")
+	})
+
+	aliases := map[string]string{}
+	for _, entry := range entries {
+		aliases[entry.Alias] = entry.Command
+	}
+	assert.NotContains(t, aliases, "omp")
+	assert.Equal(t, "cly omp", aliases["o"])
+}

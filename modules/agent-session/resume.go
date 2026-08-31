@@ -89,7 +89,7 @@ func resumeEntry(entry *Entry, provider Provider, yolo bool) error {
 }
 
 // lookupCwdForSession finds the jsonl file for a session and reads the
-// recorded cwd from its first lines. Both pi and claude write
+// recorded cwd from its first lines. omp, pi, and claude all write
 // `"cwd":"..."` near the top of the file.
 func lookupCwdForSession(id, provider string) string {
 	if id == "" {
@@ -100,6 +100,10 @@ func lookupCwdForSession(id, provider string) string {
 		return ""
 	}
 	var candidates []string
+	if provider == "" || provider == "omp" {
+		m, _ := filepath.Glob(filepath.Join(home, ".omp", "agent", "sessions", "*", "*"+id+".jsonl"))
+		candidates = append(candidates, m...)
+	}
 	if provider == "" || provider == "pi" {
 		m, _ := filepath.Glob(filepath.Join(home, ".pi", "agent", "sessions", "*", "*"+id+".jsonl"))
 		candidates = append(candidates, m...)

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-31 omp Is the Default Agent
+
+### Changed
+- `modules/agent-session`: `omp` added as a default provider (`omp --resume {id}`) and is now `defaultProviderFallback` — `cly as save`, resume, and the TUI default to omp. Session-ID detection, cwd lookup, search indexing, and the active-session scan all cover `~/.omp/agent/sessions/` alongside `~/.pi` and `~/.claude`. `-p all` now resolves to the default provider instead of erroring with `unknown provider "all"`.
+- `modules/ompwrap`: upgraded from bare pass-through to a full wrapper mirroring piwrap — `cly omp -n NAME` sets `$CLY_SESSION_NAME`, renames the cmux tab, and pre-creates `~/.omp/agent/sessions/-<encoded-cwd>/cly-<kebab-name>.jsonl` (omp v18 session-dir layout: single leading dash), then resumes it via `--resume <path>`. Gains `omp y` namespace; `cly omp y extensions install` ships the cly `/save` extension to `~/.omp/agent/extensions/`.
+- Fish aliases regenerate unchanged (`o` → `cly omp`, `p` → `cly pi`); the real `omp` binary on PATH keeps its name.
+
+### Added
+- `modules/omp` — embedded `cly.ts` omp extension (imports `@oh-my-pi/pi-coding-agent`): `/save [name] [description="…"]` invokes `cly as save` with prefilled session id/name, plus `$CLY_SESSION_NAME` auto-apply on session start.
+- `modules/pi/embedded/cly.ts` — pi extension `/save` fallback now also scans the omp session dir.
+
+### Migrated
+- `~/.config/cly/config.yaml`: `modules.agent_session.default_provider: pi` → `omp`.
+- `~/.config/cly/sessions.json`: catalog entries now surface as provider `omp`; sessions whose jsonl files live only under `~/.pi` keep `pi` twins so `cly as resume -p pi <name>` still works.
+
 ## 2026-08-16 Location-Aware AI Model Failover
 
 ### Changed
