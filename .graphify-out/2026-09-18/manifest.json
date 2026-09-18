@@ -2478,9 +2478,9 @@
     "semantic_hash": ""
   },
   "modules/ompwrap/cmd.go": {
-    "mtime": 1789742668.3994248,
-    "seen": 1789742731.9477692,
-    "ast_hash": "ded2360e4c7ce2d5357c7e1f24049e59",
+    "mtime": 1789741890.347726,
+    "seen": 1789742197.964609,
+    "ast_hash": "5c4a648cb1d9a5436a5cfe2e5ebbfb90",
     "semantic_hash": ""
   },
   "modules/pi-anon/anon.go": {
@@ -2910,15 +2910,15 @@
     "semantic_hash": ""
   },
   "pkg/config/config.go": {
-    "mtime": 1789742416.2389073,
-    "seen": 1789742731.947804,
-    "ast_hash": "13240b93c507349bc7c396f8a9260368",
+    "mtime": 1786720486.419512,
+    "seen": 1789560262.849578,
+    "ast_hash": "9ac4fed4b421386e71be79cf2978aebc",
     "semantic_hash": ""
   },
   "pkg/config/config_test.go": {
-    "mtime": 1789742519.8185818,
-    "seen": 1789742731.947805,
-    "ast_hash": "65f966010f4a50dad256ff4722759f69",
+    "mtime": 1786720532.3772736,
+    "seen": 1789560262.849579,
+    "ast_hash": "35c086d3bdabf161b700a784fe10f031",
     "semantic_hash": ""
   },
   "pkg/config/secrets.go": {
@@ -4290,9 +4290,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1789742682.2634413,
-    "seen": 1789742731.947917,
-    "ast_hash": "6941474bf5990e5953c3b53c8e0fab25",
+    "mtime": 1789742180.9300466,
+    "seen": 1789742197.96477,
+    "ast_hash": "2b93b8ff0753a392efd0c41e7a9aaef1",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -4386,9 +4386,9 @@
     "semantic_hash": ""
   },
   "modules/config/config.yaml": {
-    "mtime": 1789742464.5679452,
-    "seen": 1789742731.947925,
-    "ast_hash": "e52fe0012617e8b6a0181a6ac8ad928d",
+    "mtime": 1786555163.2255666,
+    "seen": 1789560262.849699,
+    "ast_hash": "f66d11f943729fd83cc2ab7799f3cf66",
     "semantic_hash": ""
   },
   "modules/llm-chat/README.md": {
@@ -5652,9 +5652,9 @@
     "semantic_hash": ""
   },
   "modules/ompwrap/ompwrap.go": {
-    "mtime": 1789742424.1130512,
-    "seen": 1789742731.9477708,
-    "ast_hash": "6cfcf3fd4e610a58115e9e6babd6545a",
+    "mtime": 1789741890.3434882,
+    "seen": 1789742197.964611,
+    "ast_hash": "741c4dc922fcd9f5aac192bcb0ce02c5",
     "semantic_hash": ""
   },
   "modules/memwatch/omp.go": {
@@ -5784,9 +5784,9 @@
     "semantic_hash": ""
   },
   "modules/ompwrap/launch_argv_test.go": {
-    "mtime": 1789742643.802423,
-    "seen": 1789742731.94777,
-    "ast_hash": "cd4705b3bef04a54440898c5dd47e9dc",
+    "mtime": 1789741950.517921,
+    "seen": 1789742197.96461,
+    "ast_hash": "bdb37debed02435ad6d8b99a36d878f0",
     "semantic_hash": ""
   },
   "skills-lock.json": {

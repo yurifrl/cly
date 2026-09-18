@@ -144,6 +144,7 @@ Designed to be launched at login by process-compose. Add a process to
 	root.AddCommand(
 		newTopCmd(),
 		newPiCmd(),
+		newOmpCmd(),
 		newTUICmd(),
 		&cobra.Command{
 			Use:   "check",
@@ -223,6 +224,48 @@ func newPiCmd() *cobra.Command {
 				}
 				fmt.Printf("  %-7d  %-20s %10s  %s\n",
 					p.PID, truncate(ws, 20), FormatSize(p.RSSKB), truncate(name, 90))
+			}
+			fmt.Printf("  %-7s  %-20s %10s\n", "", "TOTAL", FormatSize(total))
+			return nil
+		},
+	}
+	c.Flags().Bool("json", false, "output as JSON")
+	return c
+}
+
+func newOmpCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "omp",
+		Short: "List running omp instances with memory and working directory",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			asJSON, _ := cmd.Flags().GetBool("json")
+			procs, err := OMPProcesses(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				b, _ := json.MarshalIndent(procs, "", "  ")
+				fmt.Println(string(b))
+				return nil
+			}
+			if len(procs) == 0 {
+				fmt.Println("No running omp instances.")
+				return nil
+			}
+			var total int64
+			fmt.Println("OMP INSTANCES")
+			for _, p := range procs {
+				total += p.RSSKB
+				ws := p.Workspace
+				if ws == "" {
+					ws = p.Label
+				}
+				ref := p.WorkspaceRef
+				if ref == "" {
+					ref = "-"
+				}
+				fmt.Printf("  %-7d  %-20s %10s  %s\n",
+					p.PID, truncate(ws, 20), FormatSize(p.RSSKB), ref)
 			}
 			fmt.Printf("  %-7s  %-20s %10s\n", "", "TOTAL", FormatSize(total))
 			return nil

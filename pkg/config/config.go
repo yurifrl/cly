@@ -445,6 +445,16 @@ func GetBool(key string) bool {
 	return loadViper().GetBool(key)
 }
 
+// GetBoolWithDefault returns the bool at key, or fallback when the key is
+// unset (GetBool alone cannot distinguish "unset" from "false").
+func GetBoolWithDefault(key string, fallback bool) bool {
+	v := loadViper()
+	if !v.IsSet(key) {
+		return fallback
+	}
+	return v.GetBool(key)
+}
+
 func GetStringSlice(key string) []string {
 	raw := loadViper().GetStringSlice(key)
 	for i, s := range raw {

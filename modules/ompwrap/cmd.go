@@ -18,7 +18,7 @@ func Register(parent *cobra.Command) {
 		Use:                "omp [-n NAME] [omp args...]",
 		Aliases:            []string{"o"},
 		Short:              "Wrap omp with --name to label the session and rename the cmux tab",
-		Long:               "Thin pass-through to the `omp` binary.\n\nAdds --name / -n: sets $CLY_SESSION_NAME for the omp process and renames the current cmux tab. All other arguments are forwarded to omp unchanged.",
+		Long:               "Thin pass-through to the `omp` binary.\n\nAdds --name / -n: sets $CLY_SESSION_NAME for the omp process and renames the current cmux tab. All other arguments are forwarded to omp unchanged.\n\nWhen headroom is installed and modules.ompwrap.headroom is enabled in config (default), omp is launched through `headroom wrap omp` so API traffic routes through the Headroom proxy (undo with `headroom unwrap omp`). Set modules.ompwrap.headroom: false to launch omp directly.",
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,

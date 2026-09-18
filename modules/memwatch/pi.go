@@ -12,6 +12,51 @@ import (
 	pitree "github.com/yurifrl/cly/modules/pi-tree"
 )
 
+// procSample is one process matched by the shared ps scan.
+type procSample struct {
+	PID   int
+	RSSKB int64
+}
+
+// scanAgentRSS returns processes whose ps comm basename is one of kinds,
+// sorted by RSS descending. Shared by PiProcesses and OMPProcesses.
+// macOS ps prints comm as a full path when stdout is not a TTY and as a
+// short name when it is — match on the basename either way.
+func scanAgentRSS(ctx context.Context, kinds ...string) ([]procSample, error) {
+	kindSet := make(map[string]bool, len(kinds))
+	for _, k := range kinds {
+		kindSet[k] = true
+	}
+	out, err := exec.CommandContext(ctx, "bash", "-c",
+		`ps -eo pid,rss,comm | awk '{ n = $3; sub(/.*\//, "", n); print n, $1, $2 }'`).Output()
+	if err != nil {
+		return nil, fmt.Errorf("ps failed: %w", err)
+	}
+
+	var samples []procSample
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			continue
+		}
+		if !kindSet[fields[0]] {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+		rss, err := strconv.ParseInt(fields[2], 10, 64)
+		if err != nil {
+			continue
+		}
+		samples = append(samples, procSample{PID: pid, RSSKB: rss})
+	}
+
+	sort.Slice(samples, func(i, j int) bool { return samples[i].RSSKB > samples[j].RSSKB })
+	return samples, nil
+}
+
 // PiProc is a single running pi instance.
 type PiProc struct {
 	PID          int      `json:"pid"`
@@ -26,10 +71,9 @@ type PiProc struct {
 // PiProcesses returns every running `pi` instance with its RSS, CWD, and
 // (best-effort) matching pi-tree session names.
 func PiProcesses(ctx context.Context) ([]PiProc, error) {
-	out, err := exec.CommandContext(ctx, "bash", "-c",
-		`ps -eo pid,rss,comm | awk '$3 == "pi" {print $1, $2}'`).Output()
+	samples, err := scanAgentRSS(ctx, "pi")
 	if err != nil {
-		return nil, fmt.Errorf("ps failed: %w", err)
+		return nil, err
 	}
 
 	// Build cwd -> (workspace, session names) map from pi-tree scan.
@@ -62,25 +106,13 @@ func PiProcesses(ctx context.Context) ([]PiProc, error) {
 	}
 
 	var procs []PiProc
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[0])
-		if err != nil {
-			continue
-		}
-		rss, err := strconv.ParseInt(fields[1], 10, 64)
-		if err != nil {
-			continue
-		}
-		cwd := processCWD(ctx, pid)
+	for _, s := range samples {
+		cwd := processCWD(ctx, s.PID)
 		p := PiProc{
-			PID:   pid,
+			PID:   s.PID,
 			CWD:   cwd,
 			Label: labelForCWD(cwd),
-			RSSKB: rss,
+			RSSKB: s.RSSKB,
 		}
 		if info, ok := cwdInfo[cwd]; ok {
 			p.Workspace = info.workspace
@@ -89,8 +121,6 @@ func PiProcesses(ctx context.Context) ([]PiProc, error) {
 		}
 		procs = append(procs, p)
 	}
-
-	sort.Slice(procs, func(i, j int) bool { return procs[i].RSSKB > procs[j].RSSKB })
 	return procs, nil
 }
 

@@ -39,6 +39,8 @@ modules:
     python_file: ~/.config/cly/bundles/Pythonfile
     brew_file: ~/.config/cly/bundles/Brewfile
     rust_file: ~/.config/cly/bundles/Rustfile
+  ompwrap:
+    headroom: true # launch `cly omp` (alias `o`) through `headroom wrap omp`; requires headroom on PATH
   notify:
     enabled: true
     sound: false

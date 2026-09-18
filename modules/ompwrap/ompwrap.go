@@ -2,7 +2,8 @@
 // adds a --name / -n flag. When --name is provided it propagates the
 // session name through pkg/envs (which writes both the canonical and
 // legacy env vars) and renames the current cmux tab to match. All other
-// flags pass through to omp.
+// flags pass through to omp. When headroom is installed, omp is launched
+// through `headroom wrap omp` instead of directly.
 package ompwrap
 
 import (
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/envs"
 )
 
@@ -21,8 +23,9 @@ import (
 const defaultSessionFileNamePrefix = "cly"
 
 // Run extracts ompwrap-owned flags (--name/-n) from args, applies their
-// side effects, then execs `omp` with the remaining args. Returns the
-// omp process exit error (if any). args should NOT include argv[0].
+// side effects, then execs omp — via `headroom wrap omp` when headroom is
+// on PATH, else directly. Returns the launched process exit error (if
+// any). args should NOT include argv[0].
 func Run(args []string) error {
 	name, rest := extractName(args)
 
@@ -49,18 +52,50 @@ func Run(args []string) error {
 		}
 	}
 
-	ompPath, err := exec.LookPath("omp")
+	argv, err := launchArgv(rest)
 	if err != nil {
-		return errors.New("omp not found in PATH")
+		return err
 	}
 
-	cmd := exec.Command(ompPath, rest...)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	// omp inherits the ambient environment unchanged.
 
 	return cmd.Run()
+}
+
+// launchArgv builds the argv used to launch omp. When headroom is
+// installed on PATH and the modules.ompwrap.headroom config toggle is
+// enabled (default), omp runs through `headroom wrap omp` so its
+// Anthropic traffic routes through the Headroom optimization proxy; omp
+// args follow the wrapper's `--` separator. Otherwise omp is exec'd
+// directly.
+func launchArgv(rest []string) ([]string, error) {
+	if headroomEnabled() {
+		if hrPath, err := exec.LookPath("headroom"); err == nil {
+			argv := []string{hrPath, "wrap", "omp"}
+			if len(rest) > 0 {
+				argv = append(argv, "--")
+				argv = append(argv, rest...)
+			}
+			return argv, nil
+		}
+	}
+
+	ompPath, err := exec.LookPath("omp")
+	if err != nil {
+		return nil, errors.New("omp not found in PATH")
+	}
+	return append([]string{ompPath}, rest...), nil
+}
+
+// headroomEnabled reports whether omp should launch through
+// `headroom wrap omp`. Controlled by modules.ompwrap.headroom in config;
+// defaults to true when unset.
+func headroomEnabled() bool {
+	return config.GetBoolWithDefault("modules.ompwrap.headroom", true)
 }
 
 // extractName scans args for --name/-n and returns (name, remaining).

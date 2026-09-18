@@ -229,3 +229,24 @@ func TestGetString_ExpandsEnvVars(t *testing.T) {
 	got := GetString("app.data_dir")
 	assert.Equal(t, tmpDir+"/.local/share/cly", got)
 }
+
+func TestGetBoolWithDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, ".config", "cly")
+	require.NoError(t, os.MkdirAll(configDir, 0755))
+
+	configContent := `modules:
+  ompwrap:
+    headroom: false
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configContent), 0644))
+
+	t.Setenv("HOME", tmpDir)
+
+	// Key set to false: respected, not treated as unset.
+	assert.False(t, GetBoolWithDefault("modules.ompwrap.headroom", true))
+
+	// Key absent: fallback wins.
+	assert.True(t, GetBoolWithDefault("modules.other_thing.enabled", true))
+	assert.False(t, GetBoolWithDefault("modules.other_thing.enabled", false))
+}

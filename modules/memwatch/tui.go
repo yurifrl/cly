@@ -2,6 +2,7 @@ package memwatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,6 +32,7 @@ var (
 	tuiWarnStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	tuiErrStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	tuiOkStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	tuiOmpStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("176"))
 	tuiBoxStyle      = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("240")).
@@ -40,52 +42,89 @@ var (
 
 // ─── list item ─────────────────────────────────────────────────────────────
 
-type piItem struct {
-	proc PiProc
+// agentRow is the common view projection of a pi or omp process.
+type agentRow struct {
+	kind      string // "pi" or "omp"
+	pid       int
+	rssKB     int64
+	cwd       string
+	label     string
+	workspace string
+	ref       string
+	sessions  []string // pi only
 }
 
-func (i piItem) FilterValue() string {
+func piRow(p PiProc) agentRow {
+	return agentRow{
+		kind: "pi", pid: p.PID, rssKB: p.RSSKB, cwd: p.CWD, label: p.Label,
+		workspace: p.Workspace, ref: p.WorkspaceRef, sessions: p.SessionNames,
+	}
+}
+
+func ompRow(p OmpProc) agentRow {
+	return agentRow{
+		kind: "omp", pid: p.PID, rssKB: p.RSSKB, cwd: p.CWD, label: p.Label,
+		workspace: p.Workspace, ref: p.WorkspaceRef,
+	}
+}
+
+type agentItem struct {
+	row agentRow
+}
+
+func (i agentItem) FilterValue() string {
 	return strings.Join([]string{
-		strconv.Itoa(i.proc.PID),
-		i.proc.Workspace,
-		i.proc.Label,
-		i.proc.CWD,
-		strings.Join(i.proc.SessionNames, " "),
+		i.row.kind,
+		strconv.Itoa(i.row.pid),
+		i.row.workspace,
+		i.row.label,
+		i.row.cwd,
+		strings.Join(i.row.sessions, " "),
 	}, " ")
 }
 
-func (i piItem) headline() string {
-	ws := i.proc.Workspace
+// kindLabel renders the agent kind as a fixed-width, colored chip.
+func kindLabel(kind string) string {
+	s := fmt.Sprintf("%-3s", kind)
+	if kind == "omp" {
+		return tuiOmpStyle.Render(s)
+	}
+	return tuiDimStyle.Render(s)
+}
+
+func (i agentItem) headline() string {
+	ws := i.row.workspace
 	if ws == "" {
-		ws = i.proc.Label
+		ws = i.row.label
 	}
 	if ws == "" {
 		ws = "?"
 	}
-	ref := i.proc.WorkspaceRef
+	ref := i.row.ref
 	if ref == "" {
 		ref = "—"
 	}
-	name := strings.Join(i.proc.SessionNames, " │ ")
+	name := strings.Join(i.row.sessions, " │ ")
 	if name == "" {
 		name = tuiDimStyle.Render("(no session)")
 	}
-	return fmt.Sprintf("%s  %s  %s  %s  %s",
-		tuiPidStyle.Render(fmt.Sprintf("%-7d", i.proc.PID)),
-		tuiSizeStyle.Render(fmt.Sprintf("%10s", FormatSize(i.proc.RSSKB))),
+	return fmt.Sprintf("%s  %s  %s  %s  %s  %s",
+		tuiPidStyle.Render(fmt.Sprintf("%-7d", i.row.pid)),
+		kindLabel(i.row.kind),
+		tuiSizeStyle.Render(fmt.Sprintf("%10s", FormatSize(i.row.rssKB))),
 		tuiWsStyle.Render(fmt.Sprintf("%-20s", truncate(ws, 20))),
 		tuiDimStyle.Render(fmt.Sprintf("%-13s", ref)),
 		truncate(name, 60),
 	)
 }
 
-type piDelegate struct{}
+type agentDelegate struct{}
 
-func (piDelegate) Height() int                             { return 1 }
-func (piDelegate) Spacing() int                            { return 0 }
-func (piDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
-func (piDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	it, ok := listItem.(piItem)
+func (agentDelegate) Height() int                                { return 1 }
+func (agentDelegate) Spacing() int                               { return 0 }
+func (agentDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd    { return nil }
+func (agentDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	it, ok := listItem.(agentItem)
 	if !ok {
 		return
 	}
@@ -107,10 +146,27 @@ const (
 	promptKill9
 )
 
+// ─── view mode ─────────────────────────────────────────────────────────────
+
+type viewMode int
+
+const (
+	viewPi viewMode = iota
+	viewOmp
+)
+
+func (v viewMode) label() string {
+	if v == viewOmp {
+		return "omp"
+	}
+	return "pi"
+}
+
 // ─── messages ──────────────────────────────────────────────────────────────
 
 type refreshedMsg struct {
-	procs    []PiProc
+	piProcs  []PiProc
+	ompProcs []OmpProc
 	sample   *Sample
 	swapUsed float64
 	swapTot  float64
@@ -137,12 +193,16 @@ type tuiModel struct {
 	sample     *Sample
 	swapUsed   float64
 	swapTot    float64
+	piProcs    []PiProc
+	ompProcs   []OmpProc
 	totalPiKB  int64
+	totalOmpKB int64
+	view       viewMode
 	detail     bool
 }
 
 func initialTUIModel() tuiModel {
-	l := list.New(nil, piDelegate{}, 0, 18)
+	l := list.New(nil, agentDelegate{}, 0, 18)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
@@ -166,10 +226,12 @@ func refreshCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		procs, err := PiProcesses(ctx)
+		piProcs, piErr := PiProcesses(ctx)
+		ompProcs, ompErr := OMPProcesses(ctx)
 		sample, _ := Read(ctx)
 		swapUsed, swapTot := readSwap(ctx)
-		return refreshedMsg{procs: procs, sample: sample, swapUsed: swapUsed, swapTot: swapTot, err: err}
+		return refreshedMsg{piProcs: piProcs, ompProcs: ompProcs, sample: sample,
+			swapUsed: swapUsed, swapTot: swapTot, err: errors.Join(piErr, ompErr)}
 	}
 }
 
@@ -189,21 +251,27 @@ func readSwap(ctx context.Context) (float64, float64) {
 	return used, tot
 }
 
-// itemsFromProcs builds the list-item slice, marking the current pi PID with a hint.
-func (m tuiModel) itemsFromProcs(procs []PiProc) []list.Item {
-	items := make([]list.Item, 0, len(procs))
-	for _, p := range procs {
-		items = append(items, piItem{proc: p})
+// itemsFromProcs builds the list-item slice for the active view.
+func (m tuiModel) itemsFromProcs() []list.Item {
+	items := []list.Item{}
+	if m.view == viewPi {
+		for _, p := range m.piProcs {
+			items = append(items, agentItem{row: piRow(p)})
+		}
+	} else {
+		for _, p := range m.ompProcs {
+			items = append(items, agentItem{row: ompRow(p)})
+		}
 	}
 	return items
 }
 
-func (m tuiModel) selected() (PiProc, bool) {
-	it, ok := m.list.SelectedItem().(piItem)
+func (m tuiModel) selected() (agentRow, bool) {
+	it, ok := m.list.SelectedItem().(agentItem)
 	if !ok {
-		return PiProc{}, false
+		return agentRow{}, false
 	}
-	return it.proc, true
+	return it.row, true
 }
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -221,16 +289,21 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusErr = true
 			return m, nil
 		}
-		m.list.SetItems(m.itemsFromProcs(msg.procs))
+		m.piProcs = msg.piProcs
+		m.ompProcs = msg.ompProcs
+		m.list.SetItems(m.itemsFromProcs())
 		m.sample = msg.sample
 		m.swapUsed = msg.swapUsed
 		m.swapTot = msg.swapTot
-		var total int64
-		for _, p := range msg.procs {
-			total += p.RSSKB
+		m.totalPiKB = 0
+		m.totalOmpKB = 0
+		for _, p := range msg.piProcs {
+			m.totalPiKB += p.RSSKB
 		}
-		m.totalPiKB = total
-		m.status = fmt.Sprintf("%d pi instances", len(msg.procs))
+		for _, p := range msg.ompProcs {
+			m.totalOmpKB += p.RSSKB
+		}
+		m.status = m.agentStatus()
 		m.statusErr = false
 		return m, nil
 
@@ -305,6 +378,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "refreshing…"
 			m.statusErr = false
 			return m, refreshCmd()
+		case "p":
+			if m.view == viewPi {
+				m.view = viewOmp
+			} else {
+				m.view = viewPi
+			}
+			m.list.SetItems(m.itemsFromProcs())
+			m.status = m.agentStatus()
+			m.statusErr = false
+			return m, nil
 		case "enter":
 			if _, ok := m.selected(); !ok {
 				return m, nil
@@ -331,14 +414,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
-			if p.PID == m.currentPID {
+			if p.pid == m.currentPID {
 				return m, func() tea.Msg {
 					return actionDoneMsg{ok: false, msg: "refusing to kill current session"}
 				}
 			}
 			m.prompt = promptKill
 			m.detail = false
-			m.input.Placeholder = fmt.Sprintf("kill PID %d (SIGTERM)? type y to confirm", p.PID)
+			m.input.Placeholder = fmt.Sprintf("kill PID %d (SIGTERM)? type y to confirm", p.pid)
 			m.input.Focus()
 			return m, textinput.Blink
 		case "X", "D":
@@ -346,14 +429,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
-			if p.PID == m.currentPID {
+			if p.pid == m.currentPID {
 				return m, func() tea.Msg {
 					return actionDoneMsg{ok: false, msg: "refusing to kill current session"}
 				}
 			}
 			m.prompt = promptKill9
 			m.detail = false
-			m.input.Placeholder = fmt.Sprintf("FORCE KILL PID %d (SIGKILL)? type y to confirm", p.PID)
+			m.input.Placeholder = fmt.Sprintf("FORCE KILL PID %d (SIGKILL)? type y to confirm", p.pid)
 			m.input.Focus()
 			return m, textinput.Blink
 		}
@@ -366,8 +449,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) View() tea.View {
 	header := m.memHeader()
-	colHdr := tuiDimStyle.Render(fmt.Sprintf("  %-7s  %10s  %-20s  %-13s  %s",
-		"PID", "RSS", "WORKSPACE", "REF", "SESSION"))
+	colHdr := tuiDimStyle.Render(fmt.Sprintf("  %-7s  %-3s  %10s  %-20s  %-13s  %s",
+		"PID", "KIND", "RSS", "WORKSPACE", "REF", "SESSION"))
 
 	body := m.list.View()
 
@@ -389,7 +472,7 @@ func (m tuiModel) View() tea.View {
 	}
 
 	help := tuiDimStyle.Render(
-		"j/k move · g/G top/bot · / search · enter detail · o open · s send · x kill · X force-kill · r refresh · q quit",
+		"j/k move · g/G top/bot · / search · enter detail · o open · s send · x kill · X force-kill · p view pi/omp · r refresh · q quit",
 	)
 
 	out := strings.Join([]string{
@@ -408,6 +491,14 @@ func (m tuiModel) View() tea.View {
 }
 
 // ─── action commands ───────────────────────────────────────────────────────
+
+// agentStatus summarizes the active view and the other kind's count.
+func (m tuiModel) agentStatus() string {
+	if m.view == viewPi {
+		return fmt.Sprintf("%d pi instances · %d omp running", len(m.piProcs), len(m.ompProcs))
+	}
+	return fmt.Sprintf("%d omp instances · %d pi running", len(m.ompProcs), len(m.piProcs))
+}
 
 func (m tuiModel) memHeader() string {
 	parts := []string{tuiTitleStyle.Render("memwatch")}
@@ -439,8 +530,12 @@ func (m tuiModel) memHeader() string {
 				fmt.Sprintf("%.1f/%.1f GB (%.0f%%)", m.swapUsed/1024, m.swapTot/1024, pct)),
 		)
 	}
+	parts = append(parts, tuiDimStyle.Render("view ")+tuiWsStyle.Render(m.view.label()))
 	if m.totalPiKB > 0 {
 		parts = append(parts, tuiDimStyle.Render("pi ")+tuiSizeStyle.Render(FormatSize(m.totalPiKB)))
+	}
+	if m.totalOmpKB > 0 {
+		parts = append(parts, tuiDimStyle.Render("omp ")+tuiOmpStyle.Render(FormatSize(m.totalOmpKB)))
 	}
 	return "  " + strings.Join(parts, tuiDimStyle.Render("  ·  "))
 }
@@ -451,20 +546,21 @@ func (m tuiModel) detailView() string {
 		return "  " + tuiDimStyle.Render("no selection")
 	}
 	lines := []string{
-		tuiTitleStyle.Render(fmt.Sprintf("Detail — PID %d", p.PID)),
+		tuiTitleStyle.Render(fmt.Sprintf("Detail — PID %d", p.pid)),
 		"",
-		tuiDimStyle.Render("RSS         ") + tuiSizeStyle.Render(FormatSize(p.RSSKB)),
-		tuiDimStyle.Render("Workspace   ") + tuiWsStyle.Render(orDash(p.Workspace)),
-		tuiDimStyle.Render("Ref         ") + orDash(p.WorkspaceRef),
-		tuiDimStyle.Render("Label       ") + orDash(p.Label),
-		tuiDimStyle.Render("CWD         ") + orDash(p.CWD),
+		tuiDimStyle.Render("Kind        ") + kindLabel(p.kind),
+		tuiDimStyle.Render("RSS         ") + tuiSizeStyle.Render(FormatSize(p.rssKB)),
+		tuiDimStyle.Render("Workspace   ") + tuiWsStyle.Render(orDash(p.workspace)),
+		tuiDimStyle.Render("Ref         ") + orDash(p.ref),
+		tuiDimStyle.Render("Label       ") + orDash(p.label),
+		tuiDimStyle.Render("CWD         ") + orDash(p.cwd),
 	}
-	if len(p.SessionNames) > 0 {
-		lines = append(lines, tuiDimStyle.Render("Sessions    ")+strings.Join(p.SessionNames, "\n            "))
+	if len(p.sessions) > 0 {
+		lines = append(lines, tuiDimStyle.Render("Sessions    ")+strings.Join(p.sessions, "\n            "))
 	} else {
 		lines = append(lines, tuiDimStyle.Render("Sessions    ")+tuiDimStyle.Render("(none)"))
 	}
-	if p.PID == m.currentPID {
+	if p.pid == m.currentPID {
 		lines = append(lines, "", tuiWarnStyle.Render("★ current session — protected from kill"))
 	}
 	return tuiBoxStyle.Render(strings.Join(lines, "\n"))
@@ -477,28 +573,28 @@ func orDash(s string) string {
 	return s
 }
 
-func gotoCmd(p PiProc) tea.Cmd {
+func gotoCmd(p agentRow) tea.Cmd {
 	return func() tea.Msg {
-		if p.WorkspaceRef == "" {
-			return actionDoneMsg{ok: false, msg: fmt.Sprintf("PID %d: no cmux workspace ref", p.PID)}
+		if p.ref == "" {
+			return actionDoneMsg{ok: false, msg: fmt.Sprintf("PID %d: no cmux workspace ref", p.pid)}
 		}
 		if _, err := exec.LookPath("cmux"); err != nil {
 			return actionDoneMsg{ok: false, msg: "cmux binary not on PATH"}
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		out, err := exec.CommandContext(ctx, "cmux", "select-workspace", "--workspace", p.WorkspaceRef).CombinedOutput()
+		out, err := exec.CommandContext(ctx, "cmux", "select-workspace", "--workspace", p.ref).CombinedOutput()
 		if err != nil {
 			return actionDoneMsg{ok: false, msg: fmt.Sprintf("select-workspace failed: %v: %s", err, strings.TrimSpace(string(out)))}
 		}
-		return actionDoneMsg{ok: true, msg: "switched to " + p.WorkspaceRef + " (" + p.Workspace + ")"}
+		return actionDoneMsg{ok: true, msg: "switched to " + p.ref + " (" + p.workspace + ")"}
 	}
 }
 
-func sendCmd(p PiProc, text string) tea.Cmd {
+func sendCmd(p agentRow, text string) tea.Cmd {
 	return func() tea.Msg {
-		if p.WorkspaceRef == "" {
-			return actionDoneMsg{ok: false, msg: fmt.Sprintf("PID %d: no cmux workspace ref", p.PID)}
+		if p.ref == "" {
+			return actionDoneMsg{ok: false, msg: fmt.Sprintf("PID %d: no cmux workspace ref", p.pid)}
 		}
 		if _, err := exec.LookPath("cmux"); err != nil {
 			return actionDoneMsg{ok: false, msg: "cmux binary not on PATH"}
@@ -506,25 +602,25 @@ func sendCmd(p PiProc, text string) tea.Cmd {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		// Send the text, then press Enter to submit.
-		if out, err := exec.CommandContext(ctx, "cmux", "send", "--workspace", p.WorkspaceRef, text).CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(ctx, "cmux", "send", "--workspace", p.ref, text).CombinedOutput(); err != nil {
 			return actionDoneMsg{ok: false, msg: fmt.Sprintf("send failed: %v: %s", err, strings.TrimSpace(string(out)))}
 		}
-		if out, err := exec.CommandContext(ctx, "cmux", "send-key", "--workspace", p.WorkspaceRef, "enter").CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(ctx, "cmux", "send-key", "--workspace", p.ref, "enter").CombinedOutput(); err != nil {
 			return actionDoneMsg{ok: false, msg: fmt.Sprintf("send-key enter failed: %v: %s", err, strings.TrimSpace(string(out)))}
 		}
-		return actionDoneMsg{ok: true, msg: fmt.Sprintf("sent %q → %s", truncate(text, 40), p.WorkspaceRef)}
+		return actionDoneMsg{ok: true, msg: fmt.Sprintf("sent %q → %s", truncate(text, 40), p.ref)}
 	}
 }
 
-func killCmd(p PiProc, sig syscall.Signal, currentPID int) tea.Cmd {
+func killCmd(p agentRow, sig syscall.Signal, currentPID int) tea.Cmd {
 	return func() tea.Msg {
-		if p.PID == currentPID {
+		if p.pid == currentPID {
 			return actionDoneMsg{ok: false, msg: "refusing to kill current session"}
 		}
-		if err := syscall.Kill(p.PID, sig); err != nil {
-			return actionDoneMsg{ok: false, msg: fmt.Sprintf("kill %d (%v): %v", p.PID, sig, err)}
+		if err := syscall.Kill(p.pid, sig); err != nil {
+			return actionDoneMsg{ok: false, msg: fmt.Sprintf("kill %d (%v): %v", p.pid, sig, err)}
 		}
-		return actionDoneMsg{ok: true, msg: fmt.Sprintf("sent %v to PID %d", sig, p.PID)}
+		return actionDoneMsg{ok: true, msg: fmt.Sprintf("sent %v to PID %d", sig, p.pid)}
 	}
 }
 
@@ -534,7 +630,7 @@ func newTUICmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "tui",
 		Aliases: []string{"interactive", "i"},
-		Short:   "Interactive TUI to navigate, search, and send commands to running pi sessions",
+		Short:   "Interactive TUI to navigate, search, and send commands to running pi/omp sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := tea.NewProgram(initialTUIModel())
 			_, err := p.Run()

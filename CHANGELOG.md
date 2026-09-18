@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-18 `o`/`cly omp` Routes Through Headroom
+
+### Changed
+- `modules/ompwrap`: `cly omp` (shell alias `o`) now launches omp through `headroom wrap omp` when headroom is on PATH — the Headroom proxy intercepts omp's Anthropic traffic and a marker-fenced `providers.anthropic.baseUrl` override is injected into `~/.omp/agent/models.yml` (pre-wrap file backed up; undo with `headroom unwrap omp`). omp args follow the wrapper's `--` separator; without headroom installed, behavior is unchanged (direct exec). `launchArgv` centralizes argv selection and is unit-tested for both branches plus the neither-binary error.
+- New config toggle `modules.ompwrap.headroom` (default `true`): set `false` in `~/.config/cly/config.yaml` to launch omp directly even when headroom is installed; `CLY_MODULES_OMPWRAP_HEADROOM=0` works as an env override. Adds `pkg/config.GetBoolWithDefault` (unset-vs-false aware).
+
 ## 2026-08-31 omp Is the Default Agent
 
 ### Changed

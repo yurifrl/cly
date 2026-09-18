@@ -23,7 +23,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -39,29 +41,137 @@ const mtimeKey = "goog-reserved-file-mtime"
 // RegisterGsync adds the visual, parallel-per-folder sync command.
 func RegisterGsync(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use:     "gsync",
+		Use:     "gsync [target]",
 		Aliases: []string{"gs"},
 		Short:   "Visually sync each source folder to GCS in parallel (native Go, no gsutil)",
-		Long:    "Syncs every top-level folder under the configured source dir to GCS in parallel using the Google Cloud Storage SDK, with a live TUI: syncing folders on top, finished folders collapsed below, and a report written to /tmp.",
-		RunE:    runGsync,
+		Long: "Syncs every top-level folder under one or more configured source dirs to GCS in parallel using " +
+			"the Google Cloud Storage SDK, with a live TUI on a terminal. With no target it syncs the " +
+			"workdir backup (modules.backup.source_dir / gcs_bucket); pass a named target from " +
+			"modules.backup.targets to sync elsewhere, e.g. `cly gsync sessions`. A target lists any number " +
+			"of {source_dir, prefix} sources, each uploaded under its prefix. Without a terminal " +
+			"(scheduled or piped) it runs headless, prints a one-line summary, and exits non-zero on upload errors. " +
+			"Use `cly gsync status` for run history.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: runGsync,
 	}
 	cmd.Flags().IntVarP(&gsyncJobs, "jobs", "j", 4, "Number of folders to sync in parallel")
 	parent.AddCommand(cmd)
+	RegisterGsyncStatus(cmd)
+}
+
+// syncSource is one local directory synced into the target bucket under an
+// optional object-path prefix ("" = bucket root).
+type syncSource struct {
+	dir    string
+	prefix string
+}
+
+// sourcePlan is one resolved source with its discovered top-level folders.
+type sourcePlan struct {
+	src     syncSource
+	folders []string
+	loose   []string
+}
+
+// objectName joins an optional object-path prefix with a source-relative path.
+func objectName(prefix, rel string) string {
+	if prefix == "" {
+		return rel
+	}
+	return prefix + "/" + rel
+}
+
+// displayFolderName qualifies a folder name with its source prefix so two
+// sources with same-named folders stay distinguishable in the TUI/report.
+func displayFolderName(prefix, folder string) string {
+	if prefix == "" {
+		return folder
+	}
+	return prefix + "/" + folder
+}
+
+// resolveSyncTarget maps an optional positional target name to its configured
+// bucket + sources. With no target it returns the classic workdir backup
+// (modules.backup.source_dir / gcs_bucket, bucket root). Named targets come
+// from modules.backup.targets.<name>: either a list of {source_dir, prefix}
+// under `sources`, or the legacy single `source_dir` (bucket root).
+func resolveSyncTarget(args []string) (target, bucket string, sources []syncSource, err error) {
+	if len(args) == 0 {
+		return "workdir", getBucket(), []syncSource{{dir: getWorkdir()}}, nil
+	}
+	target = args[0]
+	if target == "" || strings.ContainsAny(target, "./\\") {
+		return "", "", nil, fmt.Errorf("invalid sync target %q", target)
+	}
+	prefix := "modules.backup.targets." + target + "."
+	bucket = pkgconfig.GetString(prefix + "gcs_bucket")
+	sources = targetSources(target)
+	if len(sources) == 0 {
+		if dir := pkgconfig.GetString(prefix + "source_dir"); dir != "" {
+			sources = []syncSource{{dir: dir}}
+		}
+	}
+	if bucket == "" || len(sources) == 0 {
+		return "", "", nil, fmt.Errorf("sync target %q is not configured; add it to ~/.config/cly/config.yaml:\n\nmodules:\n  backup:\n    targets:\n      %s:\n        gcs_bucket: your-bucket-name\n        sources:\n          - source_dir: /path/to/dir\n            prefix: name", target, target)
+	}
+	return target, bucket, sources, nil
+}
+
+// targetSources reads modules.backup.targets.<name>.sources, a list of
+// {source_dir, prefix} maps. Returns nil when absent or malformed.
+func targetSources(name string) []syncSource {
+	c := pkgconfig.Get()
+	mods := c.Modules["backup"]
+	if mods == nil {
+		return nil
+	}
+	targets, _ := mods["targets"].(map[string]interface{})
+	if targets == nil {
+		return nil
+	}
+	t, _ := targets[name].(map[string]interface{})
+	if t == nil {
+		return nil
+	}
+	raw, _ := t["sources"].([]interface{})
+	var out []syncSource
+	for _, e := range raw {
+		m, ok := e.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		dir, _ := m["source_dir"].(string)
+		prefix, _ := m["prefix"].(string)
+		if dir == "" {
+			continue
+		}
+		out = append(out, syncSource{dir: pkgconfig.ExpandPath(dir), prefix: prefix})
+	}
+	return out
 }
 
 func runGsync(cmd *cobra.Command, args []string) error {
-	bucket := getBucket()
+	target, bucket, sources, err := resolveSyncTarget(args)
+	if err != nil {
+		return err
+	}
 	if bucket == "" {
 		return fmt.Errorf("GCS bucket not configured. Set it in your config.yaml :\n\nmodules:\n  backup:\n    gcs_bucket: your-bucket-name")
 	}
 
-	workdir := getWorkdir()
-	folders, looseFiles, err := listWorkdirFolders(workdir)
-	if err != nil {
-		return err
-	}
-	if len(folders) == 0 {
-		return fmt.Errorf("no folders found under %s", workdir)
+	// Plan every source up front so one bad path fails before any upload.
+	var plans []sourcePlan
+	folderCount := 0
+	for _, src := range sources {
+		folders, loose, err := listWorkdirFolders(src.dir)
+		if err != nil {
+			return err
+		}
+		if len(folders) == 0 {
+			return fmt.Errorf("no folders found under %s", src.dir)
+		}
+		plans = append(plans, sourcePlan{src: src, folders: folders, loose: loose})
+		folderCount += len(folders)
 	}
 	if gsyncJobs < 1 {
 		gsyncJobs = 1
@@ -82,11 +192,41 @@ func runGsync(cmd *cobra.Command, args []string) error {
 
 	account := adcAccount()
 
-	m := newGsyncModel(bucket, account, workdir, folders, looseFiles)
-	p := tea.NewProgram(m)
-	go orchestrate(ctx, p, client, bucket, workdir, folders, looseFiles, gsyncJobs)
-	_, err = p.Run()
-	return err
+	// Full TUI on a terminal; headless (scheduled/piped) runs without a renderer
+	// or input, quits as soon as the sync finishes, and reports via exit code.
+	headless := !isatty.IsTerminal(os.Stdout.Fd())
+	mode := "interactive"
+	if headless {
+		mode = "headless"
+	}
+	m := newGsyncModel(bucket, account, target, plans)
+	var opts []tea.ProgramOption
+	if headless {
+		opts = append(opts, tea.WithInput(nil), tea.WithoutRenderer())
+	}
+	p := tea.NewProgram(m, opts...)
+	start := time.Now()
+	summary := &syncSummary{target: target, folders: folderCount}
+	go orchestrate(ctx, p, client, bucket, plans, gsyncJobs, headless, summary)
+	_, runErr := p.Run()
+	summary.seconds = time.Since(start).Seconds()
+	appendHistory(historyEntry{
+		Time: time.Now(), Target: target, Bucket: bucket,
+		Sources: len(sources), Folders: summary.folders,
+		Uploaded: summary.uploaded, Skipped: summary.skipped, Errors: summary.errors,
+		Seconds: summary.seconds, Mode: mode,
+	})
+	if runErr != nil {
+		return runErr
+	}
+	if headless {
+		fmt.Printf("gsync %s -> gs://%s: %d source(s), %d folder(s): %d uploaded, %d skipped, %d errors; report: %s\n",
+			target, bucket, len(sources), summary.folders, summary.uploaded, summary.skipped, summary.errors, summary.reportPath)
+		if summary.errors > 0 {
+			return fmt.Errorf("%d file(s) failed to upload; see %s", summary.errors, summary.reportPath)
+		}
+	}
+	return nil
 }
 
 func listWorkdirFolders(workdir string) (folders []string, looseFiles []string, err error) {
@@ -249,7 +389,10 @@ type folderDoneMsg struct {
 	idx int
 	err bool
 }
-type allDoneMsg struct{ reportPath string }
+type allDoneMsg struct {
+	reportPath string
+	quit       bool // headless mode: exit the program as soon as the sync completes
+}
 
 type folderResult struct {
 	name     string
@@ -260,33 +403,79 @@ type folderResult struct {
 	errLines []string
 }
 
+// syncSummary is the machine-readable outcome of one gsync run, filled by
+// orchestrate and consumed by runGsync for the headless summary + exit code.
+type syncSummary struct {
+	target     string
+	folders    int
+	uploaded   int
+	skipped    int
+	errors     int
+	reportPath string
+	seconds    float64
+}
+
+func summarize(results []folderResult, reportPath string) syncSummary {
+	s := syncSummary{folders: len(results), reportPath: reportPath}
+	for _, r := range results {
+		s.uploaded += r.uploaded
+		s.skipped += r.skipped
+		s.errors += r.errors
+	}
+	return s
+}
+
 // ---- orchestration ---------------------------------------------------------
 
-func orchestrate(ctx context.Context, p *tea.Program, client *storage.Client, bucket, workdir string, folders, looseFiles []string, jobs int) {
+// folderJob is one (source, folder) unit of work with its display name.
+type folderJob struct {
+	src     syncSource
+	folder  string
+	display string
+}
+
+func orchestrate(ctx context.Context, p *tea.Program, client *storage.Client, bucket string, plans []sourcePlan, jobs int, quitWhenDone bool, summary *syncSummary) {
 	re := ignoreRegexp()
 	bkt := client.Bucket(bucket)
 	sem := make(chan struct{}, jobs)
 	var wg sync.WaitGroup
-	results := make([]folderResult, len(folders))
 
-	for i, name := range folders {
+	// Flatten (source, folder) pairs so results index cleanly.
+	var jobsList []folderJob
+	var looseAll []string
+	for _, plan := range plans {
+		looseAll = append(looseAll, plan.loose...)
+		for _, folder := range plan.folders {
+			jobsList = append(jobsList, folderJob{src: plan.src, folder: folder, display: displayFolderName(plan.src.prefix, folder)})
+		}
+	}
+	results := make([]folderResult, len(jobsList))
+
+	for i, job := range jobsList {
 		wg.Add(1)
-		go func(idx int, folder string) {
+		go func(idx int, job folderJob) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			p.Send(folderStartMsg(idx))
-			res := syncFolder(ctx, p, idx, bkt, workdir, folder, re)
-			res.name = folder
+			res := syncFolder(ctx, p, idx, bkt, job.src.dir, job.folder, re, job.src.prefix)
+			res.name = job.display
 			results[idx] = res
 			p.Send(folderDoneMsg{idx: idx, err: res.hadErr})
-		}(i, name)
+		}(i, job)
 	}
 
 	wg.Wait()
-	reportPath := writeReport(bucket, workdir, results, looseFiles)
-	p.Send(allDoneMsg{reportPath: reportPath})
+	reportPath := writeReport(bucket, jobsList, looseAll, results, summary)
+	if summary != nil {
+		tot := summarize(results, reportPath)
+		tot.target = summary.target
+		tot.folders = summary.folders
+		tot.seconds = summary.seconds
+		*summary = tot
+	}
+	p.Send(allDoneMsg{reportPath: reportPath, quit: quitWhenDone})
 }
 
 type uploadJob struct {
@@ -296,8 +485,9 @@ type uploadJob struct {
 }
 
 // syncFolder walks one top-level folder, applies exclusions, then uploads
-// changed files to GCS using a small worker pool.
-func syncFolder(ctx context.Context, p *tea.Program, idx int, bkt *storage.BucketHandle, workdir, folder string, re *regexp.Regexp) folderResult {
+// changed files to GCS using a small worker pool. Objects are written under
+// the source's prefix (bucket root when empty).
+func syncFolder(ctx context.Context, p *tea.Program, idx int, bkt *storage.BucketHandle, workdir, folder string, re *regexp.Regexp, prefix string) folderResult {
 	res := folderResult{}
 	src := filepath.Join(workdir, folder)
 
@@ -346,7 +536,7 @@ func syncFolder(ctx context.Context, p *tea.Program, idx int, bkt *storage.Bucke
 			wsem <- struct{}{}
 			defer func() { <-wsem }()
 
-			obj := bkt.Object(j.rel)
+			obj := bkt.Object(objectName(prefix, j.rel))
 			display := strings.TrimPrefix(j.rel, folder+"/")
 
 			if !needsUpload(ctx, obj, j.info) {
@@ -434,11 +624,12 @@ const (
 )
 
 type gsyncModel struct {
-	bucket     string
-	account    string
-	workdir    string
-	folders    []*folderState
-	looseFiles []string
+	bucket       string
+	account      string
+	target       string
+	sourcesLabel string
+	folders      []*folderState
+	looseFiles   []string
 	spinner    spinner.Model
 	progress   progress.Model
 	viewport   viewport.Model
@@ -482,23 +673,27 @@ var (
 	gsUpArrow = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
 )
 
-func newGsyncModel(bucket, account, workdir string, folders, looseFiles []string) gsyncModel {
-	fs := make([]*folderState, len(folders))
-	for i, n := range folders {
-		fs[i] = &folderState{name: n}
+func newGsyncModel(bucket, account, target string, plans []sourcePlan) gsyncModel {
+	var dirs []string
+	var fs []*folderState
+	for _, plan := range plans {
+		dirs = append(dirs, plan.src.dir)
+		for _, n := range plan.folders {
+			fs = append(fs, &folderState{name: displayFolderName(plan.src.prefix, n)})
+		}
 	}
 	sp := spinner.New()
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
 	pr := progress.New(progress.WithDefaultBlend(), progress.WithWidth(30), progress.WithoutPercentage())
 	return gsyncModel{
-		bucket:     bucket,
-		account:    account,
-		workdir:    workdir,
-		folders:    fs,
-		looseFiles: looseFiles,
-		spinner:    sp,
-		progress:   pr,
-		startedAt:  time.Now(),
+		bucket:       bucket,
+		account:      account,
+		target:       target,
+		sourcesLabel: strings.Join(dirs, " + "),
+		folders:      fs,
+		spinner:      sp,
+		progress:     pr,
+		startedAt:    time.Now(),
 	}
 }
 
@@ -596,6 +791,9 @@ func (m gsyncModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reportMD = string(data)
 		}
 		m.refreshViewport()
+		if msg.quit {
+			return m, tea.Quit
+		}
 		return m, nil
 	}
 
@@ -727,9 +925,10 @@ func (m gsyncModel) View() tea.View {
 	}
 
 	title := gsHeader.Render("gsync")
-	head := fmt.Sprintf("%s  %s → gs://%s\n%s %s",
+	head := fmt.Sprintf("%s %s  %s → gs://%s\n%s %s",
 		title,
-		gsNameDim.Render(m.workdir),
+		gsName.Render(m.target),
+		gsNameDim.Render(m.sourcesLabel),
 		m.bucket,
 		style.GreenStyle.Render("✓"),
 		gsNameDim.Render(m.account))
@@ -818,7 +1017,7 @@ func truncate(s string, max int) string {
 
 // ---- report ----------------------------------------------------------------
 
-func writeReport(bucket, workdir string, results []folderResult, looseFiles []string) string {
+func writeReport(bucket string, jobs []folderJob, looseFiles []string, results []folderResult, summary *syncSummary) string {
 	ts := time.Now().Format("2006-01-02-1504")
 	path := filepath.Join(os.TempDir(), "gsync-"+ts+".md")
 	f, err := os.Create(path)
@@ -835,12 +1034,29 @@ func writeReport(bucket, workdir string, results []folderResult, looseFiles []st
 	}
 
 	fmt.Fprintf(f, "# gsync report — %s\n\n", time.Now().Format(time.RFC1123))
-	fmt.Fprintf(f, "- Source: `%s`\n- Bucket: `gs://%s`\n- Folders: %d\n", workdir, bucket, len(results))
+	fmt.Fprintf(f, "- Target: `%s`\n- Bucket: `gs://%s`\n- Folders: %d\n", summary.target, bucket, len(results))
+	seenSrc := map[string]bool{}
+	var srcLines []string
+	for _, j := range jobs {
+		key := j.src.prefix + "\x00" + j.src.dir
+		if seenSrc[key] {
+			continue
+		}
+		seenSrc[key] = true
+		label := j.src.dir
+		if j.src.prefix != "" {
+			label += " → " + j.src.prefix + "/"
+		}
+		srcLines = append(srcLines, fmt.Sprintf("  - `%s`\n", label))
+	}
+	if len(srcLines) > 0 {
+		fmt.Fprintf(f, "- Sources:\n%s", strings.Join(srcLines, ""))
+	}
 	fmt.Fprintf(f, "- Totals: %d uploaded · %d skipped · %d errors\n\n", totUp, totSkip, totErr)
 
 	fmt.Fprintf(f, "## Per-folder\n\n| folder | uploaded | skipped | errors |\n|---|---:|---:|---:|\n")
 	for _, r := range results {
-		fmt.Fprintf(f, "| %s/ | %d | %d | %d |\n", r.name, r.uploaded, r.skipped, r.errors)
+		fmt.Fprintf(f, "| %s | %d | %d | %d |\n", r.name, r.uploaded, r.skipped, r.errors)
 	}
 
 	hasErrors := false
@@ -856,7 +1072,7 @@ func writeReport(bucket, workdir string, results []folderResult, looseFiles []st
 			if len(r.errLines) == 0 {
 				continue
 			}
-			fmt.Fprintf(f, "### %s/\n\n```\n", r.name)
+			fmt.Fprintf(f, "### %s\n\n```\n", r.name)
 			for _, l := range r.errLines {
 				fmt.Fprintf(f, "%s\n", l)
 			}
@@ -865,7 +1081,7 @@ func writeReport(bucket, workdir string, results []folderResult, looseFiles []st
 	}
 
 	if len(looseFiles) > 0 {
-		fmt.Fprintf(f, "\n## Skipped: loose top-level files\n\nFiles directly under `%s` are not synced (only folders are). Move them into a folder to include them:\n\n", workdir)
+		fmt.Fprintf(f, "\n## Skipped: loose top-level files\n\nFiles directly under a source dir are not synced (only folders are). Move them into a folder to include them:\n\n")
 		for _, name := range looseFiles {
 			fmt.Fprintf(f, "- `%s`\n", name)
 		}
