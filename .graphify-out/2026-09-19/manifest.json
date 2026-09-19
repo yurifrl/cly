@@ -4290,9 +4290,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1789790328.770509,
-    "seen": 1789790410.2231271,
-    "ast_hash": "354f4d627d0d49cfc07ecdf363d0ab3c",
+    "mtime": 1789742682.2634413,
+    "seen": 1789742731.947917,
+    "ast_hash": "6941474bf5990e5953c3b53c8e0fab25",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -5628,9 +5628,9 @@
     "semantic_hash": ""
   },
   "modules/omp/cmd.go": {
-    "mtime": 1789788546.2735817,
-    "seen": 1789790410.222954,
-    "ast_hash": "a85a9f20d013d7473ff34835f7672388",
+    "mtime": 1788203539.695094,
+    "seen": 1789560262.849548,
+    "ast_hash": "a5791d062c25a67aefad4f2787ae8927",
     "semantic_hash": ""
   },
   "modules/omp/embedded/cly.ts": {
@@ -5793,90 +5793,6 @@
     "mtime": 1776175424.802179,
     "seen": 1789742197.96468,
     "ast_hash": "e2ed4b9bf42167ab7f736f6159d015c6",
-    "semantic_hash": ""
-  },
-  ".omp/summary.json": {
-    "mtime": 1789789924.2374818,
-    "seen": 1789790410.222709,
-    "ast_hash": "d3e10d7bc3e590db5d78bd32f89385f0",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/config.go": {
-    "mtime": 1789787906.1137438,
-    "seen": 1789790410.222956,
-    "ast_hash": "466646dc270eb6d933c227f2dd7d65b0",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/discover.go": {
-    "mtime": 1789789258.001826,
-    "seen": 1789790410.222958,
-    "ast_hash": "d1546af628b7aec062a6462a92d52ce0",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/discover_test.go": {
-    "mtime": 1789789282.0776699,
-    "seen": 1789790410.222958,
-    "ast_hash": "e4139177ed2aade24a99b2e1389c29c3",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/engine.go": {
-    "mtime": 1789788249.3673012,
-    "seen": 1789790410.222959,
-    "ast_hash": "82fe40796350aa82b43cd277dd7243ea",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/harness_test.go": {
-    "mtime": 1789789047.1101334,
-    "seen": 1789790410.222959,
-    "ast_hash": "eae11e66f333b6b805167542153b47e1",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/state.go": {
-    "mtime": 1789789258.011936,
-    "seen": 1789790410.2229602,
-    "ast_hash": "1431ea3e39e7dcd6094b2c3eedbe4898",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/state_test.go": {
-    "mtime": 1789789023.3308592,
-    "seen": 1789790410.222961,
-    "ast_hash": "9c6b6cec5d9444fa15718a8db75f7c9e",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/summarizer.go": {
-    "mtime": 1789789258.0083745,
-    "seen": 1789790410.222962,
-    "ast_hash": "c321b823abad7c112060f74239aa0c17",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/summarizer_test.go": {
-    "mtime": 1789789096.307245,
-    "seen": 1789790410.222962,
-    "ast_hash": "c8c08d7d03af4ade3492bbe96f25705c",
-    "semantic_hash": ""
-  },
-  "modules/omp/summary/tui.go": {
-    "mtime": 1789788563.5494437,
-    "seen": 1789790410.2229629,
-    "ast_hash": "41cc4f3833152d409ffcc8b044aa2307",
-    "semantic_hash": ""
-  },
-  "pkg/cmux/summary.go": {
-    "mtime": 1789789257.9972787,
-    "seen": 1789790410.223001,
-    "ast_hash": "851eae50321eafe0e739499e0f673ea6",
-    "semantic_hash": ""
-  },
-  "pkg/cmux/summary_test.go": {
-    "mtime": 1789789258.0146303,
-    "seen": 1789790410.223001,
-    "ast_hash": "ca9740604fca086703a1dabd40b495dc",
-    "semantic_hash": ""
-  },
-  ".agents/plans/2026-09-18_23-53-omp-summary-sidebar.md": {
-    "mtime": 1789786504.024487,
-    "seen": 1789790410.223063,
-    "ast_hash": "7213c4be58b26c81322238c5da7a8e3a",
     "semantic_hash": ""
   }
 }
