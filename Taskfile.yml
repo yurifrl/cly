@@ -107,6 +107,12 @@ tasks:
       - sudo mv {{.BUILD_DIR}}/pi /usr/local/bin/pi
       - sudo ln -sf /usr/local/bin/pi /usr/local/bin/p
 
+  install:sidebar:
+    desc: Deploy the omp-cards sidebar to ~/.config/cmux/sidebars (symlink to repo source)
+    cmds:
+      - mkdir -p ~/.config/cmux/sidebars
+      - ln -sf "{{.TASKFILE_DIR}}/assets/cmux/sidebars/omp-cards.swift" ~/.config/cmux/sidebars/omp-cards.swift
+
   install:all:
     desc: Install both cly and mcp
     deps: [install, install:mcp]
