@@ -2,7 +2,6 @@ package ompsummary
 
 import (
 	"context"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -32,7 +31,6 @@ type Summarizer struct {
 	queue   []Job
 	running map[string]context.CancelFunc // session_id → cancel
 	wg      sync.WaitGroup
-	notify  func() // wakes the UI when a summary lands
 }
 
 // NewSummarizer resolves the module's AI override and the summarizer's
@@ -51,17 +49,6 @@ func NewSummarizer(cfg Config) *Summarizer {
 	}
 	s.HasKey = ai.HasAPIKeyFor("omp.summary")
 	return s
-}
-
-// SetNotify wires the UI wake-up callback.
-func (s *Summarizer) SetNotify(fn func()) {
-	s.notify = fn
-}
-
-func (s *Summarizer) wake() {
-	if s.notify != nil {
-		s.notify()
-	}
 }
 
 // Enqueue adds a job unless the session is already queued. A focused job
@@ -121,6 +108,14 @@ func (s *Summarizer) Start(ctx context.Context) {
 	s.wg.Wait()
 }
 
+// Idle reports whether every job has run to completion (queue drained, no
+// running summary). Used by --once mode to know when to exit.
+func (s *Summarizer) Idle() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.queue) == 0 && len(s.running) == 0
+}
+
 func (s *Summarizer) worker(ctx context.Context) {
 	defer s.wg.Done()
 	for {
@@ -156,46 +151,59 @@ func (s *Summarizer) run(ctx context.Context, job Job) {
 	}()
 
 	state := LoadState(t.CWD)
-	state.Update(t.SessionID, &Summary{
-		Status:      "running",
-		Fingerprint: job.Fingerprint,
-		UpdatedAt:   nowUnix(),
-	})
+	marker := state.Get(t.SessionID)
+	if marker == nil {
+		marker = &Entry{}
+	}
+	marker.Status = StatusRunning
+	marker.Fingerprint = job.Fingerprint
+	marker.UpdatedAt = nowUnix()
+	state.Update(t.SessionID, marker)
 	_ = SaveState(t.CWD, state)
-	s.wake()
 
-	text, turns, err := func() (string, int, error) {
+	text, dg, err := func() (string, Digest, error) {
 		path := transcriptPath(t.SessionID)
-		digest, turns, err := Extract(path, s.cfg.MaxTail, s.cfg.MaxTail)
+		dg, tail, err := DigestTail(path, s.cfg.MaxTail, s.cfg.MaxTail)
 		if err != nil {
-			return "", turns, err
+			return "", dg, err
 		}
-		out, err := ai.Complete(runCtx, s.override, systemPrompt, buildUserPrompt(t, digest))
+		out, err := ai.Complete(runCtx, s.override, systemPrompt, buildUserPrompt(t, tail))
 		if err != nil {
-			return "", turns, err
+			return "", dg, err
 		}
-		return normalize(out), turns, nil
+		return out, dg, nil
 	}()
 
 	if runCtx.Err() != nil {
 		return // superseded; the next tick re-enqueues with the fresh fingerprint
 	}
-	res := &Summary{
-		Fingerprint: job.Fingerprint,
-		UpdatedAt:   nowUnix(),
-		Turns:       turns,
-		Provider:    s.Provider,
-		Model:       s.Model,
+	// Residual fields always carry over so a failed run never blanks the card.
+	res := *marker
+	res.Fingerprint = job.Fingerprint
+	res.UpdatedAt = nowUnix()
+	res.Turns = dg.Turns
+	res.Provider, res.Model = s.Provider, s.Model
+	res.SurfaceID, res.Title, res.Workspace = t.SurfaceID, t.Title, t.Workspace
+	if dg.LastUser != "" {
+		res.UserAsk, res.UserAskAt = dg.LastUser, dg.LastUserAt
+	}
+	if dg.LastTool != "" {
+		res.LastCmd, res.Exit = dg.LastTool, dg.Exit
 	}
 	if err != nil {
-		res.Status, res.Error = "error", err.Error()
+		res.Status, res.Error = StatusError, err.Error()
 	} else {
-		res.Status, res.Text = "ok", text
+		goal, status := parseReply(text)
+		if goal != "" {
+			res.Goal = goal
+		}
+		res.AIStatus = status
+		res.Error = ""
+		res.Status = StatusOK
 	}
 	state = LoadState(t.CWD)
-	state.Update(t.SessionID, res)
+	state.Update(t.SessionID, &res)
 	_ = SaveState(t.CWD, state)
-	s.wake()
 }
 
 // ShouldSummarize decides whether a target needs (re)summarizing.
@@ -203,20 +211,20 @@ func (s *Summarizer) ShouldSummarize(t Target, fp string, now float64) bool {
 	if !s.HasKey || fp == "" {
 		return false
 	}
-	cur, ok := LoadState(t.CWD).Summaries[t.SessionID]
+	cur, ok := LoadState(t.CWD).Sessions[t.SessionID]
 	if !ok {
 		return true
 	}
-	if cur.Fingerprint == fp && cur.Status == "ok" {
+	if cur.Fingerprint == fp && cur.Status == StatusOK {
 		return false
 	}
-	if cur.Status == "running" {
+	if cur.Status == StatusRunning {
 		if cur.Fingerprint != fp && t.Focused {
 			return true // stale run superseded by a focused change
 		}
 		return now-cur.UpdatedAt >= s.cfg.Debounce.Seconds()
 	}
-	if cur.Status == "error" {
+	if cur.Status == StatusError {
 		if cur.Fingerprint != fp {
 			return true
 		}
@@ -225,24 +233,34 @@ func (s *Summarizer) ShouldSummarize(t Target, fp string, now float64) bool {
 	return cur.Fingerprint != fp
 }
 
-const systemPrompt = `You compress coding-agent session transcripts into a single line for a narrow sidebar.
+const systemPrompt = `You summarize a live coding-agent session for a tiny sidebar card.
+Reply with EXACTLY two lines and nothing else:
+Line 1 - the session's overall goal: what it is trying to accomplish, imperative.
+Line 2 - what the assistant is doing or asking for right now, present tense.
 Rules:
-- Reply with ONE line, at most 180 characters, no quotes, no markdown, no trailing period.
-- Present tense, name the concrete task or change being worked on.
-- Prefer specifics (file names, feature names) over generic phrases like "working on code".
-- If the transcript is empty or unreadable, reply exactly: idle`
+- Max 100 characters per line, plain terse text.
+- No markdown, no quotes, no labels or prefixes like "Goal:".
+- Prefer specifics (file names, feature names) over generic phrases.
+- If the transcript is empty or unreadable, reply exactly:
+idle
+waiting for activity`
 
-var wsRe = regexp.MustCompile(`\s+`)
-
-// normalize collapses whitespace and hard-caps the summary.
-func normalize(s string) string {
-	s = wsRe.ReplaceAllString(strings.TrimSpace(s), " ")
-	r := []rune(s)
-	const max = 200
-	if len(r) > max {
-		r = r[:max]
+// parseReply splits the model's two-line reply into goal and status.
+func parseReply(out string) (goal, status string) {
+	const cap = 120
+	for _, ln := range strings.Split(out, "\n") {
+		ln = capRunes(ln, cap)
+		if ln == "" {
+			continue
+		}
+		if goal == "" {
+			goal = ln
+		} else if status == "" {
+			status = ln
+			break
+		}
 	}
-	return string(r)
+	return goal, status
 }
 
 func buildUserPrompt(t Target, digest string) string {

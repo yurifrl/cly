@@ -4,7 +4,9 @@ package cmux
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/yurifrl/cly/pkg/envs"
 )
@@ -77,4 +79,24 @@ func ClearStatus(ctx context.Context, key string) error {
 		return nil
 	}
 	return exec.CommandContext(ctx, "cmux", "clear-status", key).Run()
+}
+
+// SetDescription writes a workspace description slot via
+// `cmux workspace-action --action set-description`. The custom sidebar reads
+// this as `w.description`; workspace must be a UUID, ref, or index.
+// No-op when not inside a cmux session.
+func SetDescription(ctx context.Context, workspace, text string) error {
+	if !Available() {
+		return nil
+	}
+	if workspace == "" {
+		return fmt.Errorf("set-description: empty workspace")
+	}
+	out, err := exec.CommandContext(ctx, "cmux", "workspace-action",
+		"--workspace", workspace, "--action", "set-description",
+		"--description", text).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cmux set-description %s: %w: %s", workspace, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }

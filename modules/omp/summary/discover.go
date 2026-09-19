@@ -16,15 +16,16 @@ import (
 // Target is one displayable row: a surface whose focused omp session is live
 // enough to summarize.
 type Target struct {
-	SessionID  string
-	SurfaceID  string
-	PaneRef    string
-	SurfaceRef string
-	Title      string // surface title, or workspace title fallback
-	Workspace  string
-	CWD        string
-	Focused    bool
-	UpdatedAt  float64 // transcript mtime when known, else hook updated_at
+	SessionID   string
+	SurfaceID   string
+	PaneRef     string
+	SurfaceRef  string
+	WorkspaceID string
+	Title       string // surface title, or workspace title fallback
+	Workspace   string
+	CWD         string
+	Focused     bool
+	UpdatedAt   float64 // transcript mtime when known, else hook updated_at
 }
 
 // sessionsDir is overridable for tests.
@@ -134,15 +135,16 @@ func merge(tree *cmux.Tree, rows []cmux.SessionRow, now, maxAge float64) []Targe
 						continue
 					}
 					t := Target{
-						SessionID:  r.SessionID,
-						SurfaceID:  s.ID,
-						PaneRef:    s.PaneRef,
-						SurfaceRef: s.Ref,
-						Title:      s.Title,
-						Workspace:  ws.Title,
-						CWD:        r.CWD,
-						Focused:    s.Focused || activeIs(tree, s.ID),
-						UpdatedAt:  r.UpdatedAtUnix,
+						SessionID:   r.SessionID,
+						SurfaceID:   s.ID,
+						PaneRef:     s.PaneRef,
+						SurfaceRef:  s.Ref,
+						WorkspaceID: ws.ID,
+						Title:       s.Title,
+						Workspace:   ws.Title,
+						CWD:         r.CWD,
+						Focused:     s.Focused || activeIs(tree, s.ID),
+						UpdatedAt:   r.UpdatedAtUnix,
 					}
 					if fp := transcriptPath(t.SessionID); fp != "" {
 						if fi, err := os.Stat(fp); err == nil {
@@ -170,89 +172,135 @@ func activeIs(tree *cmux.Tree, id string) bool {
 	return tree.Active != nil && tree.Active.SurfaceID == id
 }
 
-// Extract reads a transcript tail and flattens it into a compact, readable
-// digest for the summarizer prompt.
+// CLI seams, overridable in tests.
+var (
+	runTree      = cmux.RunTree
+	sessionsList = cmux.SessionsList
+)
+
+// ActiveTarget resolves the daemon's display target: the session row of the
+// surface the user currently has frontmost. The cmux tree's `active` object
+// is authoritative (what is actually frontmost right now); its surface_id
+// matches exactly one row in `cmux sessions list`.
 //
-// Line shape (verified): {"type":"message","message":{"role","content":
-// [{"type":"text","text"}|{"type":"toolCall","name","intent",...}]}}, plus
-// {"type":"custom","customType":"tool_execution_*","data":{...}} and
-// {"type":"custom_message"}. Multi-MB files: only the last maxTail bytes are
-// read; the first partial line is dropped; output capped at maxChars.
-func Extract(path string, maxTail, maxChars int) (string, int, error) {
-	if path == "" {
-		return "", 0, fmt.Errorf("no transcript path")
-	}
-	fi, err := os.Stat(path)
+// When the frontmost surface has no live omp session — most often the omp
+// summary sidebar itself, an empty shell tab, or a browser pane — the card
+// the user is reading belongs to that surface's workspace, so the daemon
+// shows the freshest live session in the same workspace instead of idling.
+// Returns nil when there is nothing to show.
+func ActiveTarget(ctx context.Context, now, maxAge float64) (*Target, error) {
+	tree, err := runTree(ctx)
 	if err != nil {
-		return "", 0, err
+		return nil, fmt.Errorf("tree: %w", err)
 	}
-	f, err := os.Open(path)
+	rows, err := sessionsList(ctx, "--agent", "omp", "--all")
 	if err != nil {
-		return "", 0, err
-	}
-	defer f.Close()
-
-	read := int64(maxTail)
-	if fi.Size() < read {
-		read = fi.Size()
-	}
-	buf := make([]byte, read)
-	if _, err := f.ReadAt(buf, fi.Size()-read); err != nil {
-		return "", 0, err
-	}
-	lines := strings.Split(string(buf), "\n")
-	if read < fi.Size() && len(lines) > 0 {
-		lines = lines[1:] // drop partial first line
+		return nil, fmt.Errorf("sessions list: %w", err)
 	}
 
-	var parts []string
-	turns := 0
-	for _, ln := range lines {
-		ln = strings.TrimSpace(ln)
-		if ln == "" {
-			continue
-		}
-		var e struct {
-			Type       string `json:"type"`
-			CustomType string `json:"customType"`
-			Message    *struct {
-				Role    string          `json:"role"`
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-			Data struct {
-				ToolName string `json:"toolName"`
-				Intent   string `json:"intent"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal([]byte(ln), &e); err != nil {
-			continue
-		}
-		switch {
-		case e.Type == "message" && e.Message != nil:
-			text := extractText(e.Message.Content)
-			if text == "" {
+	activeID := ""
+	if tree.Active != nil {
+		activeID = tree.Active.SurfaceID
+	}
+
+	// bestRow returns the freshest live row for a surface id, or nil.
+	bestRow := func(surfaceID string) *cmux.SessionRow {
+		var row *cmux.SessionRow
+		for _, r := range rows {
+			if r.SurfaceID == nil || *r.SurfaceID != surfaceID {
 				continue
 			}
-			role := "user"
-			if e.Message.Role != "" {
-				role = e.Message.Role
+			if r.RuntimeStatus == "gone" || r.AgentLifecycle == "done" {
+				continue
 			}
-			if role == "user" || role == "assistant" {
-				turns++
+			if maxAge > 0 && now-r.UpdatedAtUnix > maxAge {
+				continue
 			}
-			parts = append(parts, role+": "+text)
-		case e.Type == "custom" && e.Data.ToolName != "":
-			parts = append(parts, "→ "+e.Data.ToolName+": "+e.Data.Intent)
+			if row == nil || r.UpdatedAtUnix > row.UpdatedAtUnix {
+				r := r
+				row = &r
+			}
+		}
+		return row
+	}
+
+	// resolve builds a Target for a surface id present in the tree; ok=false
+	// when the surface is gone or its session is gone, stale, or CWD-less.
+	resolve := func(surfaceID string, focused bool) (*Target, bool) {
+		row := bestRow(surfaceID)
+		if row == nil || row.CWD == "" {
+			return nil, false
+		}
+		t := &Target{
+			SessionID: row.SessionID,
+			SurfaceID: surfaceID,
+			CWD:       row.CWD,
+			Focused:   focused,
+			UpdatedAt: row.UpdatedAtUnix,
+		}
+		// The session row carries no title; the tree's surface list does. The
+		// row's workspace_id can be empty (hook-store dependent), so the
+		// tree's workspace ID is the reliable source for the push.
+		var found bool
+		for _, w := range tree.Windows {
+			for _, ws := range w.Workspaces {
+				for _, p := range ws.Panes {
+					for _, s := range p.Surfaces {
+						if s.ID == surfaceID {
+							t.PaneRef, t.SurfaceRef = s.PaneRef, s.Ref
+							t.Title, t.Workspace, t.WorkspaceID = s.Title, ws.Title, ws.ID
+							found = true
+						}
+					}
+				}
+			}
+		}
+		if !found {
+			return nil, false
+		}
+		if fp := transcriptPath(t.SessionID); fp != "" {
+			if fi, err := os.Stat(fp); err == nil {
+				t.UpdatedAt = float64(fi.ModTime().Unix())
+			}
+		}
+		return t, true
+	}
+
+	if activeID != "" {
+		if t, ok := resolve(activeID, true); ok {
+			return t, nil
+		}
+		// Workspace fallback: index surface ids by workspace, then pick the
+		// freshest live session among the active surface's siblings.
+		wsOf := map[string]string{}
+		for _, w := range tree.Windows {
+			for _, ws := range w.Workspaces {
+				for _, p := range ws.Panes {
+					for _, s := range p.Surfaces {
+						wsOf[s.ID] = ws.ID
+					}
+				}
+			}
+		}
+		wsID, known := wsOf[activeID]
+		if known {
+			bestSurface, bestAt := "", float64(0)
+			for sid, wid := range wsOf {
+				if wid != wsID {
+					continue
+				}
+				if r := bestRow(sid); r != nil && r.UpdatedAtUnix > bestAt {
+					bestSurface, bestAt = sid, r.UpdatedAtUnix
+				}
+			}
+			if bestSurface != "" {
+				if t, ok := resolve(bestSurface, false); ok {
+					return t, nil
+				}
+			}
 		}
 	}
-	out := strings.Join(parts, "\n")
-	if len(out) > maxChars {
-		out = out[len(out)-maxChars:]
-		if i := strings.IndexByte(out, '\n'); i > 0 {
-			out = out[i+1:] // start on a line boundary
-		}
-	}
-	return out, turns, nil
+	return nil, nil
 }
 
 // extractText flattens message content (string or typed array) to plain text.

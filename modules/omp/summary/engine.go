@@ -2,63 +2,28 @@ package ompsummary
 
 import (
 	"context"
-	"sync"
 	"time"
 )
 
-// Engine drives the loop: discover targets → decide what needs a summary →
-// enqueue jobs → publish snapshots to the TUI. It owns no TUI state; the TUI
-// pulls immutable snapshots from it.
+// Engine drives the daemon loop: resolve the active surface → enqueue a
+// summary when its transcript changed → push the cached card into the
+// workspace description slot the sidebar reads. Active-only: everything the
+// daemon touches belongs to the surface the user currently has frontmost,
+// falling back to the freshest live session in the same workspace when the
+// frontmost surface has no session of its own (sidebar, shell tabs — see
+// ActiveTarget).
 type Engine struct {
 	cfg Config
 	sum *Summarizer
-
-	send func() // wakes the TUI; wired to p.Send after the program starts
-
-	mu      sync.Mutex
-	targets []Target
 }
 
-// NewEngine builds the engine; call (*Summarizer) ownership stays with the
-// caller so the TUI can read the summarizer badge.
 func NewEngine(cfg Config, sum *Summarizer) *Engine {
 	return &Engine{cfg: cfg, sum: sum}
 }
 
-// SetSend wires the TUI wake-up channel.
-func (e *Engine) SetSend(fn func()) { e.send = fn }
-
-func (e *Engine) wake() {
-	if e.send != nil {
-		e.send()
-	}
-}
-
-// Snapshot returns the current targets and their summaries (session id →
-// summary), reading state files from disk. Cheap at sidebar cadence.
-func (e *Engine) Snapshot() ([]Target, map[string]*Summary) {
-	e.mu.Lock()
-	targets := append([]Target(nil), e.targets...)
-	e.mu.Unlock()
-
-	bySession := map[string]*Summary{}
-	stateByCWD := map[string]*State{}
-	for _, t := range targets {
-		st, ok := stateByCWD[t.CWD]
-		if !ok {
-			st = LoadState(t.CWD)
-			stateByCWD[t.CWD] = st
-		}
-		if s, ok := st.Summaries[t.SessionID]; ok {
-			bySession[t.SessionID] = s
-		}
-	}
-	return targets, bySession
-}
-
 // Run blocks: tick loop until ctx is cancelled.
 func (e *Engine) Run(ctx context.Context) {
-	e.tick(ctx) // immediate first pass
+	e.Tick(ctx) // immediate first pass: load shows the cached card
 	t := time.NewTicker(e.cfg.Interval)
 	defer t.Stop()
 	for {
@@ -66,27 +31,34 @@ func (e *Engine) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			e.tick(ctx)
+			e.Tick(ctx)
 		}
 	}
 }
 
-func (e *Engine) tick(ctx context.Context) {
+// Tick is one pass: resolve the active surface, enqueue staleness, push the
+// cached card. Exported for --once mode.
+func (e *Engine) Tick(ctx context.Context) {
 	now := nowUnix()
-	targets := Targets(ctx, now, e.cfg.MaxAge.Seconds())
-
-	fps := map[string]string{}
-	for _, t := range targets {
-		fp := Fingerprint(transcriptPath(t.SessionID))
-		fps[t.SessionID] = fp
-		if e.sum.ShouldSummarize(t, fp, now) {
-			e.sum.Enqueue(Job{Target: t, Fingerprint: fp, Focused: t.Focused})
-		}
+	t, err := ActiveTarget(ctx, now, e.cfg.MaxAge.Seconds())
+	if err != nil || t == nil {
+		return // nothing to show (no live omp surface, outside cmux)
 	}
-	e.sum.Drain(fps)
+	if fp := Fingerprint(transcriptPath(t.SessionID)); fp != "" && e.sum.ShouldSummarize(*t, fp, now) {
+		e.sum.Enqueue(Job{Target: *t, Fingerprint: fp, Focused: t.Focused})
+	}
+	e.push(ctx, *t)
+}
 
-	e.mu.Lock()
-	e.targets = targets
-	e.mu.Unlock()
-	e.wake()
+// push renders the active session's cached entry into the workspace
+// description. Missing entry → no push; the card appears once the first AI
+// round-trip lands. Pushes unconditionally every tick: descriptions can go
+// stale in the sidebar binding, and one small exec per tick keeps the card
+// self-healing.
+func (e *Engine) push(ctx context.Context, t Target) {
+	entry := LoadState(t.CWD).Get(t.SessionID)
+	if entry == nil {
+		return
+	}
+	_ = Push(ctx, t.CWD, t.WorkspaceID, entry)
 }

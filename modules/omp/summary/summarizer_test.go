@@ -2,7 +2,6 @@ package ompsummary
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 )
@@ -88,7 +87,7 @@ func TestShouldSummarize(t *testing.T) {
 
 	save := func(fp, status string) {
 		st := LoadState(cwd)
-		st.Update("s1", &Summary{Status: status, Fingerprint: fp, UpdatedAt: now})
+		st.Update("s1", &Entry{Status: status, Fingerprint: fp, UpdatedAt: now})
 		if err := SaveState(cwd, st); err != nil {
 			t.Fatal(err)
 		}
@@ -118,18 +117,5 @@ func TestShouldSummarize(t *testing.T) {
 	focused.Focused = true
 	if !s.ShouldSummarize(focused, "fp2", now) {
 		t.Fatal("running but stale fingerprint + focused → re-run")
-	}
-}
-
-func TestNormalizeSquashesAndCaps(t *testing.T) {
-	in := "first   paragraph.\n\n\n\tsecond  paragraph."
-	out := normalize(in)
-	if out != "first paragraph. second paragraph." {
-		t.Fatalf("normalize = %q", out)
-	}
-
-	long := strings.Repeat("word ", 1000)
-	if got := len([]rune(normalize(long))); got > 200 {
-		t.Fatalf("normalize len = %d, want hard cap at 200 runes", got)
 	}
 }

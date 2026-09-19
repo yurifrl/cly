@@ -41,7 +41,10 @@ func Register(parent *cobra.Command) {
 		Long:  "Namespace for cly's own omp helpers. Everything under `omp y` is a cly command (not forwarded to the omp binary).",
 	}
 	clyomp.Register(y)
+
+	// summary sits directly under `omp` so it runs as `cly omp summary`.
 	cmd.AddCommand(y)
+	cmd.AddCommand(clyomp.SummaryCmd())
 
 	parent.AddCommand(cmd)
 }
