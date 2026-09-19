@@ -15,6 +15,9 @@
   workspace flag is passed explicitly, so `CMUX_WORKSPACE_ID` is no longer required. On
   start it flips the right sidebar to the `omp-cards` custom sidebar (`--no-focus`) and
   prints a status line (`--once` reports the card it pushed or "nothing to show").
+- `modules/omp/summary`: `cly omp summary` no longer blocks the terminal — it opens the
+  right sidebar, forks a background watcher (pidfile + `--stop`), and returns; a second
+  run is idempotent. `--foreground` keeps the old blocking loop.
 
 ## 2026-09-18 `o`/`cly omp` Routes Through Headroom
 

@@ -2904,9 +2904,9 @@
     "semantic_hash": ""
   },
   "pkg/cmux/cmux.go": {
-    "mtime": 1789801386.5492373,
-    "seen": 1789805354.5937788,
-    "ast_hash": "c7c33620996219893e3e54347a6c6c6f",
+    "mtime": 1789835382.207789,
+    "seen": 1789835641.598859,
+    "ast_hash": "f7cd5a841723f7bd7bfd2b837d887025",
     "semantic_hash": ""
   },
   "pkg/config/config.go": {
@@ -4290,9 +4290,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1789805476.3662443,
-    "seen": 1789805535.2371578,
-    "ast_hash": "b6ddd379564fdae328ca2e1dd9b1da97",
+    "mtime": 1789835587.4683185,
+    "seen": 1789835641.598978,
+    "ast_hash": "bd9e10c7fb8bdb8b5e831fd05a34df52",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -4332,8 +4332,8 @@
     "semantic_hash": ""
   },
   "Taskfile.yml": {
-    "mtime": 1786316205.3816218,
-    "seen": 1789560262.849694,
+    "mtime": 1789834287.6582406,
+    "seen": 1789835641.5989811,
     "ast_hash": "f131fcf9bd1a4252541fd482991dbc4d",
     "semantic_hash": ""
   },
@@ -5628,9 +5628,9 @@
     "semantic_hash": ""
   },
   "modules/omp/cmd.go": {
-    "mtime": 1789801204.4889257,
-    "seen": 1789805354.593735,
-    "ast_hash": "f53077d21ea5b6d7f5ffb39f3a533cd0",
+    "mtime": 1789835403.8182795,
+    "seen": 1789835641.598811,
+    "ast_hash": "31a331a0ab2378c10e57bfafc1ca8853",
     "semantic_hash": ""
   },
   "modules/omp/embedded/cly.ts": {
@@ -5796,9 +5796,9 @@
     "semantic_hash": ""
   },
   ".omp/summary.json": {
-    "mtime": 1789805529.8841236,
-    "seen": 1789805535.236765,
-    "ast_hash": "e760a0728a20d10eee59993e44f226fd",
+    "mtime": 1789835634.2855027,
+    "seen": 1789835641.59861,
+    "ast_hash": "fbddcbba854e5b84b4c633e031534bb8",
     "semantic_hash": ""
   },
   "modules/omp/summary/config.go": {
@@ -5820,9 +5820,9 @@
     "semantic_hash": ""
   },
   "modules/omp/summary/engine.go": {
-    "mtime": 1789804903.248191,
-    "seen": 1789805354.59374,
-    "ast_hash": "9544df744c2d592051b8b7155ae76906",
+    "mtime": 1789835357.4555404,
+    "seen": 1789835641.598816,
+    "ast_hash": "d3b6bf098b1695eaf689771b873afa86",
     "semantic_hash": ""
   },
   "modules/omp/summary/harness_test.go": {
@@ -5880,15 +5880,39 @@
     "semantic_hash": ""
   },
   "modules/omp/summary/push.go": {
-    "mtime": 1789803825.3435197,
-    "seen": 1789805354.593741,
-    "ast_hash": "2fcc7b19a0165111e0f7f2497fc7b44d",
+    "mtime": 1789830883.4945235,
+    "seen": 1789835641.598819,
+    "ast_hash": "e34d510be93e7a323e318587a765a87e",
     "semantic_hash": ""
   },
   ".agents/plans/2026-09-19_03-15-omp-summary-cmux-sidebar.md": {
     "mtime": 1789798672.6120448,
     "seen": 1789805354.593838,
     "ast_hash": "c323e8f5275253adb8a6636f98add29a",
+    "semantic_hash": ""
+  },
+  "modules/omp/summary/omp-cards.swift": {
+    "mtime": 1789832515.7559357,
+    "seen": 1789835641.598818,
+    "ast_hash": "9982617148fd40ec2cb219288c980e43",
+    "semantic_hash": ""
+  },
+  "modules/omp/summary/push_test.go": {
+    "mtime": 1789830923.295335,
+    "seen": 1789835641.598819,
+    "ast_hash": "17d32a8b62ddc185751d286b4ef43c1d",
+    "semantic_hash": ""
+  },
+  "modules/omp/summary/sidebar.go": {
+    "mtime": 1789834244.746884,
+    "seen": 1789835641.5988202,
+    "ast_hash": "f151a679e707f62c71028907b670c3cd",
+    "semantic_hash": ""
+  },
+  "modules/omp/summary/sidebar_test.go": {
+    "mtime": 1789834257.5551088,
+    "seen": 1789835641.5988212,
+    "ast_hash": "75ab9a21db632cefaa4fdb2bd0a6b9e6",
     "semantic_hash": ""
   }
 }

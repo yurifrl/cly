@@ -109,3 +109,13 @@ func RightSidebarSet(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+// RightSidebarShow makes the right sidebar visible without moving focus —
+// the "open the visualization" verb for commands that push into it.
+func RightSidebarShow(ctx context.Context) error {
+	out, err := exec.CommandContext(ctx, "cmux", "right-sidebar", "show").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cmux right-sidebar show: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}

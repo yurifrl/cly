@@ -1,36 +1,36 @@
 # Graph Report - cly  (2026-09-19)
 
 ## Corpus Check
-- 848 files · ~1,789,137 words
+- 850 files · ~1,792,119 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 70 file(s) not represented in the graph (top: .tape 38, .prev 13, (none) 11)
 
 ## Summary
-- 8731 nodes · 16190 edges · 594 communities (529 shown, 65 thin omitted)
-- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 1417 edges (avg confidence: 0.85)
+- 8752 nodes · 16259 edges · 603 communities (530 shown, 73 thin omitted)
+- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 1434 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1b61801a`
+- Built from commit: `555e75a8`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - bash
-- pi-tree/tui.go
+- completion/cmd_test.go
 - github.com/spf13/cobra.Command
 - testing.T
-- agents/config.go
+- agents/cmd.go
 - charm.land/bubbletea/v2.Cmd
 - envs_test.go
 - demo/cmd.go
-- debugf
+- zs/session.go
 - import_test.go
-- completion/cmd_test.go
+- zl/cmd.go
 - tuiModel
-- runSync
+- dotfiles/cmd.go
 - ADDED Requirements
-- lock_test.go
+- bundle_test.go
 - parse_history
 - Charm Stack TUI Development
 - root.go
@@ -47,7 +47,7 @@
 - CLI Configuration with Cobra & Viper
 - Blueprint: AliExpress Scraper Module for Cly
 - condition.go
-- sessions_test.go
+- Load
 - ADDED Requirements
 - ParseConfig
 - summary/discover_test.go
@@ -56,8 +56,8 @@
 - Cobra Modular CLI Architecture
 - Cobra Modular CLI Architecture
 - Cobra Modular CLI Architecture
-- charm.land/bubbletea/v2.Msg
-- js_parallel.go
+- charm.land/bubbles/v2/list.Model
+- model
 - ADDED Requirements
 - Requirements
 - SocketServer
@@ -67,7 +67,7 @@
 - Requirements
 - reconciler_test.go
 - Complete File Checklist
-- LogPath
+- .Run
 - ADDED Requirements
 - Go Specialist
 - Go Specialist
@@ -75,7 +75,7 @@
 - Phase 2: Recursive Walker (TDD)
 - search_query.go
 - charm.land/bubbles/v2/textinput.Model
-- effectiveProvider
+- sortedEntries
 - `pkg/envs`
 - GitHub Sponsors Setup & Sustainability
 - gsync.go
@@ -85,7 +85,7 @@
 - Summarizer
 - git_commits_test.go
 - Proposal: Integrate 1Password Secrets
-- llm/client.go
+- context.Context
 - mut.go
 - memwatch/cmd.go
 - Maintainer Expectations & Communication
@@ -106,21 +106,21 @@
 - Project Context
 - Requirements
 - sessions.go
-- notify/notify.go
+- notify_test.go
 - Requirements
 - Git Worktree Module
 - Choosing a License
-- Get
+- ai.go
 - dialog
 - CLY - Modular Charm CLI Specification
 - every/state.go
 - MCP
 - ADDED Requirements
-- model
+- example
 - Phase 3 — Update Changelog
 - cache_test.go
 - go_pkg_fmt
-- ParseMCPFile
+- parser.go
 - Safe Autonomous Mode Preprompt
 - Phase 3 — Update Changelog
 - ADDED Requirements
@@ -132,7 +132,7 @@
 - Decisions (chronological — this is also the design history)
 - Python Development Best Practices
 - helpy/cmd.go
-- agent-session/cmd_test.go
+- YoloArgs
 - skills/ag:backlog-backtrack/scripts/test_backlog_backtrack.py
 - update/cmd.go
 - Python Development Best Practices
@@ -147,7 +147,7 @@
 - Blueprint: Bundle Command
 - Security: Cleaning Git History Before Public Release
 - planner.go
-- ApplyInstalls
+- dotfiles/install_test.go
 - cellbuffer
 - skill/ag:backlog-backtrack/scripts/test_backlog_backtrack.py
 - llm/client_test.go
@@ -162,7 +162,7 @@
 - Bundled Resources (optional)
 - Testing Skill
 - loop.go
-- Load
+- Register
 - time.Duration
 - Claude Command: Commit
 - Bundled Resources (optional)
@@ -176,7 +176,7 @@
 - Contributing to Open Source Best Practices
 - Watcher
 - resolveE
-- io.Writer
+- piwrap.go
 - BuildBatches
 - summary.go
 - New
@@ -192,7 +192,7 @@
 - search_rank.go
 - search_live.go
 - AI CLI - Architecture Design
-- scan.go
+- Result
 - Workflow
 - claude-tasks/store.go
 - runPipeline
@@ -210,18 +210,18 @@
 - open-source-best-practices/package.json
 - gsyncModel
 - views.go
-- loop_test.go
+- common.go
 - omp/embedded/cly.ts
 - .mcp.json
 - Model
-- item
+- go_pkg_github_com_yurifrl_cly_pkg_result
 - agent-session
 - backup.go
 - Design: cly diff
 - Tasks: add-cly-diff-reviewer
 - mcp.json
-- piwrap.go
-- summary/tui.go
+- model
+- JsBundler
 - Phase 2: First Utility (UUID)
 - Documentation Plan - Questions for User
 - validation.go
@@ -229,13 +229,13 @@
 - GitHub Cleanup Audit Checklist
 - gh CLI Patterns for GitHub Cleanup
 - Cleanup GitHub
-- go_pkg_sync
-- ompwrap.go
+- charm.land/bubbles/v2/key.Binding
+- hooks.go
 - Add Module Skill
 - Skill Creation Process
 - Design: Named AI provider list with conditions, weights, and default
-- summary/state.go
-- helpy/picker_test.go
+- LoadState
+- parseFrontmatter
 - Skill Creation Process
 - Tasks: Add AliExpress Scraper Module
 - add-skills-pi-ext-install - Technical Design
@@ -249,13 +249,13 @@
 - Module Template
 - Open Source Project Preparation Agent
 - Test: ZS Smart Sessionizer Parity
-- zoxide.go
+- source.go
 - Module Template
 - Find Skills
 - spell.go
-- agents/cmd_test.go
-- skills/install_test.go
-- hooks.go
+- agent-session/picker_test.go
+- Install
+- js_parallel.go
 - Add Module Skill
 - Module Template
 - Find Skills
@@ -273,7 +273,7 @@
 - Draft Manager Agent
 - Git Worktrees
 - openspec-explore/SKILL.md
-- sety.go
+- store/store.go
 - Locked Interfaces (used across tasks)
 - charm.land/bubbletea/v2.View
 - clean_display
@@ -294,9 +294,9 @@
 - Changelog Generator
 - Slack Formatting Rules
 - extractPiwrapFlags
-- zs/session_test.go
+- createDebugCmd
 - appendHistory
-- keyboardenhancements.go
+- model
 - tabs.go
 - cly omp summary — Charm sidebar for live omp session summaries
 - zs/workflow_test.go
@@ -311,15 +311,15 @@
 - Helpy AI Chat
 - Claude Skill Writer
 - Beads - AI-Native Issue Tracking
-- charm.land/bubbletea/v2.Model
+- charm.land/bubbletea/v2.Msg
 - Claude Skill Writer
 - Contributing to CLY
 - changeset.go
-- progress-download.go
+- BrewBundler
 - go_pkg_charm_land_lipgloss_v2_tree
-- table_mindy.go
 - splash.go
-- Engine
+- model
+- ompwrap.go
 - LLM Chat Module
 - Claude Skill Writer
 - User Scenarios
@@ -338,18 +338,18 @@
 - Step-by-Step Workflow
 - skills/ag:claudemd-update/scripts/extract_conversations.py
 - drafts
-- zs/picker.go
-- go_pkg_github_com_yurifrl_cly_pkg_llm
-- zs/debug.go
+- notify/notify.go
+- table_mindy.go
+- push.go
 - lg-layout/layout.go
 - install.sh
 - exec/exec.go
-- .Update
-- gsync_test.go
+- RustBundler
+- GetString
 - go_pkg_charm_land_bubbletea_v2
 - Backup Module
-- pickerModel
-- simple.go
+- model
+- overlay.go
 - Step-by-Step Workflow
 - skills/ag:backlog-backtrack/scripts/backlog_backtrack.py
 - drafts
@@ -378,11 +378,11 @@
 - Go Specialist
 - Command: /review_prompt
 - Installation & Usage
-- fullscreen.go
+- uuid.go
 - go_pkg_testing
 - notify/zellij_test.go
-- op.go
-- parseFrontmatter
+- readString
+- Remake: omp summary as cmux custom sidebar card
 - agents-session
 - BeeepNotifier
 - Go Specialist
@@ -392,7 +392,7 @@
 - Requirement: Install Commands
 - git-commits/proposal.md
 - Requirements
-- context.Context
+- NativeMacOSNotifier
 - notifier_test.go
 - Notifier Codesign Setup
 - location-aware-ai-failover.md
@@ -411,13 +411,13 @@
 - model
 - model
 - CLY Quick Reference
-- go_pkg_math_rand
+- doomfire.go
+- go_pkg_sync
 - model
-- claude/cmd.go
-- every/cmd.go
-- suspend/cmd.go
+- summarizer_test.go
+- zl/cmd_test.go
 - main.go
-- version.go
+- versionString
 - ParseError
 - Statusline
 - permission
@@ -447,20 +447,20 @@
 - Module Isolation Principle (CRITICAL)
 - Troubleshooting
 - Agent Tests
-- needsUpload
-- .Update
-- runEditForm
+- syncFolder
+- model
+- model
 - preview.go
 - .renderBaseView
 - autocomplete.go
 - test_paths.go
 - 2026-03-03
-- lg-color-dialog/cmd.go
+- model
 - go_pkg_charm_land_lipgloss_v2_list
 - 2026-05-03 Beads TUI Module and Alias Opt-Out Annotation
 - 2026-05-03 Cly Diff Mockup Iterations (reader, progress bar, bead modal)
 - 2026-08-31 omp Is the Default Agent
-- run
+- model
 - 2026-02-13
 - 2026-03-27 Dotfiles Lock File for Stale Artifact Cleanup
 - 2026-03-30 Fix gc Git Commits Path Doubling and Continue-on-Error
@@ -504,6 +504,15 @@
 - 2026-05-03 New Bead Modal Tab Order and Context Default Fixes
 - 2026-05-22 Piwrap Pre-Creates Named Pi Session File
 - 2026-09-18 `o`/`cly omp` Routes Through Headroom
+- parseProviders
+- clickable.go
+- .performOperation
+- result/cmd.go
+- item
+- formatMCPCount
+- pi-anon/cmd.go
+- mcp/main.go
+- debounce.go
 - Troubleshooting
 - Registration Patterns
 - Registration Patterns
@@ -599,77 +608,77 @@
   .agents/drafts/native-macos-notifications.md → pkg/notify/swift/Sources/Notifier.swift
 - ``pkg/notify` (standalone flavor)` --references--> `Notifier`  [INFERRED]
   .agents/drafts/native-macos-notifications.md → pkg/notify/swift/Sources/Notifier.swift
-- `TestSessionDirToWorkingDir()` --calls--> `sessionDirToWorkingDir()`  [INFERRED]
-  modules/pi-tree/tui_test.go → .agents/tmp/test_paths.go
 - `main()` --calls--> `NewRootCmd()`  [EXTRACTED]
   cmd/mcp/main.go → modules/mcp/cmd.go
+- `ActiveTarget()` --calls--> `resolve()`  [INFERRED]
+  modules/omp/summary/discover.go → pkg/ai/ai.go
 - `getConfigReal()` --calls--> `Get()`  [EXTRACTED]
   modules/zl/config.go → pkg/config/config.go
 
 ## Import Cycles
 - None detected.
 
-## Communities (594 total, 65 thin omitted)
+## Communities (603 total, 73 thin omitted)
 
 ### Community 0 - "bash"
 Cohesion: 0.01
 Nodes (230): 7z, alias, asdf, avahi-browse, awk, aws, basename, bash (+222 more)
 
-### Community 1 - "pi-tree/tui.go"
-Cohesion: 0.10
-Nodes (20): runCommand(), countSessions(), fmtSnapTime(), formatSize(), RenderTree(), callerSurface(), extractJSONString(), openSession() (+12 more)
+### Community 1 - "completion/cmd_test.go"
+Cohesion: 0.14
+Nodes (28): AliasCompletion, Register(), BuildAliasDefinitions(), BuildExtraCompletions(), cacheFish(), CachePath(), ClearCache(), genFish() (+20 more)
 
 ### Community 2 - "github.com/spf13/cobra.Command"
 Cohesion: 0.02
-Nodes (155): init(), demoEntry, go_pkg_charm_land_lipgloss_v2_compat, go_pkg_embed, go_pkg_github_com_spf13_cobra, go_pkg_github_com_yurifrl_cly_modules_dotfiles, go_pkg_github_com_yurifrl_cly_modules_omp, go_pkg_github_com_yurifrl_cly_modules_omp_summary (+147 more)
+Nodes (153): init(), go_pkg_charm_land_lipgloss_v2_compat, go_pkg_github_com_spf13_cobra, go_pkg_github_com_yurifrl_cly_modules_dotfiles, go_pkg_github_com_yurifrl_cly_modules_pi_anon, go_pkg_github_com_yurifrl_cly_modules_pi_reload, go_pkg_github_com_yurifrl_cly_modules_pi_tree, github.com/spf13/cobra.Command (+145 more)
 
 ### Community 3 - "testing.T"
-Cohesion: 0.03
-Nodes (115): testing.T, TestMatchFolder(), TestParseQueryOperators(), TestPurviewSemantics(), TestResolveFolder(), TestRoleMatches(), resolveFolder(), runCmd() (+107 more)
+Cohesion: 0.04
+Nodes (92): testing.T, TestMatchFolder(), TestParseQueryOperators(), TestPurviewSemantics(), TestResolveFolder(), TestRoleMatches(), resolveFolder(), runCmd() (+84 more)
 
-### Community 4 - "agents/config.go"
-Cohesion: 0.08
-Nodes (62): Config, DaemonStatus, IDEDef, logField, SyncItem, SyncPlan, syncSummary, TransformKind (+54 more)
+### Community 4 - "agents/cmd.go"
+Cohesion: 0.11
+Nodes (45): Config, DaemonStatus, logField, syncSummary, chooseIDEs(), followLog(), Config, printLogTail() (+37 more)
 
 ### Community 5 - "charm.land/bubbletea/v2.Cmd"
 Cohesion: 0.04
-Nodes (26): model, typesLoadedMsg, model, model, model, tickMsg, model, charm.land/bubbles/v2/filepicker.Model (+18 more)
+Nodes (28): model, typesLoadedMsg, model, model, model, model, model, tickMsg (+20 more)
 
 ### Community 6 - "envs_test.go"
-Cohesion: 0.05
-Nodes (65): osSource, Source, go_pkg_github_com_yurifrl_cly_pkg_result, sync.RWMutex, availStatus(), createDebugCmd(), display(), displayBool() (+57 more)
+Cohesion: 0.20
+Nodes (20): ClaudeVerbose(), TestClaudeVerbose_AbsentIsEmpty(), TestClaudeVerbose_InvalidIsParseError(), TestClaudeVerbose_Valid(), TestHasSessionName(), TestMapSource_LookupSetUnset(), TestMapSource_SeedIsCopied(), TestParseError_String() (+12 more)
 
 ### Community 7 - "demo/cmd.go"
 Cohesion: 0.02
 Nodes (89): go_pkg_github_com_yurifrl_cly_modules_demo_altscreen_toggle, go_pkg_github_com_yurifrl_cly_modules_demo_autocomplete, go_pkg_github_com_yurifrl_cly_modules_demo_canvas, go_pkg_github_com_yurifrl_cly_modules_demo_capability, go_pkg_github_com_yurifrl_cly_modules_demo_cellbuffer, go_pkg_github_com_yurifrl_cly_modules_demo_chat, go_pkg_github_com_yurifrl_cly_modules_demo_clickable, go_pkg_github_com_yurifrl_cly_modules_demo_colorprofile (+81 more)
 
-### Community 8 - "debugf"
-Cohesion: 0.25
-Nodes (19): runInside(), runOutside(), debugf(), printDryRun(), shellJoin(), summarizeStrings(), DetectLayoutDir(), filterTabLayouts() (+11 more)
+### Community 8 - "zs/session.go"
+Cohesion: 0.10
+Nodes (44): GenerateCompletionsString(), Register(), run(), runInside(), runOutside(), configureRuntime(), debugf(), envBool() (+36 more)
 
 ### Community 9 - "import_test.go"
-Cohesion: 0.18
-Nodes (17): extractSessionID(), forkSession(), writeAtomic(), quarantineExisting(), resolveSource(), TestExtractSessionID(), TestExtractSessionID_Missing(), TestForkSession() (+9 more)
+Cohesion: 0.21
+Nodes (15): extractSessionID(), forkSession(), writeAtomic(), resolveSource(), TestExtractSessionID(), TestExtractSessionID_Missing(), TestForkSession(), TestForkSession_NoSessionID() (+7 more)
 
-### Community 10 - "completion/cmd_test.go"
-Cohesion: 0.06
-Nodes (57): AliasCompletion, go_pkg_github_com_spf13_pflag, Register(), BuildAliasDefinitions(), BuildExtraCompletions(), cacheFish(), CachePath(), ClearCache() (+49 more)
+### Community 10 - "zl/cmd.go"
+Cohesion: 0.07
+Nodes (38): go_pkg_github_com_yurifrl_cly_modules_completion, execZellij(), getBasename(), openGhosttyWindow(), Register(), run(), runNuke(), runSwitch() (+30 more)
 
 ### Community 11 - "tuiModel"
-Cohesion: 0.22
-Nodes (6): tuiItem, tuiMode, tuiModel, copyToClipboard(), Entry, Provider
-
-### Community 12 - "runSync"
 Cohesion: 0.14
-Nodes (33): backupPlan, LinkResult, LinkState, Mapping, go_pkg_github_com_mattn_go_isatty, os.FileInfo, ApplyJsoncMapping(), updateLockJsoncEntry() (+25 more)
+Nodes (11): simpleDelegate, tuiMode, tuiModel, copyToClipboard(), providerTag(), shortenPath(), TestProviderTagDefaultsToClaude(), effectiveProvider() (+3 more)
+
+### Community 12 - "dotfiles/cmd.go"
+Cohesion: 0.13
+Nodes (35): backupPlan, LinkResult, LinkState, Mapping, go_pkg_github_com_mattn_go_isatty, os.FileInfo, ApplyJsoncMapping(), applyDiff() (+27 more)
 
 ### Community 13 - "ADDED Requirements"
 Cohesion: 0.04
 Nodes (44): ADDED Requirements, Requirement: Configuration Integration, Requirement: Error Handling, Requirement: Input Parsing, Requirement: JSON Schema Validation, Requirement: Output JSON, Requirement: Product Data Extraction, Requirement: Rate Limiting (+36 more)
 
-### Community 14 - "lock_test.go"
-Cohesion: 0.14
-Nodes (20): buildLock(), diffLocks(), Config, removedStrings(), TestBuildLock(), TestBuildLock_PreservesHashes(), TestBuildLock_PreservesInactiveOverlayMappings(), TestBuildLock_PreservesLegacyUnownedMappings() (+12 more)
+### Community 14 - "bundle_test.go"
+Cohesion: 0.10
+Nodes (18): PythonBundler, extractTaps(), filterMasLines(), parseTapName(), TestBaseBundlerCheck(), TestExtractBasePkg(), TestExtractTaps(), TestFilterMasLines() (+10 more)
 
 ### Community 15 - "parse_history"
 Cohesion: 0.18
@@ -680,8 +689,8 @@ Cohesion: 0.05
 Nodes (43): Accessible Mode, Advanced Styling, Alt Screen, Basic Form, Basic Program, Basic Styles, Best Practices, Borders (+35 more)
 
 ### Community 17 - "root.go"
-Cohesion: 0.06
-Nodes (30): main(), printVersion(), versionString(), go_pkg_github_com_yurifrl_cly_modules_agents, go_pkg_github_com_yurifrl_cly_modules_ai, go_pkg_github_com_yurifrl_cly_modules_aliases, go_pkg_github_com_yurifrl_cly_modules_backup, go_pkg_github_com_yurifrl_cly_modules_beads (+22 more)
+Cohesion: 0.07
+Nodes (26): go_pkg_github_com_yurifrl_cly_modules_agents, go_pkg_github_com_yurifrl_cly_modules_ai, go_pkg_github_com_yurifrl_cly_modules_aliases, go_pkg_github_com_yurifrl_cly_modules_backup, go_pkg_github_com_yurifrl_cly_modules_beads, go_pkg_github_com_yurifrl_cly_modules_bundle, go_pkg_github_com_yurifrl_cly_modules_claude, go_pkg_github_com_yurifrl_cly_modules_claude_tasks (+18 more)
 
 ### Community 18 - "parse_history"
 Cohesion: 0.18
@@ -697,11 +706,11 @@ Nodes (42): Add context, Add prefixes, Agentic workflows, Break down prompts int
 
 ### Community 21 - "mcp/cmd.go"
 Cohesion: 0.11
-Nodes (34): checkConfigFiles(), checkSourceCatalog(), fishCompletionString(), generateCompletion(), getAdapter(), launchTUI(), newAddCmd(), newApplyCmd() (+26 more)
+Nodes (35): checkConfigFiles(), checkSourceCatalog(), fishCompletionString(), generateCompletion(), getAdapter(), launchTUI(), newAddCmd(), newApplyCmd() (+27 more)
 
 ### Community 22 - "RenderStatusline"
-Cohesion: 0.09
-Nodes (38): GetConfig(), Config, ParseFormat(), readInput(), RenderCost(), RenderCustom(), RenderModel(), RenderStatusline() (+30 more)
+Cohesion: 0.10
+Nodes (33): ParseFormat(), RenderCost(), RenderCustom(), RenderModel(), RenderStatusline(), runCost(), runModel(), TestParseFormat() (+25 more)
 
 ### Community 23 - "Complete Google Gemini Prompting Strategies"
 Cohesion: 0.05
@@ -732,12 +741,12 @@ Cohesion: 0.05
 Nodes (40): 1. Browser Controller (`browser/controller.go`), 2. Scraper Orchestration (`aliexpress/scraper.go`), 3. Input Parser (`input/parser.go`), 4. Output Writer (`output/writer.go`), 5. TUI Progress Display (`tui/progress.go`), Advanced, Architecture, Blueprint: AliExpress Scraper Module for Cly (+32 more)
 
 ### Community 30 - "condition.go"
-Cohesion: 0.15
-Nodes (17): andExpr, cmpExpr, condExpr, condParser, Entry, notExpr, operand, orExpr (+9 more)
+Cohesion: 0.18
+Nodes (13): andExpr, cmpExpr, condExpr, condParser, notExpr, operand, orExpr, token (+5 more)
 
-### Community 31 - "sessions_test.go"
-Cohesion: 0.29
-Nodes (6): TestFindByIDForProvider(), TestFindByName_DefaultProvider(), TestFindByNameForProvider(), TestLoadCreatesDir(), TestLoadNonExistent(), TestUpsertEntryMigratesLegacyKey()
+### Community 31 - "Load"
+Cohesion: 0.12
+Nodes (23): go_pkg_github_com_yurifrl_cly_modules_agent_session, TestLSFiltersByDirectoryFlag(), TestLSOutputsJSONByDefault(), FilePath(), Load(), TestMetaSerialization(), Save(), TestFindByIDForProvider() (+15 more)
 
 ### Community 32 - "ADDED Requirements"
 Cohesion: 0.05
@@ -745,11 +754,11 @@ Nodes (39): ADDED Requirements, Requirement: Analyze git changeset, Requirement:
 
 ### Community 33 - "ParseConfig"
 Cohesion: 0.09
-Nodes (32): Config, Install, InstallCommand, Target, go_pkg_os_user, configCandidates(), dotfilesDirPath(), expandTilde() (+24 more)
+Nodes (34): CacheEntry, Config, Install, InstallCommand, Target, go_pkg_os_user, configCandidates(), dotfilesDirPath() (+26 more)
 
 ### Community 34 - "summary/discover_test.go"
-Cohesion: 0.18
-Nodes (18): cmuxRow, encoding/json.RawMessage, Extract(), extractText(), treeShape, TestExtractDropsPartialFirstLine(), TestExtractLineBoundaryCap(), TestExtractTurnsAndDigest() (+10 more)
+Cohesion: 0.12
+Nodes (34): cmuxRow, encoding/json.RawMessage, capRunes(), DigestTail(), lastExitCode(), parseRFC3339(), ActiveTarget(), extractText() (+26 more)
 
 ### Community 35 - "ADDED Requirements"
 Cohesion: 0.05
@@ -771,13 +780,13 @@ Nodes (35): 1. Keep Commands Focused, 1. Modular Command Registration, 2. Comman
 Cohesion: 0.06
 Nodes (35): 1. Keep Commands Focused, 1. Modular Command Registration, 2. Command Structure Pattern, 2. Use Meaningful Names, 3. Error Handling, 3. Provide Good Help, 4. Validate Early, 5. Handle Interrupts (+27 more)
 
-### Community 40 - "charm.land/bubbletea/v2.Msg"
-Cohesion: 0.05
-Nodes (22): tuiDelegate, charm.land/bubbles/v2/help.Model, charm.land/bubbles/v2/list.Item, charm.land/bubbles/v2/list.Model, charm.land/bubbletea/v2.Msg, item, itemDelegate, model (+14 more)
+### Community 40 - "charm.land/bubbles/v2/list.Model"
+Cohesion: 0.11
+Nodes (12): tuiDelegate, tuiItem, charm.land/bubbles/v2/list.Item, charm.land/bubbles/v2/list.Model, item, itemDelegate, model, styles (+4 more)
 
-### Community 41 - "js_parallel.go"
-Cohesion: 0.09
-Nodes (19): parallelModel, pkgResultMsg, pkgStatus, tickMsg, charm.land/bubbles/v2/progress.Model, newParallelModel(), pollResults(), runManagerInstall() (+11 more)
+### Community 41 - "model"
+Cohesion: 0.11
+Nodes (11): charm.land/bubbles/v2/progress.Model, downloadAndInstall(), tickCmd(), tickCmd(), installedPkgMsg, model, model, tickMsg (+3 more)
 
 ### Community 42 - "ADDED Requirements"
 Cohesion: 0.06
@@ -792,12 +801,12 @@ Cohesion: 0.06
 Nodes (30): Architecture, Beads, Components, Goal, Implementation Notes, Isolation Contract, Key Decisions, `modules/every` (+22 more)
 
 ### Community 45 - "mainModel"
-Cohesion: 0.08
-Nodes (12): mainModel, sessionState, charm.land/bubbles/v2/spinner.Model, charm.land/bubbles/v2/timer.Model, run(), initialModel(), randomEmoji(), model (+4 more)
+Cohesion: 0.09
+Nodes (11): mainModel, sessionState, charm.land/bubbles/v2/spinner.Model, charm.land/bubbles/v2/timer.Model, run(), initialModel(), model, model (+3 more)
 
 ### Community 46 - "tuiModel"
-Cohesion: 0.15
-Nodes (9): agentDelegate, agentItem, promptMode, tuiModel, viewMode, initialTUIModel(), kindLabel(), newTUICmd() (+1 more)
+Cohesion: 0.11
+Nodes (16): syscall.Signal, agentDelegate, agentItem, agentRow, OmpProc, promptMode, refreshedMsg, tuiModel (+8 more)
 
 ### Community 47 - "ADDED Requirements"
 Cohesion: 0.06
@@ -808,16 +817,16 @@ Cohesion: 0.06
 Nodes (31): dotfiles-management Specification, Purpose, Requirement: Config File Format, Requirement: Config Resolution, Requirement: Dotfiles Command, Requirement: Install Commands, Requirement: Status Subcommand, Requirement: Symlink Operations (+23 more)
 
 ### Community 49 - "reconciler_test.go"
-Cohesion: 0.27
-Nodes (10): ReconcileResult, Reconcile(), ReverseReconcile(), TestReconcile_CreatesDirs(), TestReconcile_DryRun(), TestReconcile_JSONC(), TestReconcile_SkillMD(), TestReconcile_SkipsUnchanged() (+2 more)
+Cohesion: 0.14
+Nodes (28): IDEDef, ReconcileResult, SyncItem, SyncPlan, TransformKind, GetIDEDef(), addItem(), classifyTransform() (+20 more)
 
 ### Community 50 - "Complete File Checklist"
 Cohesion: 0.06
 Nodes (30): ACKNOWLEDGMENTS.md, AUTHORS or CONTRIBUTORS, CHANGELOG.md, Checklist: File Completeness, CI/CD Configuration (.github/workflows/), CODE_OF_CONDUCT.md, CODEOWNERS, Complete File Checklist (+22 more)
 
-### Community 51 - "LogPath"
-Cohesion: 0.22
-Nodes (14): Event, runLogs(), FilterSince(), LastN(), MaybeTrimLog(), ReadLog(), rewriteLog(), SortByTS() (+6 more)
+### Community 51 - ".Run"
+Cohesion: 0.16
+Nodes (18): Event, RunConfig, runLogs(), AppendLog(), FilterSince(), LastN(), MaybeTrimLog(), ReadLog() (+10 more)
 
 ### Community 52 - "ADDED Requirements"
 Cohesion: 0.06
@@ -847,9 +856,9 @@ Nodes (14): andNode, node, notNode, orNode, parsedQuery, parser, termNode, token
 Cohesion: 0.08
 Nodes (8): model, model, charm.land/bubbles/v2/cursor.Mode, charm.land/bubbles/v2/textinput.Model, model, model, model, model
 
-### Community 59 - "effectiveProvider"
-Cohesion: 0.11
-Nodes (15): pickerItem, pickerModel, simpleDelegate, SortOrder, formatSavedAt(), lsCmd(), activePiSessionIDs(), Entry (+7 more)
+### Community 59 - "sortedEntries"
+Cohesion: 0.23
+Nodes (8): pickerItem, pickerModel, SortOrder, activePiSessionIDs(), Entry, runPicker(), sortedEntries(), walkSessionJsonl()
 
 ### Community 60 - "`pkg/envs`"
 Cohesion: 0.07
@@ -860,24 +869,24 @@ Cohesion: 0.07
 Nodes (27): Adding Sponsorship Links to Your Project, Annual Transparency Report, Checklist: Sponsorship Setup, Communication with Sponsors, CONTRIBUTING or SPONSORS.md, Example: Well-Designed Tiers, GitHub Sponsors Setup & Sustainability, Linking Multiple Sponsors (+19 more)
 
 ### Community 62 - "gsync.go"
-Cohesion: 0.11
-Nodes (35): allDoneMsg, folderDoneMsg, folderJob, folderResult, folderStartMsg, folderState, folderTotalMsg, sourcePlan (+27 more)
+Cohesion: 0.12
+Nodes (30): allDoneMsg, folderDoneMsg, folderJob, folderResult, folderStartMsg, folderTotalMsg, sourcePlan, syncSource (+22 more)
 
 ### Community 63 - "bundle.go"
-Cohesion: 0.05
-Nodes (48): baseBundler, BrewBundler, Bundler, JsBundler, PythonBundler, RustBundler, database/sql.DB, NewBrewBundler() (+40 more)
+Cohesion: 0.38
+Nodes (13): Bundler, checkCmd(), cleanupCmd(), getBundleFile(), getEditor(), openInEditor(), Register(), runAll() (+5 more)
 
 ### Community 64 - "aliases_test.go"
 Cohesion: 0.22
 Nodes (13): AliasEntry, FormatFish(), FormatFishCompletions(), GenerateAliases(), buildTestRoot(), TestExistingOmpKeepsBinaryAndGetsCobraAlias(), TestExistingPiKeepsBinaryAndGetsCobraAlias(), TestFormatFish() (+5 more)
 
 ### Community 65 - "lock.go"
-Cohesion: 0.15
-Nodes (25): CacheLockEntry, DotfilesLock, InstallManifest, LockDiff, LockEntry, ScriptManifest, runGet(), installCacheDir() (+17 more)
+Cohesion: 0.08
+Nodes (52): CacheLockEntry, DotfilesLock, InstallManifest, InstallOptions, LockDiff, LockEntry, ScriptManifest, updateLockJsoncEntry() (+44 more)
 
 ### Community 66 - "Summarizer"
-Cohesion: 0.20
-Nodes (8): sync.WaitGroup, buildUserPrompt(), Config, Target, NewSummarizer(), normalize(), Job, Summarizer
+Cohesion: 0.13
+Nodes (14): sync.WaitGroup, Fingerprint(), transcriptPath(), Config, Target, NewEngine(), buildUserPrompt(), Config (+6 more)
 
 ### Community 67 - "git_commits_test.go"
 Cohesion: 0.15
@@ -887,16 +896,16 @@ Nodes (21): ParseDiff(), makeString(), TestBuildBatches_CustomSize(), TestBuildR
 Cohesion: 0.07
 Nodes (26): 1. Service Account Token (SDK), 3. Separate LoadWithSecrets() Function, 4. Support Multiple Secret Providers, After (secure), Alternatives Considered, Approach, Architecture, Authentication (+18 more)
 
-### Community 69 - "llm/client.go"
+### Community 69 - "context.Context"
 Cohesion: 0.08
-Nodes (25): Client, go_pkg_github_com_anthropics_anthropic_sdk_go, go_pkg_github_com_anthropics_anthropic_sdk_go_bedrock, go_pkg_github_com_anthropics_anthropic_sdk_go_option, go_pkg_github_com_aws_aws_sdk_go_v2_config, go_pkg_github_com_openai_openai_go, go_pkg_github_com_openai_openai_go_option, chatMessage (+17 more)
+Nodes (26): Client, go_pkg_github_com_anthropics_anthropic_sdk_go, go_pkg_github_com_anthropics_anthropic_sdk_go_bedrock, go_pkg_github_com_anthropics_anthropic_sdk_go_option, go_pkg_github_com_aws_aws_sdk_go_v2_config, go_pkg_github_com_openai_openai_go, go_pkg_github_com_openai_openai_go_option, context.Context (+18 more)
 
 ### Community 70 - "mut.go"
-Cohesion: 0.17
-Nodes (27): githubRepo, os.FileMode, executeCommand(), formatSSHKey(), buildReleaseURL(), downloadZellijPlugin(), parseGithubURL(), fetchAndCacheScript() (+19 more)
+Cohesion: 0.13
+Nodes (33): githubRepo, OpMapping, os.FileMode, executeCommand(), applyOpFormatters(), formatSSHKey(), buildReleaseURL(), downloadZellijPlugin() (+25 more)
 
 ### Community 71 - "memwatch/cmd.go"
-Cohesion: 0.17
+Cohesion: 0.16
 Nodes (33): StatusOption, statusOptions, Config, Proc, Sample, classify(), defaultConfig(), detectProcOutliers() (+25 more)
 
 ### Community 72 - "Maintainer Expectations & Communication"
@@ -912,8 +921,8 @@ Cohesion: 0.11
 Nodes (6): AgentsAdapter, ClaudeAdapter, CursorAdapter, DesktopAdapter, PiAdapter, ToolConfig
 
 ### Community 75 - "mcp_test.go"
-Cohesion: 0.13
-Nodes (24): go_pkg_flag, DefaultSourcePaths(), LoadCatalog(), LoadCatalogWithSources(), compareWithGolden(), createTestModel(), createTestModelWithPresets(), Model (+16 more)
+Cohesion: 0.12
+Nodes (26): go_pkg_flag, contains(), DefaultSourcePaths(), indexOf(), LoadCatalog(), LoadCatalogWithSources(), compareWithGolden(), createTestModel() (+18 more)
 
 ### Community 76 - "Requirements"
 Cohesion: 0.08
@@ -929,27 +938,23 @@ Nodes (24): Architecture, Background — what already exists in piwrap, Behavior
 
 ### Community 79 - "config/config.go"
 Cohesion: 0.15
-Nodes (17): Config, HookConfig, NotifyConfig, StatuslineConfig, StatuslineCustomConfig, StatuslineItemConfig, go_pkg_github_com_spf13_viper, github.com/spf13/viper.Viper (+9 more)
-
-### Community 80 - "model"
-Cohesion: 0.16
-Nodes (7): go_pkg_charm_land_glamour_v2, header, model, extractHeaders(), extractSection(), initialModel(), toSlug()
+Nodes (18): Config, HookConfig, NotifyConfig, StatuslineConfig, StatuslineCustomConfig, StatuslineItemConfig, go_pkg_github_com_spf13_viper, github.com/spf13/viper.Viper (+10 more)
 
 ### Community 81 - "model"
 Cohesion: 0.16
 Nodes (14): initialModel(), main(), newPaletteInput(), go_pkg_github_com_charmbracelet_bubbles_textinput, go_pkg_github_com_charmbracelet_bubbletea, go_pkg_github_com_charmbracelet_lipgloss, github.com/charmbracelet/bubbles/textinput.Model, github.com/charmbracelet/bubbletea.Cmd (+6 more)
 
 ### Community 82 - "tui_test.go"
-Cohesion: 0.14
-Nodes (51): historyCmd(), MarshalJSON(), Register(), runTUI2(), ActiveSnapshots(), DeleteSnapshot(), fingerprint(), LoadLastHistIdx() (+43 more)
+Cohesion: 0.06
+Nodes (84): historyCmd(), MarshalJSON(), Register(), runTUI2(), runCommand(), countSessions(), fmtSnapTime(), formatSize() (+76 more)
 
 ### Community 83 - "daemonConn"
 Cohesion: 0.13
 Nodes (14): encoding/json.Decoder, encoding/json.Encoder, net.Conn, daemonConn, dialWithRetry(), errPlaceholderBundle(), gcOldBundles(), Notification (+6 more)
 
 ### Community 84 - "anon.go"
-Cohesion: 0.26
-Nodes (16): addCalledFrom(), buildPiArgs(), findAllSessions(), findSession(), generateWords(), launchPi(), loadSession(), newSession() (+8 more)
+Cohesion: 0.36
+Nodes (13): addCalledFrom(), buildPiArgs(), findAllSessions(), findSession(), generateWords(), launchPi(), loadSession(), newSession() (+5 more)
 
 ### Community 85 - "ADDED Requirements"
 Cohesion: 0.08
@@ -968,12 +973,12 @@ Cohesion: 0.08
 Nodes (23): Purpose, Requirement: Auto-Generated Names, Requirement: Claude Command, Requirement: Environment Variable Export, Requirement: Session Name Sources, Requirement: Session Name Validation, Requirement: Terminal Integration - Zellij, Requirements (+15 more)
 
 ### Community 89 - "sessions.go"
-Cohesion: 0.27
-Nodes (19): Entry, Sessions, CleanupDeleted(), filterByName(), filterByPath(), filterDeleted(), filterOnlyDeleted(), FindByID() (+11 more)
+Cohesion: 0.25
+Nodes (21): Entry, Sessions, CleanupDeleted(), filterByName(), filterByPath(), filterDeleted(), filterOnlyDeleted(), FindByID() (+13 more)
 
-### Community 90 - "notify/notify.go"
-Cohesion: 0.13
-Nodes (16): sync.Mutex, DefaultNotifier(), iconBytes(), Level, Notification, GroupFor(), resolveSound(), Send() (+8 more)
+### Community 90 - "notify_test.go"
+Cohesion: 0.14
+Nodes (12): sync.Mutex, sync.Once, item, randomItemGenerator, SetShared(), TestGroupFor(), TestLevelString(), TestSend_NoCrashWhenUnavailable() (+4 more)
 
 ### Community 91 - "Requirements"
 Cohesion: 0.09
@@ -987,9 +992,9 @@ Nodes (21): Add (autocomplete), Architecture, Commands, Components used, Config,
 Cohesion: 0.09
 Nodes (21): AGPL v3, Apache License 2.0, BSD 2-Clause / BSD 3-Clause, Choosing a License, Decision Scenarios, GPL v3 (GNU General Public License), How to Add a License, "I'm building a development tool (linter, bundler, etc.)" (+13 more)
 
-### Community 94 - "Get"
+### Community 94 - "ai.go"
 Cohesion: 0.14
-Nodes (26): errDisabled, Resolved, init(), setUnset(), status(), runShow(), applyOverrideBlock(), Complete() (+18 more)
+Nodes (24): errDisabled, Resolved, go_pkg_github_com_yurifrl_cly_pkg_llm, Client, flagsAsAIOverride(), NewClient(), applyOverrideBlock(), Complete() (+16 more)
 
 ### Community 95 - "dialog"
 Cohesion: 0.29
@@ -1000,36 +1005,36 @@ Cohesion: 0.09
 Nodes (21): Architecture: Everything is a Command, CLY - Modular Charm CLI Specification, Command Registration (Query Command Pattern), Configuration (Viper + YAML), Dependencies, Design Principles, Implementation Phases, Key Modularity Patterns (+13 more)
 
 ### Community 97 - "every/state.go"
-Cohesion: 0.17
-Nodes (21): State, Totals, renderAll(), TestPruneCmd(), TestPruneIncludeStopped(), TestPruneOrphan(), TestSweepOrphans(), hasSuffix() (+13 more)
+Cohesion: 0.13
+Nodes (27): State, Totals, autoName(), renderAll(), runEvery(), runStatus(), TestAutoName(), TestPruneCmd() (+19 more)
 
 ### Community 98 - "MCP"
-Cohesion: 0.10
-Nodes (10): agentsMCP, claudeMCP, cursorMCP, desktopMCP, MCP, piMCP, applyExtraFields(), Catalog (+2 more)
+Cohesion: 0.13
+Nodes (8): agentsMCP, claudeMCP, cursorMCP, desktopMCP, MCP, piMCP, applyExtraFields(), Catalog
 
 ### Community 99 - "ADDED Requirements"
 Cohesion: 0.09
 Nodes (21): ADDED Requirements, Config Management Specification, Requirement: Config Commands, Requirement: Default Configuration File, Requirement: Environment Variable Support, Requirement: Module-Specific Configuration, Requirement: Theme Configuration, Requirement: User Configuration File (+13 more)
 
-### Community 100 - "model"
-Cohesion: 0.15
-Nodes (5): model, example, charm.land/bubbles/v2/viewport.Model, lipgloss.Style, model
+### Community 100 - "example"
+Cohesion: 0.24
+Nodes (3): example, charm.land/bubbles/v2/viewport.Model, model
 
 ### Community 101 - "Phase 3 — Update Changelog"
 Cohesion: 0.10
 Nodes (20): Changelog Rules, Changelog Structure, Checkpoint, Compact Format (`--compact`), Output Format, Phase 1 — Save Context, Phase 2 — Print Summary, Phase 3 — Update Changelog (+12 more)
 
 ### Community 102 - "cache_test.go"
-Cohesion: 0.16
-Nodes (22): CacheApplyOptions, CacheEntry, ApplyCache(), Config, hashCacheEntry(), pruneStaleCacheEntries(), shortHash(), TestApplyCache_DuplicateLinesCollapse() (+14 more)
+Cohesion: 0.19
+Nodes (18): CacheApplyOptions, ApplyCache(), Config, pruneStaleCacheEntries(), shortHash(), TestApplyCache_DuplicateLinesCollapse(), TestApplyCache_ExitCodeCaptured(), TestApplyCache_ForceBypassesHash() (+10 more)
 
 ### Community 103 - "go_pkg_fmt"
 Cohesion: 0.04
 Nodes (62): foundSession, lsRow, main(), resolveEncodedPathRec(), main(), resolveEncodedPathRec(), typesErrMsg, opFormatter (+54 more)
 
-### Community 104 - "ParseMCPFile"
-Cohesion: 0.19
-Nodes (16): AddMCPOptions, Catalog, parseConfigFile(), detectFormat(), parseJSON(), parseJSONC(), ParseMCPFile(), parseYAML() (+8 more)
+### Community 104 - "parser.go"
+Cohesion: 0.18
+Nodes (11): AddMCPOptions, Catalog, toLower(), parseConfigFile(), detectFormat(), parseJSON(), parseJSONC(), parseYAML() (+3 more)
 
 ### Community 105 - "Safe Autonomous Mode Preprompt"
 Cohesion: 0.10
@@ -1072,12 +1077,12 @@ Cohesion: 0.10
 Nodes (19): Always Use uv, Anti-Patterns (DO NOT USE), Best Practices, CLI Tool, CLI Tools, Common Dependencies, Common Patterns, Data Handling (+11 more)
 
 ### Community 115 - "helpy/cmd.go"
-Cohesion: 0.14
-Nodes (26): github.com/spf13/cobra.ShellCompDirective, DocMeta, sectionJSON, sectionMeta, standaloneChatModel, newChatModel(), newStandaloneChatModel(), addFlags() (+18 more)
+Cohesion: 0.16
+Nodes (27): github.com/spf13/cobra.ShellCompDirective, sectionJSON, sectionMeta, runShow(), addFlags(), expandPath(), headerCompletions(), helpyClient() (+19 more)
 
-### Community 116 - "agent-session/cmd_test.go"
-Cohesion: 0.11
-Nodes (18): ParsedArgs, go_pkg_github_com_yurifrl_cly_pkg_session, TestBuildResumeArgs_ClaudeNoYolo(), TestBuildResumeArgs_ClaudeYolo(), TestBuildResumeArgs_PiYoloIgnored(), TestLsCmdHasFlags(), TestParentHasScopeFlags(), TestRegister() (+10 more)
+### Community 116 - "YoloArgs"
+Cohesion: 0.27
+Nodes (7): ParsedArgs, go_pkg_github_com_yurifrl_cly_pkg_session, TestBuildResumeArgs_ClaudeNoYolo(), TestBuildResumeArgs_ClaudeYolo(), ParseArgs(), TestParseArgs(), YoloArgs()
 
 ### Community 117 - "skills/ag:backlog-backtrack/scripts/test_backlog_backtrack.py"
 Cohesion: 0.21
@@ -1085,7 +1090,7 @@ Nodes (10): generate_markdown(), group_by_project(), Generate BACKLOG.md content
 
 ### Community 118 - "update/cmd.go"
 Cohesion: 0.14
-Nodes (27): go_pkg_github_com_creativeprojects_go_selfupdate, bumpSemver(), copyFileExec(), createGitTag(), expandPath(), getSourceDir(), gitOutputIn(), installCompletions() (+19 more)
+Nodes (28): go_pkg_github_com_creativeprojects_go_selfupdate, go_pkg_github_com_yurifrl_cly_modules_pi, bumpSemver(), copyFileExec(), createGitTag(), expandPath(), getSourceDir(), gitOutputIn() (+20 more)
 
 ### Community 119 - "Python Development Best Practices"
 Cohesion: 0.10
@@ -1112,12 +1117,12 @@ Cohesion: 0.10
 Nodes (19): ADDED Requirements, Requirement: Interactive List Navigation, Requirement: Module Registration Pattern, Requirement: Multiple UUID Generation, Requirement: UUID Generation Capability, Requirement: UUID v4 Generation, Requirement: UUID v7 Generation, Scenario: Arrow key navigation (+11 more)
 
 ### Community 125 - "agent-session/providers.go"
-Cohesion: 0.20
-Nodes (20): Provider, ensureProviderSupportsYolo(), Provider, providerFromCmd(), availableProviders(), buildResumeArgs(), defaultProvider(), defaultProviders() (+12 more)
+Cohesion: 0.24
+Nodes (16): Provider, TestUpsertCmdArgs(), availableProviders(), buildResumeArgs(), defaultProvider(), defaultProviders(), detectProviderByID(), execProvider() (+8 more)
 
 ### Community 126 - "SortMode"
-Cohesion: 0.21
-Nodes (10): searchPrefs, SortMode, loadSearchPrefs(), nextRole(), saveAI(), saveFolderScope(), saveRole(), saveSort() (+2 more)
+Cohesion: 0.28
+Nodes (7): searchPrefs, SortMode, newLiveCache(), loadSearchPrefs(), sortFromLabel(), newSearchModel(), runSearchTUI()
 
 ### Community 127 - "Phase 3: Add More Utilities"
 Cohesion: 0.11
@@ -1135,9 +1140,9 @@ Nodes (18): After Cleaning, Best Practices Going Forward, Checklist Before Going
 Cohesion: 0.19
 Nodes (18): PlannerConfig, RawGroup, RawItem, RawPlan, TestExtractPlan_EmptyGroups(), TestExtractPlan_InvalidJSON(), TestExtractPlan_ValidJSON(), TestExtractPlan_WithMarkdownFences() (+10 more)
 
-### Community 131 - "ApplyInstalls"
-Cohesion: 0.15
-Nodes (16): InstallOptions, go_pkg_net_http_httptest, Config, runInstallsOnly(), runScript(), ApplyInstalls(), Config, printInstallCleanupBanner() (+8 more)
+### Community 131 - "dotfiles/install_test.go"
+Cohesion: 0.33
+Nodes (6): go_pkg_net_http_httptest, printInstallCleanupBanner(), RemoveInstallArtifacts(), TestRemoveInstallArtifacts_Bypassed(), TestRemoveInstallArtifacts_WithManifest(), TestUpsertInstall()
 
 ### Community 132 - "cellbuffer"
 Cohesion: 0.16
@@ -1148,8 +1153,8 @@ Cohesion: 0.21
 Nodes (10): generate_markdown(), group_by_project(), Generate BACKLOG.md content. Returns (markdown_string, all_processed_ids).…, Group sessions by project basename, sorted by project name. Each session list…, _ms(), datetime, Tests for backlog_backtrack.py — written first (TDD)., TestGenerateMarkdown (+2 more)
 
 ### Community 134 - "llm/client_test.go"
-Cohesion: 0.24
-Nodes (14): NewClient(), resolveAPIKey(), TestComplete_AnthropicClientCreation(), TestComplete_OpenAIClientCreation(), TestNewClient_Anthropic(), TestNewClient_Bedrock_NoAPIKeyRequired(), TestNewClient_NoAPIKey(), TestNewClient_OpenAI() (+6 more)
+Cohesion: 0.18
+Nodes (18): chatMessage, Config, Provider, Role, NewClient(), resolveAPIKey(), TestComplete_AnthropicClientCreation(), TestComplete_OpenAIClientCreation() (+10 more)
 
 ### Community 135 - "session/session_test.go"
 Cohesion: 0.17
@@ -1176,8 +1181,8 @@ Cohesion: 0.11
 Nodes (18): Communication Preferences, Formal Governance (Large Projects), Governance Framework, GOVERNANCE.md, Governance Model, Handling Contentious Issues, How to Say No (Kindly), Maintainer Onboarding/Offboarding (+10 more)
 
 ### Community 141 - "searchModel"
-Cohesion: 0.29
-Nodes (4): searchModel, aiStatusInitial(), candidate, newSearchModel()
+Cohesion: 0.19
+Nodes (7): searchModel, nextRole(), saveAI(), saveFolderScope(), saveRole(), saveSort(), TestNextRole()
 
 ### Community 142 - "Claude Command: Commit"
 Cohesion: 0.11
@@ -1192,12 +1197,12 @@ Cohesion: 0.11
 Nodes (17): Acceptable Mock Scenarios, Checklist, Common Pitfalls, Core Principles, Decision Logic, Fakes Over Mocks, Integration by Default, Integration Tests (+9 more)
 
 ### Community 145 - "loop.go"
-Cohesion: 0.15
-Nodes (20): Clock, ExecFunc, ExecResult, Notifier, realClock, RunConfig, Runner, SleepFunc (+12 more)
+Cohesion: 0.14
+Nodes (24): Clock, ExecFunc, ExecResult, fakeClock, Notifier, realClock, Runner, SleepFunc (+16 more)
 
-### Community 146 - "Load"
-Cohesion: 0.16
-Nodes (25): cleanupCmd(), jsonOut(), loadScopedSessions(), providerFilterFromCmd(), Register(), editCmd(), findSessionCmd(), TestLSFiltersByDirectoryFlag() (+17 more)
+### Community 146 - "Register"
+Cohesion: 0.10
+Nodes (32): editResult, cleanupCmd(), ensureProviderSupportsYolo(), Provider, jsonOut(), loadScopedSessions(), providerFilterFromCmd(), providerFromCmd() (+24 more)
 
 ### Community 147 - "time.Duration"
 Cohesion: 0.23
@@ -1220,12 +1225,12 @@ Cohesion: 0.11
 Nodes (17): ADDED Requirements, CLI Foundation Specification, Requirement: Entry Point, Requirement: Go Module Initialization, Requirement: Project Structure, Requirement: Root Command, Requirement: Shared Styling, Scenario: Core dependencies installed (+9 more)
 
 ### Community 152 - "search_tui.go"
-Cohesion: 0.22
-Nodes (13): debounceMsg, rerankDoneMsg, searchDoneMsg, spinnerMsg, truncateText(), bestSnippet(), lipgloss.Style, highlightMatches() (+5 more)
+Cohesion: 0.18
+Nodes (17): debounceMsg, indexedSession, rerankDoneMsg, searchDoneMsg, spinnerMsg, truncateText(), sessionDate(), aiStatusInitial() (+9 more)
 
 ### Community 153 - "search_index.go"
-Cohesion: 0.30
-Nodes (13): jsonlFile, searchIndex, discoverJsonl(), extractExcerpt(), extractIDFromJsonlPath(), indexStats(), loadSearchIndex(), parseJsonlMessage() (+5 more)
+Cohesion: 0.33
+Nodes (12): jsonlFile, searchIndex, findSessionCmd(), discoverJsonl(), extractExcerpt(), extractIDFromJsonlPath(), indexStats(), loadSearchIndex() (+4 more)
 
 ### Community 154 - "OpenCode Notifications Integration"
 Cohesion: 0.12
@@ -1248,20 +1253,20 @@ Cohesion: 0.18
 Nodes (4): Watcher, github.com/fsnotify/fsnotify.Watcher, time.Timer, NewWatcher()
 
 ### Community 159 - "resolveE"
-Cohesion: 0.24
-Nodes (15): Context, LastDecision(), resolveE(), listConfig(), TestOrderProvidersKeepsLocationMatchFirstAndIncludesAllOthers(), TestResolveAIBlockWithoutProvidersKeepsLibraryDefaults(), TestResolveBadConfig(), TestResolveDefaultFallback() (+7 more)
+Cohesion: 0.18
+Nodes (18): Context, init(), setUnset(), status(), LastDecision(), LastSelectionError(), resolveE(), listConfig() (+10 more)
 
-### Community 160 - "io.Writer"
-Cohesion: 0.16
-Nodes (17): go_pkg_github_com_yurifrl_cly_pkg_helpy, io.Writer, Entry, JSONOutput, JSONSection, init(), All(), Register() (+9 more)
+### Community 160 - "piwrap.go"
+Cohesion: 0.07
+Nodes (43): main(), go_pkg_github_com_yurifrl_cly_pkg_helpy, io.Writer, Entry, JSONOutput, JSONSection, dryRunLog(), newSetyError() (+35 more)
 
 ### Community 161 - "BuildBatches"
 Cohesion: 0.27
 Nodes (10): Batch, BuildBatches(), buildFileAnalysis(), makeBatch(), TestBuildBatches_BinaryFileSkipsDiff(), TestBuildBatches_DefaultSize(), TestBuildBatches_MultipleBatches(), TestBuildBatches_SingleBatch() (+2 more)
 
 ### Community 162 - "summary.go"
-Cohesion: 0.23
-Nodes (15): TreeActive, TreePane, TreeSurface, TreeWindow, TreeWorkspace, activeIs(), merge(), Targets() (+7 more)
+Cohesion: 0.25
+Nodes (13): TreeActive, TreePane, TreeSurface, TreeWindow, TreeWorkspace, activeIs(), merge(), Targets() (+5 more)
 
 ### Community 163 - "New"
 Cohesion: 0.36
@@ -1304,20 +1309,20 @@ Cohesion: 0.12
 Nodes (15): Available MCP Tools, CLI Commands, Configuration, Index Files, Key Difference from grep/ripgrep, Limitations, List Projects, Manage Index (+7 more)
 
 ### Community 173 - "search_rank.go"
-Cohesion: 0.24
-Nodes (15): aiCandidate, aiRerankRequest, aiRerankResponse, candidate, indexedSession, buildPayload(), countAll(), extractJSON() (+7 more)
+Cohesion: 0.28
+Nodes (12): aiCandidate, aiRerankRequest, aiRerankResponse, candidate, buildPayload(), countAll(), extractJSON(), firstNonEmpty() (+4 more)
 
 ### Community 174 - "search_live.go"
-Cohesion: 0.32
-Nodes (10): liveCache, liveResult, allMatchSnippets(), candidate, liveRank(), liveScan(), matchFolder(), newLiveCache() (+2 more)
+Cohesion: 0.28
+Nodes (11): liveCache, liveResult, parseJsonlMessage(), allMatchSnippets(), candidate, liveRank(), liveScan(), matchFolder() (+3 more)
 
 ### Community 175 - "AI CLI - Architecture Design"
 Cohesion: 0.13
 Nodes (14): 1. Config Loader, 2. IDE Conversion Layer (Per-IDE Files), 3. Sync Engine, 4. History Layer (Git-based), 5. Daemon Mode, AGENTS.md Pluralization, AI CLI - Architecture Design, Core Components (+6 more)
 
-### Community 176 - "scan.go"
-Cohesion: 0.26
-Nodes (14): activeSessions(), allSessionsInDir(), cmuxRun(), cwdSlugForWorkspace(), findSessionDir(), findSessionDirByName(), listAllSessionDirs(), openPiProcesses() (+6 more)
+### Community 176 - "Result"
+Cohesion: 0.18
+Nodes (9): Empty(), Error(), From(), FromOpt(), FromPtr(), Result, T, Result[T] (+1 more)
 
 ### Community 177 - "Workflow"
 Cohesion: 0.13
@@ -1336,16 +1341,16 @@ Cohesion: 0.19
 Nodes (15): CalculatePercentage(), CalculateTokens(), FormatTokens(), RenderContext(), RenderProgressBar(), TestCalculatePercentage(), TestCalculateTokens(), TestCalculateTokens_Nil() (+7 more)
 
 ### Community 181 - "backup/cmd.go"
-Cohesion: 0.17
-Nodes (23): folderLineMsg, operationType, syncStats, io.Reader, buildExcludePattern(), calculateParallelProcesses(), categorizeGsutilLine(), defaultExcludePatterns() (+15 more)
+Cohesion: 0.16
+Nodes (23): folderLineMsg, operationType, syncStats, io.Reader, os.File, buildExcludePattern(), calculateParallelProcesses(), categorizeGsutilLine() (+15 more)
 
 ### Community 182 - "time.Time"
 Cohesion: 0.26
 Nodes (13): StatusRow, go_pkg_github_com_yurifrl_cly_modules_every_internal, time.Time, renderOne(), FormatAgo(), FormatDuration(), FormatLogEvent(), FormatRunEnd() (+5 more)
 
 ### Community 183 - "jsonc/jsonc.go"
-Cohesion: 0.23
-Nodes (13): hasNoInterpolation(), Convert(), ExpandEnv(), HasNoInterpolation(), removeTrailingCommas(), Strip(), stripComments(), TestConvert_ExpandsEnv() (+5 more)
+Cohesion: 0.13
+Nodes (19): go_pkg_github_com_yurifrl_cly_pkg_jsonc, StripAllowedTools(), TestStripAllowedTools(), TestTransformJSONC(), TestTransformJSONC_NoInterpolation(), TransformJSONC(), hasNoInterpolation(), Convert() (+11 more)
 
 ### Community 184 - "Workflow"
 Cohesion: 0.13
@@ -1364,8 +1369,8 @@ Cohesion: 0.13
 Nodes (14): Adapters, CLI Commands, Config, Context Detection, Foundation, Shell Completions, Source Management, Standalone Binary (+6 more)
 
 ### Community 188 - "selectProvider"
-Cohesion: 0.21
-Nodes (22): Decision, EntryResult, collectEnvRefs(), entryNames(), Context, Entry, orderProviders(), providerRank() (+14 more)
+Cohesion: 0.20
+Nodes (23): Decision, EntryResult, TestOrderProvidersKeepsLocationMatchFirstAndIncludesAllOthers(), collectEnvRefs(), entryNames(), Context, Entry, orderProviders() (+15 more)
 
 ### Community 189 - "CLY Agent Instructions"
 Cohesion: 0.14
@@ -1380,16 +1385,16 @@ Cohesion: 0.20
 Nodes (9): author, description, files, license, name, repository, type, url (+1 more)
 
 ### Community 192 - "gsyncModel"
-Cohesion: 0.24
-Nodes (4): gsyncModel, elapsed(), humanBytes(), renderMarkdown()
+Cohesion: 0.21
+Nodes (6): folderState, gsyncModel, counts(), elapsed(), humanBytes(), renderMarkdown()
 
 ### Community 193 - "views.go"
 Cohesion: 0.16
 Nodes (19): colorful.Color, go_pkg_github_com_fogleman_ease, run(), checkbox(), choicesView(), chosenView(), colorFloatToHex(), colorToHex() (+11 more)
 
-### Community 194 - "loop_test.go"
-Cohesion: 0.42
-Nodes (9): fakeClock, NewRunner(), newRunner(), scriptedExec(), TestLoopAdoptionPreservesTotals(), TestLoopGiveUp(), TestLoopHealthyNoTransition(), TestLoopHealthyToFailingTransition() (+1 more)
+### Community 194 - "common.go"
+Cohesion: 0.23
+Nodes (10): baseBundler, TestDiff(), TestDiffByBaseName(), TestParseFile(), diff(), parseFile(), printGreen(), printRed() (+2 more)
 
 ### Community 195 - "omp/embedded/cly.ts"
 Cohesion: 0.11
@@ -1400,8 +1405,12 @@ Cohesion: 0.26
 Nodes (13): GITHUB_PERSONAL_ACCESS_TOKEN, GITHUB_TOOLSETS, container, npx, mcp-remote, bubbles_docs, bubbletea_docs, cobra_docs (+5 more)
 
 ### Community 197 - "Model"
-Cohesion: 0.18
-Nodes (15): Context, Detector, GlobalConfig, ListItem, ListItemType, ProjectConfig, UIConfig, createDefaultGlobalConfig() (+7 more)
+Cohesion: 0.12
+Nodes (19): Context, Detector, ExtraParam, ExtraParamsModal, GlobalConfig, ListItem, ListItemType, ProjectConfig (+11 more)
+
+### Community 198 - "go_pkg_github_com_yurifrl_cly_pkg_result"
+Cohesion: 0.14
+Nodes (10): go_pkg_github_com_yurifrl_cly_pkg_result, clear(), has(), readBool(), write(), Sound(), HasSessionName(), SetSessionName() (+2 more)
 
 ### Community 199 - "agent-session"
 Cohesion: 0.14
@@ -1423,13 +1432,13 @@ Nodes (13): 10. Integration + manual verify, 11. Docs, 12. Release, 1. Scaffold,
 Cohesion: 0.26
 Nodes (13): GITHUB_PERSONAL_ACCESS_TOKEN, GITHUB_TOOLSETS, container, npx, mcp-remote, bubbles_docs, bubbletea_docs, cobra_docs (+5 more)
 
-### Community 204 - "piwrap.go"
-Cohesion: 0.15
-Nodes (21): main(), go_pkg_reflect, predictQuarantinePath(), restoreFromQuarantine(), runImport(), buildSessionPath(), encodeCwd(), extractName() (+13 more)
+### Community 204 - "model"
+Cohesion: 0.21
+Nodes (11): charm.land/bubbles/v2/list.DefaultDelegate, listKeyMap, model, styles, run(), newItemDelegate(), lipgloss.Style, initialModel() (+3 more)
 
-### Community 205 - "summary/tui.go"
-Cohesion: 0.22
-Nodes (11): lipgloss.Style, hitRow(), indent(), joinLeftRight(), NewModel(), relAge(), statusGlyph(), truncate() (+3 more)
+### Community 205 - "JsBundler"
+Cohesion: 0.29
+Nodes (4): JsBundler, extractJsBasePkg(), findWorkingManager(), isLockedVersion()
 
 ### Community 206 - "Phase 2: First Utility (UUID)"
 Cohesion: 0.15
@@ -1459,13 +1468,13 @@ Nodes (13): Authentication, Batch Operations, Code Scanning (CodeQL), Dependabot
 Cohesion: 0.15
 Nodes (13): Anti-Patterns, Cleanup GitHub, Essential Commands, Execution Modes, Full Audit (default), Overview, Quick Check, Quick Reference (+5 more)
 
-### Community 213 - "go_pkg_sync"
-Cohesion: 0.07
-Nodes (28): keymap, keymap, go_pkg_sync, charm.land/bubbles/v2/key.Binding, charm.land/bubbles/v2/list.DefaultDelegate, sync.Once, keyMap, item (+20 more)
+### Community 213 - "charm.land/bubbles/v2/key.Binding"
+Cohesion: 0.20
+Nodes (9): keymap, keymap, charm.land/bubbles/v2/key.Binding, keyMap, delegateKeyMap, newDelegateKeyMap(), keymap, keymap (+1 more)
 
-### Community 214 - "ompwrap.go"
+### Community 214 - "hooks.go"
 Cohesion: 0.14
-Nodes (18): go_pkg_github_com_yurifrl_cly_pkg_envs, createConfigCmd(), createSoundCmd(), Register(), createFireCmd(), getSoundFilePath(), isSoundEnabled(), buildSessionPath() (+10 more)
+Nodes (20): go_pkg_github_com_yurifrl_cly_pkg_envs, createConfigCmd(), createSoundCmd(), Register(), createFireCmd(), createClaudeCmd(), createInstallCmd(), createRemoveCmd() (+12 more)
 
 ### Community 215 - "Add Module Skill"
 Cohesion: 0.15
@@ -1479,13 +1488,13 @@ Nodes (12): Reference File Naming, Skill Creation Detailed Workflow, Skill Creat
 Cohesion: 0.15
 Nodes (12): Architecture, Condition language, Config shape (new), Decision record & logging, Design: Named AI provider list with conditions, weights, and default, Error handling, Goals, Migration (+4 more)
 
-### Community 218 - "summary/state.go"
-Cohesion: 0.28
-Nodes (9): LoadState(), SaveState(), StatePath(), TestLoadCorruptStateSelfHeals(), TestPruneDropsOldEntries(), TestStatePath(), TestStateRoundtrip(), State (+1 more)
+### Community 218 - "LoadState"
+Cohesion: 0.19
+Nodes (14): Entry, LoadState(), migrateV1(), SaveState(), StatePath(), TestLoadCorruptStateSelfHeals(), TestNewerThan(), TestPruneDropsOldEntries() (+6 more)
 
-### Community 219 - "helpy/picker_test.go"
-Cohesion: 0.33
-Nodes (8): docEntry, discoverDocs(), newPickerModel(), TestDiscoverDocs(), TestDiscoverDocsEmpty(), TestDiscoverDocsNonExistent(), TestNewPickerModel(), TestPickerFilterDocs()
+### Community 219 - "parseFrontmatter"
+Cohesion: 0.18
+Nodes (15): docEntry, parseFrontmatter(), TestParseFrontmatter_EmptyContent(), TestParseFrontmatter_NoFrontmatter(), TestParseFrontmatter_OnlyDelimiters(), TestParseFrontmatter_PartialFields(), TestParseFrontmatter_UnclosedDelimiter(), TestParseFrontmatter_Valid() (+7 more)
 
 ### Community 220 - "Skill Creation Process"
 Cohesion: 0.15
@@ -1512,8 +1521,8 @@ Cohesion: 0.15
 Nodes (12): Purpose, Requirement: Config Struct Unmarshaling, Requirement: Hot Reload Support, Requirement: Viper Configuration Loader, Requirements, Scenario: Config file changes detected, Scenario: Config file discovery, Scenario: Config struct definition (+4 more)
 
 ### Community 226 - "pi.go"
-Cohesion: 0.21
-Nodes (14): cmuxWorkspace, OmpProc, PiProc, procSample, refreshedMsg, cmuxWorkspaces(), OMPProcesses(), labelForCWD() (+6 more)
+Cohesion: 0.22
+Nodes (13): cmuxWorkspace, PiProc, procSample, Read(), cmuxWorkspaces(), OMPProcesses(), labelForCWD(), PiProcesses() (+5 more)
 
 ### Community 227 - "Phase 1: Foundation"
 Cohesion: 0.17
@@ -1539,9 +1548,9 @@ Nodes (12): Example Conversation, How the Agent Structures Your Workflow, Ideal 
 Cohesion: 0.17
 Nodes (11): 1. Build cly, 2. Compare outside-Zellij flow, 3. Compare outside-Zellij attach flow, 4. Compare inside-Zellij flow, 5. Visual run via VHS, Assertions, Cleanup, Commands (+3 more)
 
-### Community 233 - "zoxide.go"
-Cohesion: 0.19
-Nodes (8): CheckZoxideInstalled(), QueryZoxide(), QueryZoxideInteractive(), TestCheckZoxideInstalled(), TestQueryZoxide(), TestQueryZoxideInteractive(), TestUpdateZoxide(), UpdateZoxide()
+### Community 233 - "source.go"
+Cohesion: 0.18
+Nodes (7): osSource, Source, sync.RWMutex, active(), MapSource, OSSource(), Use()
 
 ### Community 234 - "Module Template"
 Cohesion: 0.17
@@ -1555,17 +1564,17 @@ Nodes (11): Common Skill Categories, Find Skills, How to Help Users Find Skills,
 Cohesion: 0.35
 Nodes (11): strings.Builder, check(), checkForInteractive(), candidate, newLLMClient(), render(), renderPhrase(), renderWord() (+3 more)
 
-### Community 237 - "agents/cmd_test.go"
-Cohesion: 0.48
-Nodes (6): Register(), newTestRoot(), TestRegister_BareAgentsShowsHelp(), TestRegister_LogsFlags(), TestRegister_NewSubcommands(), TestRegister_RemovedSubcommands()
+### Community 237 - "agent-session/picker_test.go"
+Cohesion: 0.22
+Nodes (11): newTestPicker(), TestPickerHeadlineIncludesProvider(), TestPickerYoloIgnoredWhenNotAllowed(), TestPickerYoloToggleWhenAllowed(), Register(), newTestRoot(), TestRegister_BareAgentsShowsHelp(), TestRegister_LogsFlags() (+3 more)
 
-### Community 238 - "skills/install_test.go"
-Cohesion: 0.24
+### Community 238 - "Install"
+Cohesion: 0.20
 Nodes (11): io/fs.FS, TestInstall_DryRun(), TestInstall_WritesPiCly(), TestInstall_DryRun(), TestInstall_OverwritesExisting(), TestInstall_WritesAllEmbeddedFiles(), TestInstallSelected_CherryPick(), TestInstallSelected_UnknownNameErrors() (+3 more)
 
-### Community 239 - "hooks.go"
-Cohesion: 0.39
-Nodes (10): createClaudeCmd(), createInstallCmd(), createRemoveCmd(), createVerifyCmd(), getHooksFromConfig(), getSettingsPath(), installHooks(), readSettings() (+2 more)
+### Community 239 - "js_parallel.go"
+Cohesion: 0.27
+Nodes (9): parallelModel, pkgResultMsg, pkgStatus, tickMsg, newParallelModel(), pollResults(), runManagerInstall(), runParallelInstall() (+1 more)
 
 ### Community 240 - "Add Module Skill"
 Cohesion: 0.15
@@ -1635,9 +1644,9 @@ Nodes (10): Commands, Create Worktree, Git Worktrees, List Worktrees, Naming Con
 Cohesion: 0.18
 Nodes (10): Check for context, Ending Discovery, Guardrails, Handling Different Entry Points, OpenSpec Awareness, The Stance, What You Don't Have To Do, What You Might Do (+2 more)
 
-### Community 257 - "sety.go"
-Cohesion: 0.24
-Nodes (8): newSetyError(), applySetyPair(), parseBool(), errInvalidBoolErr, piwrapFlags, SetyError, SetyKey, SetyValues
+### Community 257 - "store/store.go"
+Cohesion: 0.21
+Nodes (8): go_pkg_database_sql, go_pkg_modernc_org_sqlite, database/sql.DB, openStore(), NewJsBundler(), Store, New(), SQLiteStore
 
 ### Community 258 - "Locked Interfaces (used across tasks)"
 Cohesion: 0.18
@@ -1645,7 +1654,7 @@ Nodes (10): AI Provider Conditions Implementation Plan, Global Constraints, Lock
 
 ### Community 259 - "charm.land/bubbletea/v2.View"
 Cohesion: 0.06
-Nodes (13): exitMsg, model, model, charm.land/bubbletea/v2.View, lipgloss.Layer, T, newCard(), reverse() (+5 more)
+Nodes (14): model, charm.land/bubbletea/v2.ProgressBarState, charm.land/bubbletea/v2.View, charm.land/lipgloss/v2/table.Table, drawEllipse(), model, lipgloss.Style, newPickerModel() (+6 more)
 
 ### Community 260 - "clean_display"
 Cohesion: 0.33
@@ -1664,8 +1673,8 @@ Cohesion: 0.24
 Nodes (8): go_pkg_charm_land_bubbles_v2_paginator, run(), lipgloss.Style, initialModel(), newModel(), newStyles(), model, styles
 
 ### Community 264 - "chatModel"
-Cohesion: 0.27
-Nodes (3): context.CancelFunc, chatModel, waitForStream()
+Cohesion: 0.21
+Nodes (6): chatModel, DocMeta, standaloneChatModel, newChatModel(), newStandaloneChatModel(), waitForStream()
 
 ### Community 265 - "Draft Manager Agent"
 Cohesion: 0.18
@@ -1716,19 +1725,19 @@ Cohesion: 0.20
 Nodes (9): Formatting Style, Line Breaks, Lists, Mentions & Links, Slack Formatting Rules, Slack Message Formatter, Structure, Text Formatting (+1 more)
 
 ### Community 277 - "extractPiwrapFlags"
-Cohesion: 0.30
-Nodes (11): extractPiwrapFlags(), TestExtractPiwrapFlags_BadBool(), TestExtractPiwrapFlags_BadFormat(), TestExtractPiwrapFlags_Basic(), TestExtractPiwrapFlags_DryRunHelpy(), TestExtractPiwrapFlags_HelpyOutputFollowsHelpy(), TestExtractPiwrapFlags_PassThrough(), TestExtractPiwrapFlags_SetyImportID() (+3 more)
+Cohesion: 0.16
+Nodes (17): go_pkg_reflect, TestBuildSessionPath(), TestEncodeCwd(), TestExtractName(), TestHasSessionFlag(), TestKebabCase(), extractPiwrapFlags(), TestExtractPiwrapFlags_BadBool() (+9 more)
 
-### Community 278 - "zs/session_test.go"
-Cohesion: 0.17
-Nodes (11): BuildCreateSessionArgs(), BuildNewTabArgs(), parseSessionNames(), sanitizeSessionName(), SessionExists(), SessionNameForDir(), TestBuildCreateSessionArgs(), TestBuildNewTabArgs() (+3 more)
+### Community 278 - "createDebugCmd"
+Cohesion: 0.24
+Nodes (12): availStatus(), createDebugCmd(), display(), displayBool(), fileExists(), TestZellij(), TestZellij_Absent(), InZellij() (+4 more)
 
 ### Community 279 - "appendHistory"
 Cohesion: 0.32
 Nodes (8): historyEntry, TestHistoryRoundtrip(), truncate(), appendHistory(), gsyncHistoryPath(), gsyncStateDir(), readHistory(), runGsyncStatus()
 
-### Community 280 - "keyboardenhancements.go"
-Cohesion: 0.31
+### Community 280 - "model"
+Cohesion: 0.28
 Nodes (5): model, styles, lipgloss.Style, initialModel(), run()
 
 ### Community 281 - "tabs.go"
@@ -1787,9 +1796,9 @@ Nodes (8): Checklist, Claude Skill Writer, Description Best Practices, Progressi
 Cohesion: 0.22
 Nodes (8): Beads - AI-Native Issue Tracking, Essential Commands, Get Started with Beads, Learn More, Quick Start, What is Beads?, Why Beads?, Working with Issues
 
-### Community 295 - "charm.land/bubbletea/v2.Model"
-Cohesion: 0.06
-Nodes (15): overlayModel, model, charm.land/bubbletea/v2.Model, charm.land/bubbletea/v2.ProgressBarState, charm.land/lipgloss/v2/table.Table, pickerModel, model, lipgloss.Style (+7 more)
+### Community 295 - "charm.land/bubbletea/v2.Msg"
+Cohesion: 0.05
+Nodes (17): exitMsg, charm.land/bubbletea/v2.Model, charm.land/bubbletea/v2.Msg, pickerModel, filter(), finalPause(), tick(), model (+9 more)
 
 ### Community 296 - "Claude Skill Writer"
 Cohesion: 0.22
@@ -1803,25 +1812,25 @@ Nodes (8): Adding a Module, Code Style, Contributing to CLY, Development Setup, 
 Cohesion: 0.36
 Nodes (8): isLockContention(), parseDiffGitPath(), parseFileSection(), parseHunkHeader(), parseRange(), splitDiffSections(), unquoteGitPath(), TestParseDiffGitPath()
 
-### Community 299 - "progress-download.go"
-Cohesion: 0.25
-Nodes (7): run(), finalPause(), initialModel(), simulateDownload(), model, progressErrMsg, progressMsg
+### Community 299 - "BrewBundler"
+Cohesion: 0.24
+Nodes (6): BrewBundler, NewBrewBundler(), trustTaps(), writeTapsToTempFile(), TestWriteTapsToTempFile(), expandPath()
 
 ### Community 300 - "go_pkg_charm_land_lipgloss_v2_tree"
-Cohesion: 0.08
-Nodes (16): go_pkg_charm_land_lipgloss_v2_tree, Dir, File, run(), renderBackgroundTree(), run(), renderMakeupTree(), run() (+8 more)
+Cohesion: 0.06
+Nodes (21): go_pkg_charm_land_lipgloss_v2_tree, charm.land/lipgloss/v2/tree.Tree, Dir, File, run(), renderBackgroundTree(), Register(), run() (+13 more)
 
-### Community 301 - "table_mindy.go"
-Cohesion: 0.10
-Nodes (17): go_pkg_charm_land_lipgloss_v2_table, Register(), run(), renderTable(), Register(), run(), renderTable(), splitLines() (+9 more)
+### Community 301 - "splash.go"
+Cohesion: 0.06
+Nodes (26): go_pkg_charm_land_lipgloss_v2_table, go_pkg_github_com_charmbracelet_colorprofile, go_pkg_github_com_charmbracelet_x_ansi, go_pkg_github_com_lucasb_eyer_go_colorful, go_pkg_image_color, pokemon, run(), run() (+18 more)
 
-### Community 302 - "splash.go"
-Cohesion: 0.19
-Nodes (9): model, go_pkg_math, Register(), run(), drawEllipse(), initialModel(), run(), tick() (+1 more)
+### Community 302 - "model"
+Cohesion: 0.36
+Nodes (5): model, tickMsg, run(), initialModel(), tickCmd()
 
-### Community 303 - "Engine"
-Cohesion: 0.25
-Nodes (6): summaryCmd(), Fingerprint(), Config, Target, NewEngine(), Engine
+### Community 303 - "ompwrap.go"
+Cohesion: 0.09
+Nodes (23): go_pkg_embed, go_pkg_github_com_yurifrl_cly_modules_omp, go_pkg_github_com_yurifrl_cly_modules_omp_summary, go_pkg_github_com_yurifrl_cly_pkg_embedfs, Register(), SummaryCmd(), installCmd(), InstallExtensions() (+15 more)
 
 ### Community 304 - "LLM Chat Module"
 Cohesion: 0.22
@@ -1895,17 +1904,17 @@ Nodes (8): extract_messages(), find_conversation_files(), format_time_ago(), get
 Cohesion: 0.25
 Nodes (7): drafts, Guidelines, Location, Structure, What a Draft IS, What a Draft is NOT, Workflow
 
-### Community 322 - "zs/picker.go"
-Cohesion: 0.44
-Nodes (10): buildDirectoryItems(), buildSessionItems(), ensureDependencies(), fuzzyCommand(), runPicker(), SelectDirectory(), SelectSessionTarget(), shortenHome() (+2 more)
+### Community 322 - "notify/notify.go"
+Cohesion: 0.29
+Nodes (7): DefaultNotifier(), iconBytes(), Level, Notification, GroupFor(), resolveSound(), Send()
 
-### Community 323 - "go_pkg_github_com_yurifrl_cly_pkg_llm"
-Cohesion: 0.47
-Nodes (4): go_pkg_github_com_yurifrl_cly_pkg_llm, Client, flagsAsAIOverride(), NewClient()
+### Community 323 - "table_mindy.go"
+Cohesion: 0.33
+Nodes (7): Register(), run(), buildGapRow(), buildSwatchRow(), colorIndexFromRow(), isLightColor(), renderTable()
 
-### Community 324 - "zs/debug.go"
-Cohesion: 0.27
-Nodes (8): go_pkg_github_com_yurifrl_cly_modules_completion, GenerateCompletionsString(), Register(), run(), configureRuntime(), envBool(), shellQuote(), IsInsideZellij()
+### Community 324 - "push.go"
+Cohesion: 0.53
+Nodes (8): aiLine(), Card(), Entry, lastCommandLine(), modelLine(), Push(), secStamp(), stampLine()
 
 ### Community 325 - "lg-layout/layout.go"
 Cohesion: 0.33
@@ -1919,29 +1928,29 @@ Nodes (7): check_path(), detect_platform(), get_latest_version(), init_config(),
 Cohesion: 0.40
 Nodes (4): editorFinishedMsg, go_pkg_cmp, run(), initialModel()
 
-### Community 328 - ".Update"
-Cohesion: 0.31
-Nodes (7): syscall.Signal, agentRow, gotoCmd(), killCmd(), ompRow(), piRow(), sendCmd()
+### Community 328 - "RustBundler"
+Cohesion: 0.25
+Nodes (4): RustBundler, extractRustBase(), NewRustBundler(), parseRustPkg()
 
-### Community 329 - "gsync_test.go"
-Cohesion: 0.27
-Nodes (9): getWorkdir(), globToRegex(), objectName(), resolveSyncTarget(), TestGlobToRegex(), TestObjectPrefixing(), TestResolveSyncTarget_NoArgs(), TestResolveSyncTarget_RejectsPathyNames() (+1 more)
+### Community 329 - "GetString"
+Cohesion: 0.26
+Nodes (11): getBucket(), getWorkdir(), resolveSyncTarget(), TestDisplayFolderName(), TestResolveSyncTarget_NoArgs(), TestResolveSyncTarget_RejectsPathyNames(), TestResolveSyncTarget_Unconfigured(), TestSummarize() (+3 more)
 
 ### Community 330 - "go_pkg_charm_land_bubbletea_v2"
-Cohesion: 0.03
-Nodes (65): LayerHitMsg, errMsg, go_pkg_charm_land_bubbles_v2_cursor, go_pkg_charm_land_bubbles_v2_list, go_pkg_charm_land_bubbles_v2_spinner, go_pkg_charm_land_bubbles_v2_table, go_pkg_charm_land_bubbles_v2_textinput, go_pkg_charm_land_bubbles_v2_viewport (+57 more)
+Cohesion: 0.02
+Nodes (77): errMsg, go_pkg_charm_land_bubbles_v2_cursor, go_pkg_charm_land_bubbles_v2_progress, go_pkg_charm_land_bubbles_v2_spinner, go_pkg_charm_land_bubbles_v2_table, go_pkg_charm_land_bubbles_v2_textarea, go_pkg_charm_land_bubbles_v2_textinput, go_pkg_charm_land_bubbles_v2_viewport (+69 more)
 
 ### Community 331 - "Backup Module"
 Cohesion: 0.22
 Nodes (8): Backup Module, Backup Workdir, Commands, Configuration, Download Backup, Examples, Gsync (visual sync), Setup
 
-### Community 332 - "pickerModel"
-Cohesion: 0.33
-Nodes (3): newPickerModel(), pickerModel, toggleItem
+### Community 332 - "model"
+Cohesion: 0.25
+Nodes (5): model, lipgloss.Layer, T, newCard(), reverse()
 
-### Community 333 - "simple.go"
-Cohesion: 0.50
-Nodes (3): run(), initialModel(), tickMsg
+### Community 333 - "overlay.go"
+Cohesion: 0.43
+Nodes (5): demoEntry, overlayModel, getDemos(), newOverlayModel(), runOverlay()
 
 ### Community 334 - "Step-by-Step Workflow"
 Cohesion: 0.25
@@ -2055,25 +2064,25 @@ Nodes (6): Behavior, Command: /review_prompt, Examples, Notes, Review Criteria, 
 Cohesion: 0.40
 Nodes (5): 1. Install Plugin, 2. Verify Installation, 3. Test Manually, 4. Use with OpenCode, Installation & Usage
 
-### Community 362 - "fullscreen.go"
-Cohesion: 0.39
-Nodes (4): model, tickMsg, initialModel(), tick()
+### Community 362 - "uuid.go"
+Cohesion: 0.29
+Nodes (4): go_pkg_github_com_google_uuid, run(), initialModel(), item
 
 ### Community 363 - "go_pkg_testing"
 Cohesion: 0.03
-Nodes (85): TestGenerateBuildName(), go_pkg_github_com_lucasepe_codename, go_pkg_github_com_stretchr_testify_assert, go_pkg_github_com_stretchr_testify_require, go_pkg_github_com_yurifrl_cly_modules_agent_session, go_pkg_github_com_yurifrl_cly_pkg_jsonc, go_pkg_testing, newTestPicker() (+77 more)
+Nodes (74): TestGenerateBuildName(), go_pkg_github_com_lucasepe_codename, go_pkg_github_com_stretchr_testify_assert, go_pkg_github_com_stretchr_testify_require, go_pkg_testing, TestProviderByName_Defaults(), TestProviderByName_Unknown(), TestFilterByName() (+66 more)
 
 ### Community 364 - "notify/zellij_test.go"
 Cohesion: 0.25
 Nodes (8): buildAttentionPipeName(), buildNotifyArgs(), mapEventToAttentionState(), NewZellijNotifier(), TestBuildAttentionPipeName(), TestBuildNotifyArgs(), TestMapEventToAttentionState(), TestZellijNotifier_Available()
 
-### Community 365 - "op.go"
-Cohesion: 0.43
-Nodes (7): OpMapping, applyOpFormatters(), ApplyOpMappings(), Config, handleOpMappingError(), RemoveOpMapping(), writeOpMapping()
+### Community 365 - "readString"
+Cohesion: 0.50
+Nodes (7): CmuxSurfaceID(), CmuxTabID(), CmuxWorkspaceID(), InCmux(), TestCmux(), TestCmux_Absent(), readString()
 
-### Community 366 - "parseFrontmatter"
-Cohesion: 0.43
-Nodes (7): parseFrontmatter(), TestParseFrontmatter_EmptyContent(), TestParseFrontmatter_NoFrontmatter(), TestParseFrontmatter_OnlyDelimiters(), TestParseFrontmatter_PartialFields(), TestParseFrontmatter_UnclosedDelimiter(), TestParseFrontmatter_Valid()
+### Community 366 - "Remake: omp summary as cmux custom sidebar card"
+Cohesion: 0.29
+Nodes (6): Context — wrong turn being fixed, Design decisions, Out of scope, Remake: omp summary as cmux custom sidebar card, Steps, Verification
 
 ### Community 367 - "agents-session"
 Cohesion: 0.29
@@ -2111,9 +2120,9 @@ Nodes (6): Capabilities, Impact, Modified Capabilities, New Capabilities, What C
 Cohesion: 0.29
 Nodes (6): mcp-manager Specification, Purpose, Requirement: CLI List Command, Requirements, Scenario: List all with flag, Scenario: List installed only
 
-### Community 376 - "context.Context"
-Cohesion: 0.20
-Nodes (8): context.Context, findRunPIDs(), Restart(), ZellijNotifier, Notification, NativeMacOSNotifier, NewNativeMacOSNotifier(), Notification
+### Community 376 - "NativeMacOSNotifier"
+Cohesion: 0.33
+Nodes (3): Notification, NativeMacOSNotifier, NewNativeMacOSNotifier()
 
 ### Community 377 - "notifier_test.go"
 Cohesion: 0.39
@@ -2172,8 +2181,8 @@ Cohesion: 0.33
 Nodes (6): 1. Generate the certificate via Xcode, 2. Install the WWDR intermediate CA, 3. Verify the identity is usable, 4. Store the identity in 1Password, 5. Build & install, One-time setup
 
 ### Community 392 - "model"
-Cohesion: 0.09
-Nodes (12): model, model, model, charm.land/bubbles/v2/textarea.Model, charm.land/bubbletea/v2.Cursor, keymap, run(), keymap (+4 more)
+Cohesion: 0.06
+Nodes (19): model, model, model, model, charm.land/bubbles/v2/help.Model, charm.land/bubbles/v2/textarea.Model, charm.land/bubbletea/v2.Cursor, keymap (+11 more)
 
 ### Community 393 - "model"
 Cohesion: 0.33
@@ -2183,29 +2192,33 @@ Nodes (3): run(), initialModel(), model
 Cohesion: 0.33
 Nodes (5): Adding Modules, Architecture, CLY Quick Reference, Common Commands, Development
 
-### Community 395 - "go_pkg_math_rand"
-Cohesion: 0.06
-Nodes (28): tickMsg, go_pkg_charm_land_bubbles_v2_progress, go_pkg_log, go_pkg_math_rand, initialModel(), run(), tick(), Register() (+20 more)
+### Community 395 - "doomfire.go"
+Cohesion: 0.60
+Nodes (4): tickMsg, initialModel(), run(), tick()
 
-### Community 396 - "model"
+### Community 396 - "go_pkg_sync"
+Cohesion: 0.38
+Nodes (4): go_pkg_sync, capitalize(), cycle(), nextRandomWord()
+
+### Community 397 - "model"
 Cohesion: 0.33
-Nodes (3): model, run(), initialModel()
+Nodes (3): run(), initialModel(), model
 
-### Community 397 - "claude/cmd.go"
-Cohesion: 0.53
-Nodes (5): FilePath(), Register(), restoreSession(), resumeOrCreateSession(), run()
+### Community 398 - "summarizer_test.go"
+Cohesion: 0.52
+Nodes (6): TestDrainDropsStaleFingerprints(), TestEnqueueNoKeyIsNoop(), TestEnqueuePromotesFocusedJob(), TestPendingFocusedJumpsAhead(), TestShouldSummarize(), testSummarizer()
 
-### Community 398 - "every/cmd.go"
-Cohesion: 0.24
-Nodes (11): autoName(), logsCmd(), pruneCmd(), Register(), runEvery(), runStatus(), statusCmd(), TestAutoName() (+3 more)
-
-### Community 399 - "suspend/cmd.go"
-Cohesion: 0.40
-Nodes (3): Register(), run(), initialModel()
+### Community 399 - "zl/cmd_test.go"
+Cohesion: 0.29
+Nodes (6): TestListSessions(), TestSessionExists(), TestSwitchInside_SessionDoesNotExist(), TestSwitchInside_SessionExists(), ListSessions(), SessionExists()
 
 ### Community 400 - "main.go"
 Cohesion: 0.50
 Nodes (3): Execute(), go_pkg_github_com_yurifrl_cly_cmd, main()
+
+### Community 401 - "versionString"
+Cohesion: 0.40
+Nodes (4): printVersion(), versionString(), GenerateBuildName(), go_pkg_hash_fnv
 
 ### Community 403 - "Statusline"
 Cohesion: 0.33
@@ -2319,41 +2332,29 @@ Nodes (5): "command not showing in help", "package name mismatch", Troubleshooti
 Cohesion: 0.40
 Nodes (4): Agent Tests, Guidelines, Location, TEST.md Format
 
-### Community 431 - "needsUpload"
-Cohesion: 0.50
-Nodes (5): uploadJob, cloud.google.com/go/storage.ObjectHandle, io/fs.FileInfo, needsUpload(), uploadFile()
-
-### Community 433 - "runEditForm"
-Cohesion: 0.67
-Nodes (4): editResult, Entry, newEditModel(), runEditForm()
+### Community 431 - "syncFolder"
+Cohesion: 0.24
+Nodes (10): uploadJob, charm.land/bubbletea/v2.Program, cloud.google.com/go/storage.BucketHandle, cloud.google.com/go/storage.ObjectHandle, io/fs.FileInfo, needsUpload(), objectName(), syncFolder() (+2 more)
 
 ### Community 434 - "preview.go"
 Cohesion: 0.43
 Nodes (7): ConfirmAction, ConfirmResult, bufio.Reader, classifyConfirmInput(), Confirm(), readSingleKey(), RenderJSON()
 
-### Community 435 - ".renderBaseView"
-Cohesion: 0.36
-Nodes (3): FormatContext(), Context, Model
-
 ### Community 436 - "autocomplete.go"
 Cohesion: 0.06
-Nodes (32): gotReposErrMsg, gotReposSuccessMsg, repo, go_pkg_charm_land_bubbles_v2_help, go_pkg_charm_land_bubbles_v2_key, go_pkg_charm_land_bubbles_v2_stopwatch, go_pkg_charm_land_bubbles_v2_textarea, go_pkg_charm_land_bubbles_v2_timer (+24 more)
+Nodes (28): gotReposErrMsg, gotReposSuccessMsg, repo, go_pkg_charm_land_bubbles_v2_help, go_pkg_charm_land_bubbles_v2_key, go_pkg_charm_land_bubbles_v2_stopwatch, go_pkg_charm_land_bubbles_v2_timer, go_pkg_net_http (+20 more)
 
 ### Community 437 - "test_paths.go"
-Cohesion: 0.83
-Nodes (3): main(), resolveEncodedPathRec(), sessionDirToWorkingDir()
+Cohesion: 0.60
+Nodes (4): main(), resolveEncodedPathRec(), sessionDirToWorkingDir(), TestSessionDirToWorkingDir()
 
 ### Community 438 - "2026-03-03"
 Cohesion: 0.50
 Nodes (4): 2026-03-03, Added, Changed, Removed
 
-### Community 439 - "lg-color-dialog/cmd.go"
-Cohesion: 0.40
-Nodes (3): Register(), run(), renderDialog()
-
 ### Community 440 - "go_pkg_charm_land_lipgloss_v2_list"
-Cohesion: 0.11
-Nodes (12): go_pkg_charm_land_lipgloss_v2_list, glowItem, groceryItem, Register(), renderDuckDuckGoose(), renderGlowList(), Register(), renderGroceryList() (+4 more)
+Cohesion: 0.13
+Nodes (10): go_pkg_charm_land_lipgloss_v2_list, glowItem, groceryItem, renderDuckDuckGoose(), renderGlowList(), renderGroceryList(), run(), renderRomanList() (+2 more)
 
 ### Community 441 - "2026-05-03 Beads TUI Module and Alias Opt-Out Annotation"
 Cohesion: 0.50
@@ -2366,10 +2367,6 @@ Nodes (4): 2026-05-03 Cly Diff Mockup Iterations (reader, progress bar, bead mod
 ### Community 443 - "2026-08-31 omp Is the Default Agent"
 Cohesion: 0.50
 Nodes (4): 2026-08-31 omp Is the Default Agent, Added, Changed, Migrated
-
-### Community 444 - "run"
-Cohesion: 0.50
-Nodes (4): charm.land/lipgloss/v2/tree.Tree, run(), buildTree(), renderFileTree()
 
 ### Community 445 - "2026-02-13"
 Cohesion: 0.67
@@ -2390,10 +2387,6 @@ Nodes (3): 2026-09-19 Live omp Session Summary Sidebar, Added, Changed
 ### Community 450 - "Testing Plan (Manual)"
 Cohesion: 0.50
 Nodes (4): Configuration Testing, Installation Testing, Notification Testing, Testing Plan (Manual)
-
-### Community 452 - ".Update"
-Cohesion: 0.22
-Nodes (5): ExtraParam, ExtraParamsModal, newExtraParamsModal(), Model, listItemRenderHeight()
 
 ### Community 454 - "Bubbletea Program Options"
 Cohesion: 0.40
@@ -2518,6 +2511,26 @@ Nodes (3): CLAUDE.md Updater, Extract Conversations, Workflow
 ### Community 485 - "Python Script with uv"
 Cohesion: 0.50
 Nodes (3): Python Script with uv, Rules, Template
+
+### Community 489 - "parseProviders"
+Cohesion: 0.80
+Nodes (4): Entry, parseProviders(), setKeyOrEnvStr(), toInt()
+
+### Community 490 - "clickable.go"
+Cohesion: 0.40
+Nodes (4): LayerHitMsg, go_pkg_github_com_segmentio_ksuid, charm.land/bubbletea/v2.MouseMsg, run()
+
+### Community 492 - "result/cmd.go"
+Cohesion: 0.40
+Nodes (3): Register(), run(), initialModel()
+
+### Community 494 - "formatMCPCount"
+Cohesion: 0.50
+Nodes (3): formatMCPCount(), Model, TestFormatMCPCount()
+
+### Community 495 - "pi-anon/cmd.go"
+Cohesion: 0.67
+Nodes (3): listSessions(), Register(), run()
 
 ### Community 500 - "Troubleshooting"
 Cohesion: 0.67
@@ -2728,24 +2741,24 @@ Cohesion: 0.67
 Nodes (3): Build Errors, Runtime Errors, Troubleshooting
 
 ## Knowledge Gaps
-- **3188 isolated node(s):** `name`, `version`, `description`, `files`, `type` (+3183 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3833 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **65 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **3192 isolated node(s):** `name`, `version`, `description`, `files`, `type` (+3187 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3839 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **73 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `StatusJSON` connect `RenderStatusline` to `RenderContext`?**
-  _High betweenness centrality (0.005) - this node is a cross-community bridge._
-- **Why does `ZellijNotifier` connect `context.Context` to `notify/zellij_test.go`, `go_pkg_fmt`?**
+- **Why does `tuiModel` connect `tui_test.go` to `charm.land/bubbles/v2/textinput.Model`, `go_pkg_fmt`?**
   _High betweenness centrality (0.004) - this node is a cross-community bridge._
-- **Why does `Result` connect `envs_test.go` to `testing.T`?**
+- **Why does `keyMap` connect `charm.land/bubbles/v2/key.Binding` to `charm.land/bubbletea/v2.View`, `autocomplete.go`?**
+  _High betweenness centrality (0.004) - this node is a cross-community bridge._
+- **Why does `Result` connect `Result` to `testing.T`, `go_pkg_github_com_yurifrl_cly_pkg_result`, `envs_test.go`, `readString`, `createDebugCmd`?**
   _High betweenness centrality (0.004) - this node is a cross-community bridge._
 - **What connects `name`, `version`, `description` to the rest of the system?**
-  _3188 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _3192 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `bash` be split into smaller, more focused modules?**
   _Cohesion score 0.008695652173913044 - nodes in this community are weakly interconnected._
-- **Should `pi-tree/tui.go` be split into smaller, more focused modules?**
-  _Cohesion score 0.10121457489878542 - nodes in this community are weakly interconnected._
+- **Should `completion/cmd_test.go` be split into smaller, more focused modules?**
+  _Cohesion score 0.14482758620689656 - nodes in this community are weakly interconnected._
 - **Should `github.com/spf13/cobra.Command` be split into smaller, more focused modules?**
-  _Cohesion score 0.015305618643230967 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.015481171548117154 - nodes in this community are weakly interconnected._
