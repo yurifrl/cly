@@ -8,7 +8,13 @@
 - Global gitignore: `.omp/` so project-local state files never leak into commits.
 
 ### Changed
-- `modules/ompwrap`: `cly omp summary` attaches directly under `omp` (outside the `omp y` namespace) so the daemon runs as a plain `cly omp summary`; `modules/omp/cmd.go` drops the Bubbletea TUI and its queueing wake-ups.
+- `modules/ompwrap`: `cly omp summary` attaches directly under `omp` (outside the `omp y`
+  namespace) so the daemon runs as a plain `cly omp summary`; `modules/omp/cmd.go` drops
+  the Bubbletea TUI and its queueing wake-ups.
+- `modules/omp/summary`: daemon works from any shell, not just inside cmux surfaces — the
+  workspace flag is passed explicitly, so `CMUX_WORKSPACE_ID` is no longer required. On
+  start it flips the right sidebar to the `omp-cards` custom sidebar (`--no-focus`) and
+  prints a status line (`--once` reports the card it pushed or "nothing to show").
 
 ## 2026-09-18 `o`/`cly omp` Routes Through Headroom
 

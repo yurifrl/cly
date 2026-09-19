@@ -37,17 +37,19 @@ func (e *Engine) Run(ctx context.Context) {
 }
 
 // Tick is one pass: resolve the active surface, enqueue staleness, push the
-// cached card. Exported for --once mode.
-func (e *Engine) Tick(ctx context.Context) {
+// cached card. Returns the resolved target (nil when nothing is live) so
+// callers — --once mode — can report what happened.
+func (e *Engine) Tick(ctx context.Context) *Target {
 	now := nowUnix()
 	t, err := ActiveTarget(ctx, now, e.cfg.MaxAge.Seconds())
 	if err != nil || t == nil {
-		return // nothing to show (no live omp surface, outside cmux)
+		return nil // nothing to show (no live omp surface)
 	}
 	if fp := Fingerprint(transcriptPath(t.SessionID)); fp != "" && e.sum.ShouldSummarize(*t, fp, now) {
 		e.sum.Enqueue(Job{Target: *t, Fingerprint: fp, Focused: t.Focused})
 	}
 	e.push(ctx, *t)
+	return t
 }
 
 // push renders the active session's cached entry into the workspace

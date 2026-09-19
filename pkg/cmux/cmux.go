@@ -83,12 +83,10 @@ func ClearStatus(ctx context.Context, key string) error {
 
 // SetDescription writes a workspace description slot via
 // `cmux workspace-action --action set-description`. The custom sidebar reads
-// this as `w.description`; workspace must be a UUID, ref, or index.
-// No-op when not inside a cmux session.
+// this as `w.description`; workspace must be a UUID, ref, or index. The flag
+// targets the workspace explicitly, so this works from any shell — inside
+// cmux surfaces or not.
 func SetDescription(ctx context.Context, workspace, text string) error {
-	if !Available() {
-		return nil
-	}
 	if workspace == "" {
 		return fmt.Errorf("set-description: empty workspace")
 	}
@@ -97,6 +95,17 @@ func SetDescription(ctx context.Context, workspace, text string) error {
 		"--description", text).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("cmux set-description %s: %w: %s", workspace, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// RightSidebarSet switches the right sidebar to a custom sidebar by name
+// (files under ~/.config/cmux/sidebars). `--no-focus` keeps the user's
+// current focus; the switch is idempotent, so it is safe on every start.
+func RightSidebarSet(ctx context.Context, name string) error {
+	out, err := exec.CommandContext(ctx, "cmux", "right-sidebar", "set", "custom", name, "--no-focus").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cmux right-sidebar set custom %s: %w: %s", name, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

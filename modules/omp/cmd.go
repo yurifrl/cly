@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yurifrl/cly/pkg/cmux"
 	ompsummary "github.com/yurifrl/cly/modules/omp/summary"
 )
 
@@ -44,8 +45,14 @@ func SummaryCmd() *cobra.Command {
 
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
+
+			// Make the product visible: point the right sidebar at the card
+			// feed and say one line, so a foreground run never looks dead.
+			if err := cmux.RightSidebarSet(ctx, "omp-cards"); err != nil {
+				cmd.PrintErrf("omp summary: right sidebar: %v\n", err)
+			}
 			if once {
-				eng.Tick(ctx) // shows the cached card immediately, enqueues staleness
+				t := eng.Tick(ctx) // shows the cached card immediately, enqueues staleness
 				go sum.Start(ctx)
 				for !sum.Idle() {
 					select {
@@ -55,8 +62,14 @@ func SummaryCmd() *cobra.Command {
 					}
 				}
 				cancel()
+				if t == nil {
+					cmd.PrintErrln("omp summary: nothing to show (no live omp session near the focused surface)")
+				} else {
+					cmd.Printf("omp summary: card pushed for %q (workspace %s)\n", t.Title, t.Workspace)
+				}
 				return nil
 			}
+			cmd.PrintErrln("omp summary: watching — card renders in the right sidebar (ctrl-c to stop)")
 			go sum.Start(ctx)
 			eng.Run(ctx) // blocks until the context ends
 			return nil
