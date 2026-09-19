@@ -82,12 +82,26 @@ func stampLine(e *Entry) string {
 	if e.UpdatedAt == 0 {
 		return ""
 	}
-	return secStamp(e.UpdatedAt)
+	return relStamp(e.UpdatedAt, nowUnix())
 }
 
-// secStamp renders an epoch-seconds stamp (integral, no fraction noise).
-func secStamp(v float64) string {
-	return strconv.FormatInt(int64(v), 10)
+// relStamp renders an epoch-seconds stamp as compact relative time. The
+// daemon re-pushes the card every tick, so the value stays live.
+func relStamp(v, now float64) string {
+	d := now - v
+	if d < 0 {
+		d = 0
+	}
+	switch {
+	case d < 60:
+		return "now"
+	case d < 3600:
+		return strconv.Itoa(int(d/60)) + "m"
+	case d < 86400:
+		return strconv.Itoa(int(d/3600)) + "h"
+	default:
+		return strconv.Itoa(int(d/86400)) + "d"
+	}
 }
 
 // Push renders the entry and writes it into the workspace description slot the
