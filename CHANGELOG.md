@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-19 Live omp Session Summary Sidebar
+
+### Added
+- `modules/omp/summary`: `cly omp y summary` — vertical sidebar TUI showing a live AI one-liner per omp session in the workspace. Discovery joins `cmux --id-format both tree --json` surfaces with `cmux sessions list --agent omp --all --json` hook records, resolves each session id to the newest matching `~/.omp/agent/sessions/*/*_<id>.jsonl` transcript, tails the last messages (byte/char-capped, partial-line safe), and fingerprints each transcript by size+mtime so a session is re-summarized only when it actually changed. The focused surface's job jumps the queue: workers (default 2), queued duplicates refresh in place, and a focused stale-fingerprint job preempts a running one. Summaries persist atomically (tmp+fsync+rename, 0644) to the session's project at `.omp/summary.json`, keyed by session id, recording the summarizer's provider/model per entry and pruning stale sessions. UI renders state only — AI latency never blocks; header badge shows the summarizer's provider/model; left-click a row focuses its pane (`cmux focus-pane`), right-click copies the summary via the tea clipboard. Config under `modules.omp.summary` (`workers`, `interval`, `debounce`, `max_age`, `max_tail`, `max_chars`, `ai` override); without an API key rows stay pending and the UI is unaffected.
+- `pkg/cmux`: `Tree`, `SessionsList`, `FocusPane` — tolerant JSON client over the cmux tree and hook-session listings (nullable `surface_id` as pointer, top-level `active` as its distinct flat shape), with tests over real-shaped fixtures.
+- Global gitignore: `.omp/` so project-local state files never leak into commits.
+
+### Changed
+- `modules/omp/cmd.go`: `Register` attaches `summary` beside `extensions` under the `omp y` namespace.
+
 ## 2026-09-18 `o`/`cly omp` Routes Through Headroom
 
 ### Changed
