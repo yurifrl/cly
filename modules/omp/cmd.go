@@ -35,6 +35,13 @@ func SummaryCmd() *cobra.Command {
 			sum := ompsummary.NewSummarizer(cfg)
 			eng := ompsummary.NewEngine(cfg, sum)
 
+			// Ship the sidebar with the binary: install/refresh it before the
+			// loop so a user machine needs only the binary, not this repo.
+			// Non-fatal: cards still push without a fresh sidebar file.
+			if err := ompsummary.EnsureSidebar(); err != nil {
+				cmd.PrintErrf("sidebar install: %v\n", err)
+			}
+
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 			if once {
