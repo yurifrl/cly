@@ -93,7 +93,7 @@ Types:
 	cmd.Flags().BoolVar(&parallelFlag, "parallel", false, "use parallel installs with TUI progress (js only)")
 	cmd.Flags().BoolVarP(&updateFlag, "update", "u", false, "sync without opening the editor")
 	cmd.Flags().BoolVar(&uninstallFlag, "uninstall", false, "uninstall all packages listed in the bundle file (js only)")
-	cmd.Flags().BoolVar(&trustFlag, "trust", false, "trust third-party taps before installing (brew only)")
+	cmd.Flags().BoolVar(&trustFlag, "trust", false, "trust third-party taps and skip post-sync cleanup (brew only)")
 
 	cmd.AddCommand(checkCmd(getBundlers))
 	cmd.AddCommand(cleanupCmd(getBundlers))
@@ -317,6 +317,14 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 
 func runPostSyncCleanup(bundler Bundler) error {
 	if noCleanupFlag || !forceCleanup {
+		return nil
+	}
+	// --trust skips the cleanup pass: `brew bundle cleanup --force` resets the
+	// trust store to the Brewfile's trusted entries at the end of a run,
+	// discarding exactly the trust --trust established. Scoped to brew; other
+	// bundlers still clean up.
+	if trustFlag && bundler.Name() == "brew" {
+		fmt.Println("\nSkipping cleanup (--trust): cleanup would reset the trust store")
 		return nil
 	}
 	fmt.Println("\n=== Cleanup (--force) ===")

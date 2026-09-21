@@ -152,6 +152,13 @@ func (b *BrewBundler) Check(bundleFile string) error {
 func (b *BrewBundler) Cleanup(bundleFile string, verbose bool, force bool) error {
 	bundleFile = expandPath(bundleFile)
 
+	// Trust every tapped tap before the scan: cleanup must load all installed
+	// formulae to classify them, and a tapped-but-undeclared tap aborts the
+	// scan with "Refusing to load formula from untrusted tap". Store hygiene
+	// is unaffected: `brew bundle cleanup --force` resets the trust store to
+	// the Brewfile's trusted entries at the end of a successful run.
+	trustTaps(verbose)
+
 	args := []string{"bundle", "cleanup", "--file=" + bundleFile}
 	if force {
 		args = append(args, "--force")
@@ -224,17 +231,24 @@ func trustTaps(verbose bool) {
 		fmt.Printf("Warning: failed to list taps: %v\n", err)
 		return
 	}
-	for _, name := range strings.Fields(string(out)) {
-		args := []string{"trust", "--tap", name}
-		if verbose {
-			fmt.Printf("$ brew %s\n", strings.Join(args, " "))
-		}
-		cmd := exec.Command("brew", args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("Warning: failed to trust tap %s: %v\n", name, err)
-		}
+	taps := strings.Fields(string(out))
+	if len(taps) == 0 {
+		return
+	}
+	// One invocation for all taps: brew accepts repeated --tap flags and the
+	// command is idempotent ("Already trusted tap: X").
+	args := []string{"trust"}
+	for _, name := range taps {
+		args = append(args, "--tap", name)
+	}
+	if verbose {
+		fmt.Printf("$ brew %s\n", strings.Join(args, " "))
+	}
+	cmd := exec.Command("brew", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Warning: failed to trust taps: %v\n", err)
 	}
 }
 
