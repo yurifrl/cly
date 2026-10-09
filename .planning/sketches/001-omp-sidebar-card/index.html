@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sketch 001 — omp summary card</title>
+<style>
+  :root {
+    --color-text: #e8e8ea; --color-text-dim: #b4b4bb; --color-text-faint: #77777f;
+    --color-border: #2c2c31; --color-surface: #1b1b1f;
+    --color-idle: #e8a13d; --color-waiting: #5aa7e8; --color-done: #46c48a;
+    --radius-sm: 8px;
+    --font-ui: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0e0e10; color: var(--color-text); font-family: var(--font-ui); padding: 26px 20px 40px; }
+  #page-head { max-width: 560px; margin: 0 auto 18px; text-align: center; }
+  #page-head p { font-size: 12.5px; line-height: 1.5; color: var(--color-text-dim); }
+  #page-head b { color: var(--color-text); }
+
+  /* ── surface strip (fake cmux) ── */
+  #surface-strip { display: flex; justify-content: center; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+  .s-surf {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--color-text-dim); cursor: pointer; user-select: none;
+    background: #1b1b1f; border: 1px solid var(--color-border); border-radius: 15px;
+    padding: 4.5px 11px; transition: border-color .15s, background .15s;
+  }
+  .s-surf:hover { border-color: #3f3f46; }
+  .s-surf.focused { border-color: var(--color-idle); background: #241d12; color: var(--color-text); }
+
+  /* ── frame ── */
+  #stage { text-align: center; }
+  .frame { width: 320px; margin: 0 auto; text-align: left; padding: 9px;
+    background: #121214; border: 1px solid var(--color-border); border-radius: 10px; }
+  .frame.w370 { width: 370px; }
+  .frame.w420 { width: 420px; }
+
+  /* ── summary card ── */
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+  .card-head { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid #232327; }
+  .card-name { font-size: 12.5px; font-weight: 650; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stamp { font-size: 10px; color: var(--color-text-faint); font-family: var(--font-mono); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .dot.running  { background: var(--color-idle); }
+  .dot.waiting  { background: var(--color-waiting); }
+  .dot.done     { background: var(--color-done); }
+
+  .sec { padding: 7px 11px 8px; border-bottom: 1px solid #232327; }
+  .sec:last-child { border-bottom: none; }
+  .sec-label { font-size: 8.5px; letter-spacing: .1em; font-weight: 750; color: var(--color-text-faint); margin-bottom: 3px; }
+  .sec-body { font-size: 11.5px; line-height: 1.45; color: var(--color-text); }
+  .sec-body.dim { color: var(--color-text-dim); }
+  .sec.hero { padding: 9px 11px 10px; }
+  .sec.hero .sec-body { font-size: 13.5px; line-height: 1.4; font-weight: 560; letter-spacing: -.01em; }
+  .sec.act .sec-body { color: var(--color-idle); font-weight: 600; }
+  .sec.noact .sec-body { color: var(--color-text-faint); }
+
+  /* ── timeline block ── */
+  .tl-card { margin-top: 8px; background: #161619; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+  .tl-head { padding: 7px 11px 0; font-size: 8.5px; letter-spacing: .1em; font-weight: 750; color: var(--color-text-faint); }
+  .tl { padding: 6px 11px 10px; display: flex; flex-direction: column; gap: 5px; }
+  .tl-item { display: flex; align-items: baseline; gap: 7px; font-size: 11px; line-height: 1.4; color: var(--color-text-dim); }
+  .tl-emoji { flex: none; font-size: 10.5px; }
+  .tl-item.user .tl-text { color: var(--color-text); }
+
+  /* ── empty state ── */
+  .empty { border: 1px dashed #333338; border-radius: var(--radius-sm); padding: 14px 12px;
+    font-size: 11.5px; color: var(--color-text-faint); text-align: center; }
+  .empty.tl { margin-top: 8px; }
+
+  /* ── tools ── */
+  #sketch-tools { display: flex; justify-content: center; gap: 7px; margin-top: 18px; }
+  #sketch-tools button {
+    font-size: 10.5px; color: var(--color-text-dim); background: #1b1b1f;
+    border: 1px solid var(--color-border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  }
+  #sketch-tools button:hover { background: #24242a; }
+  .caption { max-width: 560px; margin: 0 auto 16px; font-size: 11.5px; color: var(--color-text-faint); text-align: center; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div id="page-head">
+    <p><b>One card. Not a list.</b> The sidebar shows the focused surface's session as a
+    summary. <b>Last Request leads</b> — what the user last asked this session to do is the
+    first thing you read. Goal, Response, Needs Action support it, timeline underneath.
+    Click the fake surfaces above to see the card follow focus.</p>
+  </div>
+
+  <div id="surface-strip"></div>
+
+  <div id="stage">
+    <div class="frame w320" id="frame">
+      <div id="card"></div>
+      <div id="timeline"></div>
+    </div>
+  </div>
+
+  <div id="sketch-tools">
+    <button onclick="setWidth(320)">320</button>
+    <button onclick="setWidth(370)">370</button>
+    <button onclick="setWidth(420)">420</button>
+  </div>
+
+  <p class="caption">320 = real sidebar width. Needs Action turns orange only when the
+  session actually waits on you — the single glance signal.</p>
+
+<script>
+const SESSIONS = {
+  "vpn": {
+    name: "vpn", state: "running", stamp: "2m",
+    goal: "keep office vpn alive across network switches",
+    request: "vpn dropped twice today. make it reconnect by itself",
+    response: "found launchd race killing tunnel. rewriting reconnect script, testing loop now",
+    action: { needed: false, text: "none — churning, self-recovering" },
+    timeline: [
+      { who: "user", text: "vpn drops on wifi switch, fix" },
+      { who: "ai",   text: "found launchd race killing tunnel" },
+      { who: "ai",   text: "rewriting reconnect script" },
+      { who: "ai",   text: "testing reconnect loop" },
+    ],
+  },
+  "WIP": {
+    name: "WIP", state: "running", stamp: "now",
+    goal: "building omp summary sidebar visualization",
+    request: "update mock to summary format: goal, last request, response, needs action + timeline",
+    response: "rebuilt card with sectioned summary + timeline, verified render and surface swap",
+    action: { needed: true, text: "confirm render ok, then apply to summary module" },
+    timeline: [
+      { who: "user", text: "want omp session summary in cmux tab" },
+      { who: "ai",   text: "poc: cmux socket → omp rpc → summary" },
+      { who: "user", text: "wrap omp with headroom" },
+      { who: "ai",   text: "headroom launch + config toggle" },
+      { who: "user", text: "sketch sidebar card" },
+      { who: "ai",   text: "built 4-variant sketch, browser-verified" },
+      { who: "user", text: "wrong. one card, follows focus" },
+      { who: "ai",   text: "reworked single card + swap, fixed bugs" },
+      { who: "user", text: "gave summary format + caveman timeline" },
+      { who: "ai",   text: "updated mock to this format" },
+    ],
+  },
+  "meca-pi": {
+    name: "meca-pi", state: "waiting", stamp: "4m",
+    goal: "wire mecatl subagents into omp sessions",
+    request: "make extension recipe for mecatl integration",
+    response: "recipe drafted. blocked on daemon auth: mock vs remote mode",
+    action: { needed: true, text: "pick auth mode: mock or remote" },
+    timeline: [
+      { who: "user", text: "integrate mecatl as remote subagents" },
+      { who: "ai",   text: "drafted extension recipe" },
+      { who: "ai",   text: "hit daemon auth mode question" },
+      { who: "ai",   text: "waiting on user pick" },
+    ],
+  },
+  "ai tests": {
+    name: "ai tests", state: "running", stamp: "1m",
+    goal: "agent-runnable e2e tests for cly workflows",
+    request: "add e2e tests validating real commands",
+    response: "harness running. 3 failures on new cobra flags, fixing now",
+    action: { needed: false, text: "none — iterating on failures" },
+    timeline: [
+      { who: "user", text: "e2e tests for agent workflows" },
+      { who: "ai",   text: "wrote harness + 12 tests" },
+      { who: "ai",   text: "3 fail on new cobra flags" },
+      { who: "ai",   text: "fixing flag wiring" },
+    ],
+  },
+  "Incident Admin": {
+    name: "Incident Admin", state: "done", stamp: "1h",
+    goal: "audit incident.io followup flow",
+    request: "audit stale-incident reminders, ship if clean",
+    response: "audit clean. 7d stale reminders shipped to prod",
+    action: { needed: false, text: "done — review results when free" },
+    timeline: [
+      { who: "user", text: "audit incident.io flow" },
+      { who: "ai",   text: "mapped followup pipeline" },
+      { who: "ai",   text: "shipped 7d stale reminders" },
+    ],
+  },
+  "Group 3": null,
+};
+
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+let focused = "WIP";
+
+function cardHTML(s) {
+  return `<div class="card">
+    <div class="card-head">
+      <span class="dot ${s.state}"></span><span class="card-name">${esc(s.name)}</span><span class="stamp">${esc(s.stamp)}</span>
+    </div>
+    <div class="sec hero"><div class="sec-label">LAST REQUEST</div><div class="sec-body">${esc(s.request)}</div></div>
+    <div class="sec"><div class="sec-label">GOAL</div><div class="sec-body dim">${esc(s.goal)}</div></div>
+    <div class="sec"><div class="sec-label">RESPONSE</div><div class="sec-body dim">${esc(s.response)}</div></div>
+    <div class="sec ${s.action.needed ? "act" : "noact"}"><div class="sec-label">NEEDS ACTION</div><div class="sec-body">${esc(s.action.text)}</div></div>
+  </div>`;
+}
+
+function tlHTML(s) {
+  return `<div class="tl-card"><div class="tl-head">TIMELINE</div>
+    <div class="tl">${s.timeline.map(t =>
+      `<div class="tl-item ${t.who}"><span class="tl-emoji">${t.who === "user" ? "👤" : "🤖"}</span><span class="tl-text">${esc(t.text)}</span></div>`
+    ).join("")}</div></div>`;
+}
+
+const EMPTY = `<div class="empty">○ no omp session on this surface</div>`;
+
+function render(id) {
+  const s = SESSIONS[id];
+  document.getElementById("card").innerHTML = s ? cardHTML(s) : EMPTY;
+  document.getElementById("timeline").innerHTML = s ? tlHTML(s)
+    : `<div class="empty tl">○ timeline starts when session starts</div>`;
+}
+
+function focusSurface(id) {
+  focused = id;
+  document.querySelectorAll(".s-surf").forEach(b =>
+    b.classList.toggle("focused", b.dataset.id === id));
+  render(id);
+}
+
+function setWidth(px) {
+  const f = document.getElementById("frame");
+  f.classList.remove("w320", "w370", "w420");
+  f.classList.add("w" + px);
+}
+
+document.getElementById("surface-strip").innerHTML = Object.keys(SESSIONS).map(id => {
+  const s = SESSIONS[id];
+  return `<button class="s-surf" data-id="${esc(id)}" onclick="focusSurface('${esc(id)}')">
+    ${s ? `<span class="dot ${s.state}"></span>` : ""}<span>${esc(id)}</span></button>`;
+}).join("");
+focusSurface("WIP");
+</script>
+</body>
+</html>

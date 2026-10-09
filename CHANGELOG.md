@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-19 Sidebar Cards Show Live Agent Timeline
+
+### Changed
+- Every sidebar card now shows what the agent is actually doing: hero request, current goal, latest reply, and a five-turn timeline instead of a bare command line and status word.
+- Assistant replies stopped disappearing from the card — the summarizer returns goal, response, and action lines, so task state is readable without opening the tab.
+- Cards now use the transcript's current session title for the header, rather than the workspace name, so the focused session remains identifiable while the sidebar is open.
+
 ## 2026-09-19 Live omp Session Summary Sidebar
 
 ### Added

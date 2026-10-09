@@ -108,7 +108,22 @@ func RegisterGsyncStatus(gsyncCmd *cobra.Command) {
 	c.Flags().IntP("limit", "n", 15, "How many recent runs to show")
 	c.Flags().String("target", "", "Only show runs for this target")
 	c.Flags().Bool("json", false, "Emit JSON instead of a table")
+	c.RegisterFlagCompletionFunc("target", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return completeGsyncTargets(toComplete)
+	})
 	gsyncCmd.AddCommand(c)
+}
+
+// lastRunPerTarget returns the most recent history entry per target, keyed by
+// target name. Used by `gsync status` and `gsync targets`.
+func lastRunPerTarget(entries []historyEntry) map[string]historyEntry {
+	latest := map[string]historyEntry{}
+	for _, e := range entries {
+		if prev, ok := latest[e.Target]; !ok || e.Time.After(prev.Time) {
+			latest[e.Target] = e
+		}
+	}
+	return latest
 }
 
 func runGsyncStatus(cmd *cobra.Command, args []string) error {
@@ -162,12 +177,7 @@ func runGsyncStatus(cmd *cobra.Command, args []string) error {
 
 	// Per-target last-run summary.
 	fmt.Println(style.TitleStyle.Render("\nlast run per target"))
-	latest := map[string]historyEntry{}
-	for _, e := range entries {
-		if prev, ok := latest[e.Target]; !ok || e.Time.After(prev.Time) {
-			latest[e.Target] = e
-		}
-	}
+	latest := lastRunPerTarget(entries)
 	targets := make([]string, 0, len(latest))
 	for t := range latest {
 		targets = append(targets, t)

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -48,15 +49,23 @@ func RegisterGsync(parent *cobra.Command) {
 			"the Google Cloud Storage SDK, with a live TUI on a terminal. With no target it syncs the " +
 			"workdir backup (modules.backup.source_dir / gcs_bucket); pass a named target from " +
 			"modules.backup.targets to sync elsewhere, e.g. `cly gsync sessions`. A target lists any number " +
-			"of {source_dir, prefix} sources, each uploaded under its prefix. Without a terminal " +
+			"of {source_dir, prefix} sources, each uploaded under its prefix. `cly gsync targets` lists every " +
+			"configured target with its bucket and sources. Without a terminal " +
 			"(scheduled or piped) it runs headless, prints a one-line summary, and exits non-zero on upload errors. " +
 			"Use `cly gsync status` for run history.",
 		Args: cobra.MaximumNArgs(1),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) > 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return completeGsyncTargets(toComplete)
+		},
 		RunE: runGsync,
 	}
 	cmd.Flags().IntVarP(&gsyncJobs, "jobs", "j", 4, "Number of folders to sync in parallel")
 	parent.AddCommand(cmd)
 	RegisterGsyncStatus(cmd)
+	RegisterGsyncTargets(cmd)
 }
 
 // syncSource is one local directory synced into the target bucket under an
@@ -112,7 +121,7 @@ func resolveSyncTarget(args []string) (target, bucket string, sources []syncSour
 		}
 	}
 	if bucket == "" || len(sources) == 0 {
-		return "", "", nil, fmt.Errorf("sync target %q is not configured; add it to ~/.config/cly/config.yaml:\n\nmodules:\n  backup:\n    targets:\n      %s:\n        gcs_bucket: your-bucket-name\n        sources:\n          - source_dir: /path/to/dir\n            prefix: name", target, target)
+		return "", "", nil, fmt.Errorf("sync target %q is not configured; add it to ~/.config/cly/config.yaml:\n\n%s", target, targetConfigExample)
 	}
 	return target, bucket, sources, nil
 }
@@ -148,6 +157,162 @@ func targetSources(name string) []syncSource {
 		out = append(out, syncSource{dir: pkgconfig.ExpandPath(dir), prefix: prefix})
 	}
 	return out
+}
+
+// targetNames returns every configured target name under
+// modules.backup.targets, sorted. Used by help, completion, and `gsync targets`.
+func targetNames() []string {
+	c := pkgconfig.Get()
+	mods := c.Modules["backup"]
+	if mods == nil {
+		return nil
+	}
+	targets, _ := mods["targets"].(map[string]interface{})
+	out := make([]string, 0, len(targets))
+	for name, t := range targets {
+		if _, ok := t.(map[string]interface{}); ok {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// completeGsyncTargets is the positional completion for gsync and its
+// subcommands: "workdir" plus every configured target, prefix-filtered.
+func completeGsyncTargets(toComplete string) ([]string, cobra.ShellCompDirective) {
+	var matches []string
+	for _, name := range append([]string{"workdir"}, targetNames()...) {
+		if strings.HasPrefix(name, toComplete) {
+			matches = append(matches, name)
+		}
+	}
+	return matches, cobra.ShellCompDirectiveNoFileComp
+}
+
+// targetConfigExample shows the config.yaml schema for defining targets.
+// Shared by the unconfigured-target error and `gsync targets` when empty.
+const targetConfigExample = `modules:
+  backup:
+    targets:
+      my-target:
+        gcs_bucket: your-bucket-name
+        sources:
+          - source_dir: /path/to/dir
+            prefix: name`
+
+// RegisterGsyncTargets adds `cly gsync targets`, the discovery surface for
+// configured sync targets: bucket, sources with prefixes, and last-run outcome.
+func RegisterGsyncTargets(gsyncCmd *cobra.Command) {
+	c := &cobra.Command{
+		Use:   "targets",
+		Short: "List configured sync targets and their sources",
+		Long: "Lists every configured gsync target: the implicit workdir backup plus each " +
+			"modules.backup.targets entry, with its bucket, source dirs and object prefixes, " +
+			"and the outcome of the last run. This is the discovery surface for `cly gsync <target>`.",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		RunE:              runGsyncTargets,
+	}
+	c.Flags().Bool("json", false, "Emit JSON instead of a table")
+	gsyncCmd.AddCommand(c)
+}
+
+// gsyncSourceDoc is one source row in `gsync targets` output.
+type gsyncSourceDoc struct {
+	Dir    string `json:"dir"`
+	Prefix string `json:"prefix,omitempty"`
+}
+
+// gsyncTargetDoc is one target row in `gsync targets` output.
+type gsyncTargetDoc struct {
+	Name    string           `json:"name"`
+	Bucket  string           `json:"bucket"`
+	Sources []gsyncSourceDoc `json:"sources"`
+	LastRun *historyEntry    `json:"last_run,omitempty"`
+}
+
+func runGsyncTargets(cmd *cobra.Command, args []string) error {
+	asJSON, _ := cmd.Flags().GetBool("json")
+
+	history, _ := readHistory()
+	last := lastRunPerTarget(history)
+
+	targets := []gsyncTargetDoc{workdirTargetDoc(last["workdir"])}
+	for _, name := range targetNames() {
+		e := last[name]
+		t := gsyncTargetDoc{
+			Name:   name,
+			Bucket: pkgconfig.GetString("modules.backup.targets." + name + ".gcs_bucket"),
+			LastRun: &e,
+		}
+		for _, src := range targetSources(name) {
+			t.Sources = append(t.Sources, gsyncSourceDoc{Dir: src.dir, Prefix: src.prefix})
+		}
+		// Legacy single source_dir (bucket root) targets.
+		if len(t.Sources) == 0 {
+			if dir := pkgconfig.GetString("modules.backup.targets." + name + ".source_dir"); dir != "" {
+				t.Sources = []gsyncSourceDoc{{Dir: pkgconfig.ExpandPath(dir)}}
+			}
+		}
+		targets = append(targets, t)
+	}
+
+	if asJSON {
+		out, err := json.MarshalIndent(targets, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(out))
+		return nil
+	}
+
+	// Only the workdir is configured: nothing under modules.backup.targets yet.
+	if len(targets) == 1 {
+		fmt.Println(style.YellowStyle.Render("no named targets configured; add them to ~/.config/cly/config.yaml:\n"))
+		fmt.Println(targetConfigExample)
+		return nil
+	}
+
+	fmt.Println(style.TitleStyle.Render(fmt.Sprintf("gsync targets (%d configured)", len(targets))))
+	for _, t := range targets {
+		icon := " "
+		if t.LastRun != nil {
+			if t.LastRun.Errors > 0 {
+				icon = style.RedStyle.Render("✗")
+			} else {
+				icon = style.GreenStyle.Render("✓")
+			}
+		}
+		fmt.Printf(" %s %-12s bucket %-24s last run %s\n", icon, t.Name, t.Bucket, lastRunAgo(t.LastRun))
+		for _, src := range t.Sources {
+			if src.Prefix == "" {
+				fmt.Printf("   %s → (bucket root)\n", src.Dir)
+			} else {
+				fmt.Printf("   %s → %s\n", src.Dir, src.Prefix)
+			}
+		}
+	}
+	return nil
+}
+
+// workdirTargetDoc assembles the implicit workdir backup row.
+func workdirTargetDoc(e historyEntry) gsyncTargetDoc {
+	last := &e
+	return gsyncTargetDoc{
+		Name:    "workdir",
+		Bucket:  getBucket(),
+		Sources: []gsyncSourceDoc{{Dir: getWorkdir()}},
+		LastRun: last,
+	}
+}
+
+// lastRunAgo renders "3h ago" for a run entry, or "never" when nil.
+func lastRunAgo(e *historyEntry) string {
+	if e == nil || e.Time.IsZero() {
+		return "never"
+	}
+	return time.Since(e.Time).Round(time.Second).String() + " ago"
 }
 
 func runGsync(cmd *cobra.Command, args []string) error {

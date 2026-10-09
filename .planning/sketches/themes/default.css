@@ -1,0 +1,20 @@
+:root {
+  /* cmux-adjacent dark developer-tool theme */
+  --color-bg: #161618;
+  --color-surface: #1b1b1d;
+  --color-surface-raised: #222226;
+  --color-border: #2e2e33;
+  --color-text: #e8e8ea;
+  --color-text-dim: #9b9ba3;
+  --color-text-faint: #6b6b74;
+  --color-accent: #ff8800;       /* omp orange */
+  --color-running: #ff8800;
+  --color-waiting: #4da3ff;
+  --color-done: #34c77b;
+  --color-idle: #5a5a63;
+  --color-error: #ff5f56;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  --radius: 8px;
+  --radius-sm: 5px;
+}
