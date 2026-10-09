@@ -20,6 +20,8 @@ type Digest struct {
 	LastTool   string // "<tool>: <intent>"
 	Exit       int    // latest known exit code, ExitUnknown when none
 	Turns      int    // user+assistant messages seen in the tail
+	Timeline   []Turn // last ≤5 user/assistant text messages, oldest→newest, capRunes lineCap
+	Action     string // needs-action heuristic from LastAssist, "" when none
 }
 
 var (
@@ -28,6 +30,16 @@ var (
 	wsRegex   = regexp.MustCompile(`\s+`)
 	intentCap = 120
 )
+
+// stripMD removes inline markdown markers (bold, italic, code spans) from
+// transcript text: the card renders plain text, and raw **`…`** noise in a
+// timeline row is unreadable.
+func stripMD(s string) string {
+	s = strings.ReplaceAll(s, "**", "")
+	s = strings.ReplaceAll(s, "*", "")
+	s = strings.ReplaceAll(s, "`", "")
+	return s
+}
 
 // DigestTail reads the last maxTail bytes of a transcript (dropping the
 // partial first line, the file can be multi-MB) and returns both the
@@ -98,7 +110,7 @@ func DigestTail(path string, maxTail, maxChars int) (Digest, string, error) {
 			if role == "" {
 				role = "user"
 			}
-			text := extractText(e.Message.Content)
+			text := stripMD(extractText(e.Message.Content))
 			switch role {
 			case "user":
 				if text == "" {
@@ -110,6 +122,7 @@ func DigestTail(path string, maxTail, maxChars int) (Digest, string, error) {
 				}
 				d.LastUser = capRunes(text, intentCap)
 				d.LastUserAt = at
+				d.Timeline = append(d.Timeline, Turn{Who: "user", Text: capRunes(text, lineCap)})
 				parts = append(parts, "user: "+text)
 			case "assistant":
 				if text == "" {
@@ -117,6 +130,7 @@ func DigestTail(path string, maxTail, maxChars int) (Digest, string, error) {
 				}
 				d.Turns++
 				d.LastAssist = capRunes(text, intentCap)
+				d.Timeline = append(d.Timeline, Turn{Who: "ai", Text: capRunes(text, lineCap)})
 				parts = append(parts, "assistant: "+text)
 			case "toolResult":
 				if text != "" {
@@ -132,6 +146,10 @@ func DigestTail(path string, maxTail, maxChars int) (Digest, string, error) {
 			}
 		}
 	}
+	if n := len(d.Timeline) - 5; n > 0 {
+		d.Timeline = d.Timeline[n:] // keep only the newest 5, oldest→newest
+	}
+	d.Action = actionFrom(d.LastAssist)
 	out := strings.Join(parts, "\n")
 	if len(out) > maxChars {
 		out = out[len(out)-maxChars:]
@@ -140,6 +158,25 @@ func DigestTail(path string, maxTail, maxChars int) (Digest, string, error) {
 		}
 	}
 	return d, out, nil
+}
+
+// actionFrom derives the needs-action text from the latest assistant message:
+// the last sentence containing a question mark, capped at 120 runes, or ""
+// when the message asks nothing.
+func actionFrom(text string) string {
+	if !strings.Contains(text, "?") {
+		return ""
+	}
+	act := ""
+	for _, s := range strings.FieldsFunc(text, func(r rune) bool { return r == '.' || r == '!' || r == '\n' }) {
+		if strings.Contains(s, "?") {
+			act = strings.TrimSpace(s)
+		}
+	}
+	if act == "" {
+		return ""
+	}
+	return capRunes(act, 120)
 }
 
 // lastExitCode extracts an exit code from tool-result text, preferring the

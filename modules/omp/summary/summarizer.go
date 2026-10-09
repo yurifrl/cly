@@ -51,9 +51,12 @@ func NewSummarizer(cfg Config) *Summarizer {
 	return s
 }
 
-// Enqueue adds a job unless the session is already queued. A focused job
-// arriving for a session that is currently running (stale fingerprint)
-// cancels that run so the fresh one can fire on the next tick.
+// Enqueue adds a job unless the session is already queued or an AI
+// round-trip for it is in flight. Never cancels the in-flight run: a live
+// session's transcript keeps growing, so a "fresher" focused job arrives
+// every tick — cancelling on each one starves the session forever. The
+// running job finishes and saves; the next tick re-enqueues if the
+// fingerprint moved again.
 func (s *Summarizer) Enqueue(j Job) {
 	if !s.HasKey {
 		return
@@ -61,10 +64,7 @@ func (s *Summarizer) Enqueue(j Job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if cancel, busy := s.running[j.Target.SessionID]; busy {
-		if j.Focused {
-			cancel()
-		}
+	if _, busy := s.running[j.Target.SessionID]; busy {
 		return
 	}
 	for i := range s.queue {
@@ -95,6 +95,11 @@ func (s *Summarizer) pending() (Job, bool) {
 		}
 	}
 	j := s.queue[idx]
+	// Reserve the running slot before the pop becomes visible. Idle()
+	// counts queue and running; without the reservation, --once observes
+	// the pop-to-register window (queue empty, running empty) and exits
+	// before the worker even starts the job.
+	s.running[j.Target.SessionID] = func() {}
 	s.queue = append(s.queue[:idx], s.queue[idx+1:]...)
 	return j, true
 }
@@ -161,13 +166,18 @@ func (s *Summarizer) run(ctx context.Context, job Job) {
 	state.Update(t.SessionID, marker)
 	_ = SaveState(t.CWD, state)
 
+	// Fold scan runs before the AI call so the latest fold's raw summary can
+	// ride in the prompt; the mechanical note still lands on the card even
+	// when the summary run errors.
+	path := transcriptPath(t.SessionID)
+	fold := ScanCompactions(path)
+
 	text, dg, err := func() (string, Digest, error) {
-		path := transcriptPath(t.SessionID)
 		dg, tail, err := DigestTail(path, s.cfg.MaxTail, s.cfg.MaxTail)
 		if err != nil {
 			return "", dg, err
 		}
-		out, err := ai.Complete(runCtx, s.override, systemPrompt, buildUserPrompt(t, tail))
+		out, err := ai.Complete(runCtx, s.override, systemPrompt, buildUserPrompt(t, tail, fold))
 		if err != nil {
 			return "", dg, err
 		}
@@ -184,6 +194,11 @@ func (s *Summarizer) run(ctx context.Context, job Job) {
 	res.Turns = dg.Turns
 	res.Provider, res.Model = s.Provider, s.Model
 	res.SurfaceID, res.Title, res.Workspace = t.SurfaceID, t.Title, t.Workspace
+	// Compactions always surface on the card, even when the summary run
+	// errors — that's why the mechanical note exists.
+	if fold.Count > 0 {
+		res.Compactions, res.CompactedAt, res.FoldNote = fold.Count, fold.At, fold.Note
+	}
 	if dg.LastUser != "" {
 		res.UserAsk, res.UserAskAt = dg.LastUser, dg.LastUserAt
 	}
@@ -193,11 +208,26 @@ func (s *Summarizer) run(ctx context.Context, job Job) {
 	if err != nil {
 		res.Status, res.Error = StatusError, err.Error()
 	} else {
-		goal, status := parseReply(text)
+		goal, response, action, foldNote := parseReply(text)
 		if goal != "" {
 			res.Goal = goal
 		}
-		res.AIStatus = status
+		if response != "" {
+			res.Response = response
+		} else {
+			res.Response = capRunes(dg.LastAssist, 140)
+		}
+		if action != "" {
+			res.Action = action
+		} else {
+			res.Action = dg.Action
+		}
+		// The LLM's distillation of the fold summary beats the mechanical
+		// fallback; a missing or "none" line 4 keeps the mechanical note.
+		if foldNote != "" {
+			res.FoldNote = foldNote
+		}
+		res.Timeline = dg.Timeline
 		res.Error = ""
 		res.Status = StatusOK
 	}
@@ -234,36 +264,52 @@ func (s *Summarizer) ShouldSummarize(t Target, fp string, now float64) bool {
 }
 
 const systemPrompt = `You summarize a live coding-agent session for a tiny sidebar card.
-Reply with EXACTLY two lines and nothing else:
+Reply with EXACTLY four lines and nothing else:
 Line 1 - the session's overall goal: what it is trying to accomplish, imperative.
-Line 2 - what the assistant is doing or asking for right now, present tense.
+Line 2 - what the assistant last did or produced, present tense.
+Line 3 - what the user must answer or do next, or exactly none.
+Line 4 - one line distilling the "Compacted history" section of the prompt: what the pre-fold context contained (work done, key files, where things left off); exactly none when the prompt has no such section.
 Rules:
 - Max 100 characters per line, plain terse text.
 - No markdown, no quotes, no labels or prefixes like "Goal:".
 - Prefer specifics (file names, feature names) over generic phrases.
 - If the transcript is empty or unreadable, reply exactly:
 idle
-waiting for activity`
+waiting for activity
+none`
 
-// parseReply splits the model's two-line reply into goal and status.
-func parseReply(out string) (goal, status string) {
+// parseReply splits the model's reply into goal, response, action and the
+// optional fold distillation (line 4, present only when a compaction exists).
+func parseReply(out string) (goal, response, action, fold string) {
 	const cap = 120
+	slot := 0
+	var fields [4]string
 	for _, ln := range strings.Split(out, "\n") {
 		ln = capRunes(ln, cap)
 		if ln == "" {
 			continue
 		}
-		if goal == "" {
-			goal = ln
-		} else if status == "" {
-			status = ln
+		if slot > 3 {
 			break
 		}
+		if strings.EqualFold(ln, "none") {
+			ln = ""
+		}
+		// Line 4 echoing the prompt's own instruction is not a distillation;
+		// drop it so the mechanical note survives.
+		if slot == 3 {
+			low := strings.ToLower(ln)
+			if strings.Contains(low, "line 4") || strings.Contains(low, "exactly none") {
+				ln = ""
+			}
+		}
+		fields[slot] = ln
+		slot++
 	}
-	return goal, status
+	return fields[0], fields[1], fields[2], fields[3]
 }
 
-func buildUserPrompt(t Target, digest string) string {
+func buildUserPrompt(t Target, digest string, fold Fold) string {
 	var b strings.Builder
 	b.WriteString("Session: " + t.Title + "\n")
 	if t.CWD != "" {
@@ -271,6 +317,10 @@ func buildUserPrompt(t Target, digest string) string {
 	}
 	b.WriteString("Transcript tail (oldest first):\n\n")
 	b.WriteString(digest)
+	if fold.Summary != "" {
+		b.WriteString("\n\nCompacted history (the session's older context was folded; latest fold's summary):\n")
+		b.WriteString(fold.Summary)
+	}
 	return b.String()
 }
 

@@ -7,29 +7,45 @@ import (
 )
 
 // State is .omp/summary.json: the per-project cache of session cards.
-// version 2 entries carry everything the sidebar card needs.
+// version 3 entries carry everything the sidebar card needs.
 type State struct {
-	Version   int               `json:"version"` // 2
+	Version   int               `json:"version"` // stateVersion
 	UpdatedAt float64           `json:"updated_at_unix"`
 	Sessions  map[string]*Entry `json:"sessions"`
+}
+
+// stateVersion is the on-disk format version. v3 adds response/action/timeline
+// to each entry; loading a v2 file is a no-op migration (missing fields decode
+// as empty).
+const stateVersion = 3
+
+// Turn is one timeline message on a session card.
+type Turn struct {
+	Who  string `json:"who"` // "user" | "ai"
+	Text string `json:"text"`
 }
 
 // Entry is one omp session's card: what the user asked, what the assistant is
 // doing, the last command, and which AI produced it.
 type Entry struct {
-	Status    string `json:"status"` // pending | running | ok | error
-	Error     string `json:"error,omitempty"`
+	Status string `json:"status"` // pending | running | ok | error
+	Error  string `json:"error,omitempty"`
 
 	SurfaceID string `json:"surface_id,omitempty"`
-	Title     string `json:"title,omitempty"`    // surface title
+	Title     string `json:"title,omitempty"`     // surface title
 	Workspace string `json:"workspace,omitempty"` // workspace title
 
-	Goal        string  `json:"goal,omitempty"`       // one-line: what this session is trying to accomplish
-	AIStatus    string  `json:"ai_status,omitempty"`  // one-line: what the assistant is doing/asking now
-	UserAsk     string  `json:"user_ask,omitempty"`   // most recent substantive user message
-	UserAskAt   float64 `json:"user_ask_at,omitempty"`
-	LastCmd     string  `json:"last_command,omitempty"` // last tool: intent one-liner
-	Exit        int     `json:"exit"`                   // exit code of the last command; -1 unknown
+	Goal      string  `json:"goal,omitempty"`     // one-line: what this session is trying to accomplish
+	Response  string  `json:"response,omitempty"` // last assistant reply
+	Action    string  `json:"action,omitempty"`   // what the user must answer; empty = nothing
+	UserAsk   string  `json:"user_ask,omitempty"` // most recent substantive user message
+	UserAskAt float64 `json:"user_ask_at,omitempty"`
+	LastCmd   string  `json:"last_command,omitempty"` // last tool: intent one-liner
+	Exit      int     `json:"exit"`                   // exit code of the last command; -1 unknown
+	Timeline    []Turn  `json:"timeline,omitempty"` // oldest→newest, max 5
+	Compactions int     `json:"compactions,omitempty"` // OMP context folds in the transcript
+	CompactedAt float64 `json:"compacted_at,omitempty"` // latest fold timestamp
+	FoldNote    string  `json:"fold_note,omitempty"` // one-line distill of the latest fold
 
 	Model       string  `json:"model,omitempty"`
 	Provider    string  `json:"provider,omitempty"`
@@ -70,7 +86,7 @@ func migrateV1(v *v1Summary) *Entry {
 // first load without an AI round-trip. Corrupt file → empty state (self-heals
 // on next Save).
 func LoadState(cwd string) *State {
-	st := &State{Version: 2, Sessions: map[string]*Entry{}}
+	st := &State{Version: stateVersion, Sessions: map[string]*Entry{}}
 	b, err := os.ReadFile(StatePath(cwd))
 	if err != nil {
 		return st
@@ -84,7 +100,9 @@ func LoadState(cwd string) *State {
 		return st
 	}
 	switch {
-	case probe.Version == 2 && probe.Sessions != nil:
+	case probe.Version == stateVersion && probe.Sessions != nil:
+		st.Sessions = probe.Sessions
+	case probe.Version == stateVersion-1 && probe.Sessions != nil: // v2: no-op migration, missing fields decode empty
 		st.Sessions = probe.Sessions
 	case probe.Summaries != nil: // v1
 		for id, v := range probe.Summaries {
@@ -105,7 +123,7 @@ func SaveState(cwd string, st *State) error {
 	if st.Sessions == nil {
 		st.Sessions = map[string]*Entry{}
 	}
-	st.Version = 2
+	st.Version = stateVersion
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
@@ -181,4 +199,3 @@ func (st *State) NewerThan(at float64) bool {
 
 // ExitUnknown marks entries whose last command has no exit code yet.
 const ExitUnknown = -1
-

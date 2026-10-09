@@ -1,6 +1,7 @@
 package ompsummary
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,8 +17,10 @@ func TestStateRoundtrip(t *testing.T) {
 
 	st.Update("s1", &Entry{
 		Goal:        "building auth",
-		AIStatus:    "editing login.go",
+		Response:    "added login handler",
+		Action:      "confirm the redirect url",
 		Status:      StatusOK,
+		Timeline:    []Turn{{Who: "user", Text: "add auth"}, {Who: "ai", Text: "done, added login.go"}},
 		Fingerprint: "fp1",
 		Provider:    "openai",
 		Model:       "gpt-5",
@@ -27,22 +30,79 @@ func TestStateRoundtrip(t *testing.T) {
 	}
 
 	got := LoadState(cwd).Get("s1")
-	if got == nil || got.Goal != "building auth" || got.AIStatus != "editing login.go" ||
+	if got == nil || got.Goal != "building auth" || got.Response != "added login handler" ||
+		got.Action != "confirm the redirect url" ||
 		got.Status != StatusOK || got.Fingerprint != "fp1" ||
 		got.Provider != "openai" || got.Model != "gpt-5" {
 		t.Fatalf("roundtrip mismatch: %+v", got)
+	}
+	if len(got.Timeline) != 2 || got.Timeline[0].Who != "user" || got.Timeline[0].Text != "add auth" ||
+		got.Timeline[1].Who != "ai" || got.Timeline[1].Text != "done, added login.go" {
+		t.Fatalf("timeline roundtrip mismatch: %+v", got.Timeline)
 	}
 	if got.UpdatedAt == 0 {
 		t.Fatal("Update should stamp UpdatedAt")
 	}
 
-	// On-disk shape is v2: version + sessions key.
+	// On-disk shape is v3: version + sessions key.
 	b, err := os.ReadFile(StatePath(cwd))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `"version": 2`) || !strings.Contains(string(b), `"sessions"`) {
-		t.Fatalf("saved file not v2 shape:\n%s", b)
+	if !strings.Contains(string(b), `"version": 3`) || !strings.Contains(string(b), `"sessions"`) {
+		t.Fatalf("saved file not v3 shape:\n%s", b)
+	}
+}
+
+// TestV2MigrationNoOp: a v2 file (no response/action/timeline) loads with those
+// fields empty and is rewritten as v3 on the next save.
+func TestV2MigrationNoOp(t *testing.T) {
+	cwd := t.TempDir()
+	p := StatePath(cwd)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v2 := `{"version":2,"updated_at_unix":100,"sessions":{"s1":{"status":"ok","goal":"building auth","ai_status":"editing login.go","user_ask":"add auth"}}}`
+	if err := os.WriteFile(p, []byte(v2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := LoadState(cwd).Get("s1")
+	if got == nil {
+		t.Fatal("v2 entry not loaded")
+	}
+	if got.Goal != "building auth" || got.UserAsk != "add auth" || got.Status != StatusOK {
+		t.Fatalf("v2 fields lost: %+v", got)
+	}
+	if got.Response != "" || got.Action != "" || got.Timeline != nil {
+		t.Fatalf("v2 entry should decode with empty new fields: %+v", got)
+	}
+
+	// Saving migrates the file to v3 permanently.
+	if err := SaveState(cwd, LoadState(cwd)); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"version": 3`) {
+		t.Fatalf("save after migration should be v3:\n%s", b)
+	}
+}
+
+// TestAIStatusRemoved pins the field removal: the Entry no longer serializes an
+// ai_status key even when a legacy file carries one.
+func TestAIStatusRemoved(t *testing.T) {
+	b, err := json.Marshal(&Entry{Status: StatusOK})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "ai_status") {
+		t.Fatalf("ai_status should be gone from Entry: %s", b)
+	}
+	var e Entry
+	if err := json.Unmarshal([]byte(`{"ai_status":"editing"}`), &e); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -90,8 +150,8 @@ func TestV1MigrationPreservesGoalAndModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `"version": 2`) {
-		t.Fatalf("save after migration should be v2:\n%s", b)
+	if !strings.Contains(string(b), `"version": 3`) {
+		t.Fatalf("save after migration should be v3:\n%s", b)
 	}
 }
 

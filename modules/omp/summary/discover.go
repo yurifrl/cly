@@ -1,16 +1,17 @@
 package ompsummary
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/yurifrl/cly/pkg/cmux"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/yurifrl/cly/pkg/cmux"
 )
 
 // Target is one displayable row: a surface whose focused omp session is live
@@ -21,7 +22,7 @@ type Target struct {
 	PaneRef     string
 	SurfaceRef  string
 	WorkspaceID string
-	Title       string // surface title, or workspace title fallback
+	Title       string // transcript session title, or surface title fallback
 	Workspace   string
 	CWD         string
 	Focused     bool
@@ -68,6 +69,59 @@ func transcriptPath(sessionID string) string {
 		}
 	}
 	return best
+}
+
+// transcriptTitle returns the user-facing title from a transcript preamble.
+// OMP writes the explicit title record before conversation history; legacy
+// transcripts have only the session metadata title.
+func transcriptTitle(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	const preambleBytes = 8 << 10
+	scanner := bufio.NewScanner(io.LimitReader(f, preambleBytes))
+	scanner.Buffer(make([]byte, 1024), preambleBytes)
+	var sessionTitle string
+	for scanner.Scan() {
+		var event struct {
+			Type  string `json:"type"`
+			Title string `json:"title"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		title := strings.TrimSpace(event.Title)
+		if title == "" {
+			continue
+		}
+		switch event.Type {
+		case "title":
+			return title
+		case "session":
+			if sessionTitle == "" {
+				sessionTitle = title
+			}
+		}
+	}
+	return sessionTitle
+}
+
+// applyTranscriptMetadata replaces hook-store fallbacks with authoritative
+// transcript metadata when the local transcript is available.
+func applyTranscriptMetadata(t *Target) {
+	path := transcriptPath(t.SessionID)
+	if path == "" {
+		return
+	}
+	if fi, err := os.Stat(path); err == nil {
+		t.UpdatedAt = float64(fi.ModTime().Unix())
+	}
+	if title := transcriptTitle(path); title != "" {
+		t.Title = title
+	}
 }
 
 // Fingerprint identifies a transcript revision: size:mtimeNano.
@@ -146,11 +200,7 @@ func merge(tree *cmux.Tree, rows []cmux.SessionRow, now, maxAge float64) []Targe
 						Focused:     s.Focused || activeIs(tree, s.ID),
 						UpdatedAt:   r.UpdatedAtUnix,
 					}
-					if fp := transcriptPath(t.SessionID); fp != "" {
-						if fi, err := os.Stat(fp); err == nil {
-							t.UpdatedAt = float64(fi.ModTime().Unix())
-						}
-					}
+					applyTranscriptMetadata(&t)
 					if t.CWD != "" {
 						out = append(out, t)
 					}
@@ -258,11 +308,7 @@ func ActiveTarget(ctx context.Context, now, maxAge float64) (*Target, error) {
 		if !found {
 			return nil, false
 		}
-		if fp := transcriptPath(t.SessionID); fp != "" {
-			if fi, err := os.Stat(fp); err == nil {
-				t.UpdatedAt = float64(fi.ModTime().Unix())
-			}
-		}
+		applyTranscriptMetadata(t)
 		return t, true
 	}
 

@@ -11,71 +11,71 @@ import (
 // Tagged-line markers the omp-summary sidebar card parses. One line per
 // section; the sidebar splits on the markers, so order here is display order.
 const (
-	tagCmd    = "▸ "
-	tagAsk    = "? "
-	tagGoal   = "◆ "
-	tagAI     = "● "
-	tagModel  = "✦ "
-	tagStamp  = "⏱ "
-	cardCap   = 400 // total card budget in runes
-	lineCap   = 140 // per-line budget in runes
+	// Positional wire format (card v2). cmux's sidebar interpreter mangles
+	// multibyte string surgery — hasPrefix and dropFirst mis-split the
+	// two-rune glyph tags — so the card carries no tags at all: segments
+	// join with "|" and the renderer addresses them strictly by position.
+	//   0 title | 1 stamp | 2 ask | 3 goal | 4 response | 5 action | 6 compaction | 7+ timeline
+	// Empty hero slots render "~"; the sidebar hides single-char rows.
+	timelineMax = 5 // matches state's Timeline cap (oldest→newest)
+	cardCap     = 900 // total card budget in runes (wrapped timeline rows need room)
+	lineCap     = 140 // per-line budget in runes
 )
 
-// Card renders an entry into the tagged-segment sidebar format. Empty
-// sections are omitted; segments join with " | " because cmux squashes
-// newlines out of workspace descriptions before the sidebar binding sees
-// them, and the sidebar splits on the pipe instead. The whole card is
-// capped at cardCap runes so a long command or summary can never blow out
-// the narrow sidebar.
-func Card(e *Entry) string {
-	var b strings.Builder
-	put := func(tag, text string) {
-		if text == "" {
-			return
+// pad fills empty segments with the "~" placeholder so positions stay fixed.
+func pad(segs []string) {
+	for i, s := range segs {
+		if s == "" {
+			segs[i] = "~"
 		}
-		if b.Len() > 0 {
-			b.WriteString(" | ")
-		}
-		b.WriteString(tag)
-		b.WriteString(capRunes(text, lineCap))
 	}
-	put(tagCmd, lastCommandLine(e))
-	put(tagAsk, e.UserAsk)
-	put(tagGoal, e.Goal)
-	put(tagAI, aiLine(e))
-	put(tagModel, modelLine(e))
-	put(tagStamp, stampLine(e))
-	return capRunes(b.String(), cardCap)
 }
 
-// lastCommandLine is `▸ cmd (exit N)`; bare `▸ cmd` while the exit is unknown.
-func lastCommandLine(e *Entry) string {
-	if e.LastCmd == "" {
+// sanitize strips row-structure hazards from a payload: "|" would spawn a
+// fake row, newlines get squashed by cmux anyway, and a literal "~" would be
+// hidden as padding ("~ " keeps it visible).
+func sanitize(text string) string {
+	text = strings.ReplaceAll(text, "|", "/")
+	text = strings.ReplaceAll(text, "\n", " ")
+	text = strings.ReplaceAll(text, "\r", " ")
+	if text == "~" {
+		text = "~ "
+	}
+	return text
+}
+
+// Card renders an entry into the positional sidebar format: fixed slots
+// joined with "|", empty slots padded with "~" so the renderer can address
+// segments by position alone. Timeline rows follow the hero slots in
+// chronological order. The whole card is capped at cardCap runes so a long
+// command or summary can never blow out the narrow sidebar.
+func Card(e *Entry) string {
+	head := e.Title
+	if head == "" {
+		head = e.SurfaceID
+	}
+	if head == "" {
 		return ""
 	}
-	if e.Exit != ExitUnknown {
-		return e.LastCmd + " (exit " + strconv.Itoa(e.Exit) + ")"
+	segs := []string{
+		sanitize(capRunes(head, lineCap)),
+		sanitize(stampLine(e)),
+		sanitize(capRunes(e.UserAsk, lineCap)),
+		sanitize(capRunes(e.Goal, lineCap)),
+		sanitize(capRunes(e.Response, lineCap)),
+		sanitize(capRunes(e.Action, lineCap)),
+		sanitize(capRunes(foldLine(e), lineCap)),
 	}
-	return e.LastCmd
-}
-
-// aiLine renders the AI-status section; a failed run surfaces the error text
-// instead of a summary so the card never lies about state.
-func aiLine(e *Entry) string {
-	if e.Status == StatusError && e.Error != "" {
-		return "error: " + e.Error
+	pad(segs)
+	for _, turn := range e.Timeline {
+		if len(segs) >= 7+timelineMax {
+			break
+		}
+		if row := sanitize(capRunes(turn.Text, lineCap)); row != "" {
+			segs = append(segs, row)
+		}
 	}
-	return e.AIStatus
-}
-
-// modelLine is `provider/model` (bare model when provider unknown).
-func modelLine(e *Entry) string {
-	switch {
-	case e.Provider != "" && e.Model != "":
-		return e.Provider + "/" + e.Model
-	default:
-		return e.Model
-	}
+	return capRunes(strings.Join(segs, "|"), cardCap)
 }
 
 func stampLine(e *Entry) string {
@@ -83,6 +83,22 @@ func stampLine(e *Entry) string {
 		return ""
 	}
 	return relStamp(e.UpdatedAt, nowUnix())
+}
+
+// foldLine renders the compaction row: "<n> folds · last <rel> · <note>".
+// Zero folds renders empty (padded to "~" and hidden by the sidebar).
+func foldLine(e *Entry) string {
+	if e.Compactions == 0 {
+		return ""
+	}
+	parts := []string{strconv.Itoa(e.Compactions) + " folds"}
+	if e.CompactedAt > 0 {
+		parts = append(parts, "last "+relStamp(e.CompactedAt, nowUnix()))
+	}
+	if e.FoldNote != "" {
+		parts = append(parts, e.FoldNote)
+	}
+	return strings.Join(parts, " · ")
 }
 
 // relStamp renders an epoch-seconds stamp as compact relative time. The

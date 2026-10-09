@@ -1,75 +1,107 @@
-// omp-cards: renders each workspace's omp summary card (set via
-// `cmux workspace-action --action set-description` by `cly omp summary`).
-// The card is pipe-joined tagged segments (cmux squashes newlines out of
-// workspace descriptions before the binding sees them):
-//   ▸ last command (exit N) | ? user ask | ◆ goal
-//   ● ai status | ✦ model | ⏱ stamp
-// Each segment gets its own color; workspaces without a card show a plain row.
+// omp-cards renders one summary card for the focused workspace. `cly omp
+// summary` stores a positional, pipe-joined card in the workspace description:
+//   0 title | 1 stamp | 2 ask | 3 goal | 4 response | 5 action | 6 compaction | 7+ timeline
+// Empty hero slots are "~". cmux's sidebar interpreter mangles multibyte
+// string surgery (hasPrefix/dropFirst mis-split the old two-rune glyph tags),
+// so parsing here uses split + position + count only — no prefix tests, no
+// string subscripts.
 
-func lineTint(_ l) -> String {
-  if l.hasPrefix("? ") { return "primary" }
-  if l.hasPrefix("◆ ") { return "cyan" }
-  if l.hasPrefix("● ") { return "#FF8800" }
-  if l.hasPrefix("✦ ") { return "indigo" }
-  if l.hasPrefix("⏱ ") { return "tertiary" }
-  return "secondary"
+func sectionLabel(_ text: String) -> some View {
+	return Text(text)
+		.font(.system(size: 8, design: .monospaced))
+		.fontWeight(.semibold)
+		.foregroundColor(.tertiary)
 }
 
-func hasCard(_ w) -> Bool {
-  let d = w.description == nil ? "" : String(w.description)
-  return d != ""
-}
+ScrollView {
+	VStack(alignment: .leading, spacing: 0) {
+		ForEach(workspaces) { w in
+			if w.selected {
+				let description = w.description == nil ? "" : String(w.description)
+				let lines = Array(description.split(separator: "|", omittingEmptySubsequences: true).prefix(20))
+				VStack(alignment: .leading, spacing: 0) {
+					VStack(alignment: .leading, spacing: 2) {
+						if lines.count < 1 {
+							Text(w.title).font(.system(size: 13)).bold().foregroundColor("#F97316").frame(maxWidth: .infinity, alignment: .leading)
+						} else {
+							Text(String(lines[0])).font(.system(size: 13)).bold().foregroundColor("#F97316").frame(maxWidth: .infinity, alignment: .leading)
+						}
+						if lines.count > 1 {
+							if String(lines[1]).count > 1 {
+								Text(String(lines[1])).font(.system(size: 9, design: .monospaced)).lineLimit(1).foregroundColor(.tertiary)
+							} else {
+								EmptyView()
+							}
+						}
+					}
+					.padding(.vertical, 2)
 
-func card(_ w) -> some View {
-  let d = w.description == nil ? "" : String(w.description)
-  let lines = d.split(separator: "|", omittingEmptySubsequences: true).prefix(7)
-  return VStack(alignment: .leading, spacing: 2) {
-    ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
-      Text(String(l)).font(.system(size: 10, design: .monospaced)).lineLimit(1).foregroundColor(lineTint(String(l)))
-    }
-  }
-}
+					if lines.count < 6 {
+						Divider().opacity(0.35)
+						Text("No OMP session data yet").font(.system(size: 11)).foregroundColor(.tertiary).padding(.vertical, 9)
+					} else {
+						ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+							let text = String(line)
+							if i == 2 && text.count > 1 {
+								VStack(alignment: .leading, spacing: 4) {
+									Divider().opacity(0.35)
+									sectionLabel("LAST REQUEST")
+									Text(text).font(.system(size: 12)).bold().lineLimit(2).foregroundColor(.primary).frame(maxWidth: .infinity, alignment: .leading)
+								}.padding(.vertical, 8)
+							} else if i == 3 && text.count > 1 {
+								VStack(alignment: .leading, spacing: 4) {
+									Divider().opacity(0.35)
+									sectionLabel("GOAL")
+									Text(text).font(.system(size: 11)).lineLimit(2).foregroundColor(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+								}.padding(.vertical, 8)
+							} else if i == 4 && text.count > 1 {
+								VStack(alignment: .leading, spacing: 4) {
+									Divider().opacity(0.35)
+									sectionLabel("RESPONSE")
+									Text(text).font(.system(size: 11)).lineLimit(2).foregroundColor(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+								}.padding(.vertical, 8)
+							} else if i == 5 && text.count > 1 {
+								VStack(alignment: .leading, spacing: 4) {
+									Divider().opacity(0.35)
+									sectionLabel("NEEDS ACTION")
+									Text(text).font(.system(size: 11)).fontWeight(.semibold).lineLimit(2).foregroundColor(.primary).frame(maxWidth: .infinity, alignment: .leading)
+								}.padding(.vertical, 8)
+							} else if i == 6 && text.count > 1 {
+								VStack(alignment: .leading, spacing: 4) {
+									Divider().opacity(0.35)
+									sectionLabel("COMPACTED")
+									Text(text).font(.system(size: 11, design: .monospaced)).lineLimit(3).foregroundColor(.tertiary).frame(maxWidth: .infinity, alignment: .leading)
+								}.padding(.vertical, 8)
+							} else {
+								EmptyView()
+							}
+						}
 
-func unreadBadge(_ w) -> some View {
-  return Text("\(w.unread)")
-    .font(.system(size: 9, design: .monospaced))
-    .foregroundColor(.orange)
-    .padding(3)
-    .background { Capsule().foregroundColor(.orange).opacity(0.2) }
-}
-
-func row(_ w) -> some View {
-  return Button(action: { cmux("workspace.select", workspace_id: w.id) }) {
-    VStack(alignment: .leading, spacing: 4) {
-      HStack(spacing: 5) {
-        Text(w.selected ? "●" : "○")
-          .font(.system(size: 9))
-          .foregroundColor(w.selected ? "#FF8800" : .secondary)
-        Text(w.title).font(.system(size: 11)).lineLimit(1)
-        Spacer()
-        if w.unread > 0 {
-          unreadBadge(w)
-        }
-      }
-      if hasCard(w) {
-        card(w)
-      }
-    }
-    .padding(6)
-    .background { RoundedRectangle(cornerRadius: 8).foregroundColor(w.selected ? "#2A2A2E" : "#1E1E20") }
-  }
-}
-
-VStack(alignment: .leading, spacing: 8) {
-  HStack(spacing: 6) {
-    Image(systemName: "sparkles").foregroundColor("#FF8800")
-    Text("omp").font(.headline)
-    Spacer()
-    Text(clock.time).font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
-  }
-  .padding(4)
-  Divider()
-  Reorderable(workspaces, move: "workspace.reorder") { w in
-    row(w)
-  }
+						if lines.count > 7 {
+							VStack(alignment: .leading, spacing: 6) {
+								sectionLabel("TIMELINE")
+								ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+									let text = String(line)
+									if i >= 7 && text.count > 1 {
+										Text("• " + text).font(.system(size: 10, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).foregroundColor(.primary)
+									} else {
+										EmptyView()
+									}
+								}
+							}
+							.padding(8)
+							.background { RoundedRectangle(cornerRadius: 7).fill("#141416") }
+							.overlay { RoundedRectangle(cornerRadius: 7).stroke("#343438", lineWidth: 1) }
+							.padding(.top, 8)
+						}
+					}
+				}
+				.padding(10)
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.background { RoundedRectangle(cornerRadius: 10).fill("#19191B") }
+				.overlay { RoundedRectangle(cornerRadius: 10).stroke("#333337", lineWidth: 1) }
+			}
+		}
+	}
+	.padding(10)
 }

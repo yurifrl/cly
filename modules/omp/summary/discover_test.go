@@ -65,7 +65,7 @@ func TestMergeFocusedFirst(t *testing.T) {
 				ID:    "WS1",
 				Title: "w",
 				Panes: []treePane{{
-					Ref:      "pane:1",
+					Ref: "pane:1",
 					Surfaces: []treeSurf{
 						{ID: "S1", Ref: "surface:1", PaneRef: "pane:1"},
 						{ID: "S2", Ref: "surface:2", PaneRef: "pane:1", Focused: true},
@@ -112,6 +112,41 @@ func writeTranscript(t *testing.T, lines ...string) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestTranscriptTitle(t *testing.T) {
+	cases := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{
+			name: "prefers explicit title event",
+			lines: []string{
+				`{"type":"session","title":"automatic task title"}`,
+				`{"type":"title","title":"sidebar"}`,
+			},
+			want: "sidebar",
+		},
+		{
+			name:  "falls back to session metadata",
+			lines: []string{`{"type":"session","title":"automatic task title"}`},
+			want:  "automatic task title",
+		},
+		{
+			name:  "ignores malformed metadata",
+			lines: []string{`{not json}`},
+			want:  "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := transcriptTitle(writeTranscript(t, tc.lines...)); got != tc.want {
+				t.Fatalf("transcriptTitle() = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 var msgLine = func(role, text string) string {
@@ -289,6 +324,31 @@ func TestActiveTargetPrefersFocusedTerminal(t *testing.T) {
 	}
 	if tgt.WorkspaceID != "WS1" || tgt.Title != "omp working" {
 		t.Fatalf("target=%+v, want workspace WS1 and surface title", tgt)
+	}
+}
+
+func TestActiveTargetUsesTranscriptSessionTitle(t *testing.T) {
+	tree := stickyTree()
+	tree.Active = &cmux.TreeActive{SurfaceID: "S1", PaneRef: "pane:1", SurfaceRef: "surface:1"}
+	seamFixture(t, tree, []cmux.SessionRow{stickyRow("S1")})
+
+	root := t.TempDir()
+	oldSessionsDir := sessionsDir
+	sessionsDir = func() string { return root }
+	t.Cleanup(func() { sessionsDir = oldSessionsDir })
+	if err := os.MkdirAll(filepath.Join(root, "proj"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "proj", "test_sess-1.jsonl"), []byte(`{"type":"title","title":"sidebar"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tgt, err := ActiveTarget(context.Background(), 2000, 600)
+	if err != nil || tgt == nil {
+		t.Fatalf("target=%+v err=%v, want live target", tgt, err)
+	}
+	if tgt.Title != "sidebar" {
+		t.Fatalf("Title = %q, want transcript session title", tgt.Title)
 	}
 }
 

@@ -50,6 +50,35 @@ func TestPendingFocusedJumpsAhead(t *testing.T) {
 	}
 }
 
+func TestEnqueueBusyDropsWithoutCancelling(t *testing.T) {
+	s := testSummarizer()
+	tmp := t.TempDir()
+	cancelled := 0
+	s.running["live"] = func() { cancelled++ }
+	s.Enqueue(Job{Target: Target{SessionID: "live", CWD: tmp}, Fingerprint: "fp1", Focused: true})
+
+	if len(s.queue) != 0 {
+		t.Fatalf("queue = %d, want 0 while a run is in flight", len(s.queue))
+	}
+	if cancelled != 0 {
+		t.Fatalf("cancelled = %d, want 0 (in-flight run must finish and save)", cancelled)
+	}
+}
+
+func TestPendingReservesRunningSlot(t *testing.T) {
+	s := testSummarizer()
+	s.Enqueue(Job{Target: Target{SessionID: "s1", CWD: t.TempDir()}, Fingerprint: "fp1"})
+	if s.Idle() {
+		t.Fatal("Idle = true with a queued job")
+	}
+	if _, ok := s.pending(); !ok {
+		t.Fatal("pending = !ok, want the job")
+	}
+	if s.Idle() {
+		t.Fatal("Idle = true between pop and run registration; --once would exit before the job starts")
+	}
+}
+
 func TestEnqueueNoKeyIsNoop(t *testing.T) {
 	s := testSummarizer()
 	s.HasKey = false
@@ -117,5 +146,54 @@ func TestShouldSummarize(t *testing.T) {
 	focused.Focused = true
 	if !s.ShouldSummarize(focused, "fp2", now) {
 		t.Fatal("running but stale fingerprint + focused → re-run")
+	}
+}
+
+func TestParseReply(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name                   string
+		in                     string
+		goal, resp, act, fold  string
+	}{
+		{"fold line present",
+			"ship the omp card\nwrote the digest pass\nnone\nearlier session archived older history",
+			"ship the omp card", "wrote the digest pass", "", "earlier session archived older history"},
+		{"fold line echoing the prompt contract is dropped",
+			"ship the omp card\nwrote the digest pass\nnone\nLine 4: exactly none if no compacted history section; otherwise one line distilling that section.",
+			"ship the omp card", "wrote the digest pass", "", ""},
+		{"action present",
+			"fix the sidebar\nrebuilt card model\napprove the diff",
+			"fix the sidebar", "rebuilt card model", "approve the diff", ""},
+		{"fold line rides fourth",
+			"ship the omp card\nwrote the digest pass\nnone\nfolded history covered card layout",
+			"ship the omp card", "wrote the digest pass", "", "folded history covered card layout"},
+		{"missing lines map to empty",
+			"ship the omp card\nwrote the digest pass",
+			"ship the omp card", "wrote the digest pass", "", ""},
+		{"only goal",
+			"ship the omp card",
+			"ship the omp card", "", "", ""},
+		{"none lines blank their slot",
+			"ship the omp card\nnone\nanswer the question",
+			"ship the omp card", "", "answer the question", ""},
+		{"none is case-insensitive",
+			"ship the omp card\nwrote the digest pass\nNONE",
+			"ship the omp card", "wrote the digest pass", "", ""},
+		{"empty input",
+			"",
+			"", "", "", ""},
+		{"blank lines skipped",
+			"\nship the omp card\n\nwrote the digest pass\n",
+			"ship the omp card", "wrote the digest pass", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			goal, resp, act, fold := parseReply(tc.in)
+			if goal != tc.goal || resp != tc.resp || act != tc.act || fold != tc.fold {
+				t.Fatalf("parseReply(%q) = (%q, %q, %q, %q), want (%q, %q, %q, %q)",
+					tc.in, goal, resp, act, fold, tc.goal, tc.resp, tc.act, tc.fold)
+			}
+		})
 	}
 }
