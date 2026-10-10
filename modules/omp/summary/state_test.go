@@ -8,7 +8,19 @@ import (
 	"testing"
 )
 
+// withSummaryRoot redirects the global summary dir into a temp dir for the
+// test's duration and returns its path.
+func withSummaryRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	old := summaryDir
+	summaryDir = func() string { return root }
+	t.Cleanup(func() { summaryDir = old })
+	return root
+}
+
 func TestStateRoundtrip(t *testing.T) {
+	withSummaryRoot(t)
 	cwd := t.TempDir()
 	st := LoadState(cwd) // missing file → empty
 	if len(st.Sessions) != 0 {
@@ -57,6 +69,7 @@ func TestStateRoundtrip(t *testing.T) {
 // TestV2MigrationNoOp: a v2 file (no response/action/timeline) loads with those
 // fields empty and is rewritten as v3 on the next save.
 func TestV2MigrationNoOp(t *testing.T) {
+	withSummaryRoot(t)
 	cwd := t.TempDir()
 	p := StatePath(cwd)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -107,6 +120,7 @@ func TestAIStatusRemoved(t *testing.T) {
 }
 
 func TestLoadCorruptStateSelfHeals(t *testing.T) {
+	withSummaryRoot(t)
 	cwd := t.TempDir()
 	p := StatePath(cwd)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -122,6 +136,7 @@ func TestLoadCorruptStateSelfHeals(t *testing.T) {
 }
 
 func TestV1MigrationPreservesGoalAndModel(t *testing.T) {
+	withSummaryRoot(t)
 	cwd := t.TempDir()
 	p := StatePath(cwd)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -190,8 +205,73 @@ func TestNewerThan(t *testing.T) {
 }
 
 func TestStatePath(t *testing.T) {
+	root := withSummaryRoot(t)
 	got := StatePath("/tmp/p")
-	if filepath.ToSlash(got) != "/tmp/p/.omp/summary.json" {
-		t.Fatalf("StatePath = %q", got)
+	if filepath.Dir(got) != root {
+		t.Fatalf("StatePath dir = %q, want %q", filepath.Dir(got), root)
+	}
+	if ext := filepath.Ext(got); ext != ".json" {
+		t.Fatalf("StatePath ext = %q", ext)
+	}
+}
+
+func TestSlug(t *testing.T) {
+	if slug("/tmp/pa") != slug("/tmp/pa") {
+		t.Fatal("slug not stable")
+	}
+	if slug("/tmp/pa") == slug("/tmp/pb") {
+		t.Fatal("distinct cwds collided")
+	}
+	s := slug("/Users/yuri/My Work/Проект 1")
+	if strings.ContainsAny(s, "/") {
+		t.Fatalf("slug must not contain a path separator: %q", s)
+	}
+	// macOS caps filenames at 255 bytes; keep headroom even for deep cwds.
+	long := "/" + strings.Repeat("deep/", 40) + "end"
+	if len(slug(long)) > 200 {
+		t.Fatalf("slug too long for a filename: %d", len(slug(long)))
+	}
+}
+
+func TestSweepAll(t *testing.T) {
+	root := withSummaryRoot(t)
+	oldNow := nowUnix
+	t.Cleanup(func() { nowUnix = oldNow })
+	now := 1_000_000.0
+	nowUnix = func() float64 { return now }
+
+	// Two projects: each with a stale entry (40d) and a fresh one.
+	for _, cwd := range []string{"/tmp/pa", "/tmp/pb"} {
+		st := &State{Sessions: map[string]*Entry{}}
+		st.Update("old", &Entry{Status: StatusOK})
+		st.Sessions["old"].UpdatedAt = now - 40*24*3600
+		st.Update("fresh", &Entry{Status: StatusOK})
+		st.Sessions["fresh"].UpdatedAt = now
+		if err := SaveState(cwd, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An empty file and a corrupt one: both should be deleted outright.
+	for _, name := range []string{"empty.json", "junk.json"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(`{}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	SweepAll(30 * 24 * 3600)
+
+	for _, cwd := range []string{"/tmp/pa", "/tmp/pb"} {
+		st := LoadState(cwd)
+		if _, ok := st.Sessions["old"]; ok {
+			t.Fatalf("%s: stale entry should be swept", cwd)
+		}
+		if _, ok := st.Sessions["fresh"]; !ok {
+			t.Fatalf("%s: fresh entry should survive", cwd)
+		}
+	}
+	for _, name := range []string{"empty.json", "junk.json"} {
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s should have been removed", name)
+		}
 	}
 }

@@ -2,12 +2,17 @@ package ompsummary
 
 import (
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-// State is .omp/summary.json: the per-project cache of session cards.
-// version 3 entries carry everything the sidebar card needs.
+// State is a project's summary cache: one JSON file per project under the
+// global ~/.omp/agent/summary/ dir. version 3 entries carry everything the
+// sidebar card needs.
 type State struct {
 	Version   int               `json:"version"` // stateVersion
 	UpdatedAt float64           `json:"updated_at_unix"`
@@ -35,17 +40,17 @@ type Entry struct {
 	Title     string `json:"title,omitempty"`     // surface title
 	Workspace string `json:"workspace,omitempty"` // workspace title
 
-	Goal      string  `json:"goal,omitempty"`     // one-line: what this session is trying to accomplish
-	Response  string  `json:"response,omitempty"` // last assistant reply
-	Action    string  `json:"action,omitempty"`   // what the user must answer; empty = nothing
-	UserAsk   string  `json:"user_ask,omitempty"` // most recent substantive user message
-	UserAskAt float64 `json:"user_ask_at,omitempty"`
-	LastCmd   string  `json:"last_command,omitempty"` // last tool: intent one-liner
-	Exit      int     `json:"exit"`                   // exit code of the last command; -1 unknown
-	Timeline    []Turn  `json:"timeline,omitempty"` // oldest→newest, max 5
-	Compactions int     `json:"compactions,omitempty"` // OMP context folds in the transcript
+	Goal        string  `json:"goal,omitempty"`     // one-line: what this session is trying to accomplish
+	Response    string  `json:"response,omitempty"` // last assistant reply
+	Action      string  `json:"action,omitempty"`   // what the user must answer; empty = nothing
+	UserAsk     string  `json:"user_ask,omitempty"` // most recent substantive user message
+	UserAskAt   float64 `json:"user_ask_at,omitempty"`
+	LastCmd     string  `json:"last_command,omitempty"` // last tool: intent one-liner
+	Exit        int     `json:"exit"`                   // exit code of the last command; -1 unknown
+	Timeline    []Turn  `json:"timeline,omitempty"`     // oldest→newest, max 5
+	Compactions int     `json:"compactions,omitempty"`  // OMP context folds in the transcript
 	CompactedAt float64 `json:"compacted_at,omitempty"` // latest fold timestamp
-	FoldNote    string  `json:"fold_note,omitempty"` // one-line distill of the latest fold
+	FoldNote    string  `json:"fold_note,omitempty"`    // one-line distill of the latest fold
 
 	Model       string  `json:"model,omitempty"`
 	Provider    string  `json:"provider,omitempty"`
@@ -81,13 +86,41 @@ func migrateV1(v *v1Summary) *Entry {
 	}
 }
 
-// LoadState reads cwd/.omp/summary.json. v1 files are migrated in-memory
-// (Goal=old text, fingerprint/model preserved) so the card shows something on
-// first load without an AI round-trip. Corrupt file → empty state (self-heals
-// on next Save).
-func LoadState(cwd string) *State {
+// summaryDir is the global home for per-project summary state; overridable
+// for tests. Empty on home-dir failure — reads then just miss.
+var summaryDir = func() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".omp", "agent", "summary")
+}
+
+// StatePath is the global per-project cache location: summaryDir/<slug(cwd)>.json
+func StatePath(cwd string) string {
+	return filepath.Join(summaryDir(), slug(cwd)+".json")
+}
+
+// slug turns a cwd into a stable, filesystem-safe file stem: percent-encoded
+// full path, truncated to stay well under macOS's 255-byte name cap, plus a
+// 16-hex hash so distinct paths stay distinct across truncation.
+func slug(cwd string) string {
+	s := url.PathEscape(filepath.ToSlash(cwd))
+	if len(s) > 180 {
+		s = s[:180]
+	}
+	h := fnv.New64a()
+	h.Write([]byte(cwd))
+	return s + fmt.Sprintf("-%016x", h.Sum64())
+}
+
+// loadAt reads a state file at an explicit path. v1 files are migrated
+// in-memory (Goal=old text, fingerprint/model preserved) so the card shows
+// something on first load without an AI round-trip. Corrupt file → empty
+// state (self-heals on next Save).
+func loadAt(p string) *State {
 	st := &State{Version: stateVersion, Sessions: map[string]*Entry{}}
-	b, err := os.ReadFile(StatePath(cwd))
+	b, err := os.ReadFile(p)
 	if err != nil {
 		return st
 	}
@@ -112,14 +145,14 @@ func LoadState(cwd string) *State {
 	return st
 }
 
-// StatePath is the per-project cache location.
-func StatePath(cwd string) string {
-	return filepath.Join(cwd, ".omp", "summary.json")
+// LoadState reads this project's state from the global summary dir.
+func LoadState(cwd string) *State {
+	return loadAt(StatePath(cwd))
 }
 
-// SaveState atomically writes the state file for cwd: write temp, fsync,
-// rename over the target, 0644.
-func SaveState(cwd string, st *State) error {
+// saveAt atomically writes a state file at an explicit path: write temp,
+// fsync, rename over the target, 0644.
+func saveAt(p string, st *State) error {
 	if st.Sessions == nil {
 		st.Sessions = map[string]*Entry{}
 	}
@@ -128,7 +161,6 @@ func SaveState(cwd string, st *State) error {
 	if err != nil {
 		return err
 	}
-	p := StatePath(cwd)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
@@ -154,6 +186,11 @@ func SaveState(cwd string, st *State) error {
 	return os.Rename(tmp, p)
 }
 
+// SaveState atomically writes this project's state into the global summary dir.
+func SaveState(cwd string, st *State) error {
+	return saveAt(StatePath(cwd), st)
+}
+
 // Get returns the entry for a session id, or nil.
 func (st *State) Get(sessionID string) *Entry {
 	return st.Sessions[sessionID]
@@ -175,6 +212,38 @@ func (st *State) Prune(now, maxAge float64) {
 	for id, e := range st.Sessions {
 		if now-e.UpdatedAt > maxAge {
 			delete(st.Sessions, id)
+		}
+	}
+}
+
+// SweepAll prunes stale sessions from every state file in the global summary
+// dir and removes files left empty, including unparseable ones (they load as
+// empty). maxAge is the entry-TTL in seconds. Best-effort: a missing dir just
+// means nothing was summarized yet.
+func SweepAll(maxAge float64) {
+	dir := summaryDir()
+	if dir == "" {
+		return
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	now := nowUnix()
+	for _, de := range ents {
+		if de.IsDir() || !strings.HasSuffix(de.Name(), ".json") || strings.HasSuffix(de.Name(), ".tmp") {
+			continue
+		}
+		p := filepath.Join(dir, de.Name())
+		st := loadAt(p)
+		n := len(st.Sessions)
+		st.Prune(now, maxAge)
+		switch {
+		case n == 0: // empty or corrupt: dead file, remove
+			_ = os.Remove(p)
+		case len(st.Sessions) == n: // nothing pruned: keep file and its mtime
+		default:
+			_ = saveAt(p, st)
 		}
 	}
 }

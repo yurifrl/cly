@@ -13,9 +13,13 @@ import (
 // frontmost surface has no session of its own (sidebar, shell tabs — see
 // ActiveTarget).
 type Engine struct {
-	cfg Config
-	sum *Summarizer
+	cfg       Config
+	sum       *Summarizer
+	lastSweep float64 // unix of last SweepAll; 0 = never
 }
+
+// sweepEvery spaces SweepAll passes in the tick loop.
+const sweepEvery = time.Hour
 
 func NewEngine(cfg Config, sum *Summarizer) *Engine {
 	return &Engine{cfg: cfg, sum: sum}
@@ -41,6 +45,12 @@ func (e *Engine) Run(ctx context.Context) {
 // callers — --once mode — can report what happened.
 func (e *Engine) Tick(ctx context.Context) *Target {
 	now := nowUnix()
+	// Sweep before discovery: must run even when no surface is live, or a
+	// lone background daemon would never clean anything up.
+	if e.cfg.MaxEntryAge > 0 && now-e.lastSweep >= sweepEvery.Seconds() {
+		e.lastSweep = now
+		SweepAll(e.cfg.MaxEntryAge.Seconds())
+	}
 	t, err := ActiveTarget(ctx, now, e.cfg.MaxAge.Seconds())
 	if err != nil || t == nil {
 		return nil // nothing to show (no live omp surface)

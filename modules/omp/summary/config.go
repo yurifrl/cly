@@ -10,20 +10,22 @@ import (
 // Config for the summary engine, read from modules.omp.summary in cly's
 // config. All fields optional; defaults below.
 type Config struct {
-	Workers  int           // concurrent summarizer goroutines
-	Interval time.Duration // discovery tick
-	Debounce time.Duration // min gap before re-summarizing an errored session
-	MaxAge   time.Duration // hide sessions idle longer than this
-	MaxTail  int           // transcript tail bytes fed to extraction
+	Workers     int           // concurrent summarizer goroutines
+	Interval    time.Duration // discovery tick
+	Debounce    time.Duration // min gap before re-summarizing an errored session
+	MaxAge      time.Duration // hide sessions idle longer than this
+	MaxEntryAge time.Duration // sweep: drop summary entries idle longer than this (0 disables)
+	MaxTail     int           // transcript tail bytes fed to extraction
 }
 
 func DefaultConfig() Config {
 	return Config{
-		Workers:  2,
-		Interval: 2 * time.Second,
-		Debounce: 45 * time.Second,
-		MaxAge:   24 * time.Hour,
-		MaxTail:  256 * 1024,
+		Workers:     2,
+		Interval:    2 * time.Second,
+		Debounce:    45 * time.Second,
+		MaxAge:      24 * time.Hour,
+		MaxEntryAge: 30 * 24 * time.Hour,
+		MaxTail:     256 * 1024,
 	}
 }
 
@@ -50,6 +52,10 @@ func LoadConfig() Config {
 	}
 	if v := asDuration(s["max_age"]); v > 0 {
 		c.MaxAge = v
+	}
+	// Explicit 0 disables the sweep; absence keeps the 30-day default.
+	if raw, ok := s["max_entry_age"]; ok {
+		c.MaxEntryAge = asDuration(raw)
 	}
 	if v := asInt(s["max_tail"]); v > 0 {
 		c.MaxTail = v

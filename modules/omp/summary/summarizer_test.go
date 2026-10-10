@@ -105,6 +105,7 @@ func TestDrainDropsStaleFingerprints(t *testing.T) {
 }
 
 func TestShouldSummarize(t *testing.T) {
+	withSummaryRoot(t)
 	cwd := t.TempDir()
 	s := testSummarizer()
 	tgt := Target{SessionID: "s1", CWD: cwd}
@@ -152,9 +153,9 @@ func TestShouldSummarize(t *testing.T) {
 func TestParseReply(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name                   string
-		in                     string
-		goal, resp, act, fold  string
+		name                  string
+		in                    string
+		goal, resp, act, fold string
 	}{
 		{"fold line present",
 			"ship the omp card\nwrote the digest pass\nnone\nearlier session archived older history",

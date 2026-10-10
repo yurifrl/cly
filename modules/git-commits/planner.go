@@ -300,22 +300,25 @@ func GenerateFallbackMessage(ctx context.Context, cs *Changeset, client llm.Clie
 	}, nil
 }
 
+// stripFences removes markdown code fences wrapping a response.
+func stripFences(response string) string {
+	response = strings.TrimSpace(response)
+	if !strings.HasPrefix(response, "```") {
+		return response
+	}
+	lines := strings.Split(response, "\n")
+	// Remove first and last fence lines
+	start := 1
+	end := len(lines)
+	if end > 0 && strings.HasPrefix(lines[end-1], "```") {
+		end--
+	}
+	return strings.TrimSpace(strings.Join(lines[start:end], "\n"))
+}
+
 // extractPlan extracts JSON from an LLM response, handling markdown fences.
 func extractPlan(response string) (*RawPlan, error) {
-	response = strings.TrimSpace(response)
-
-	// Strip markdown code fences if present
-	if strings.HasPrefix(response, "```") {
-		lines := strings.Split(response, "\n")
-		// Remove first and last fence lines
-		start := 1
-		end := len(lines)
-		if end > 0 && strings.HasPrefix(lines[end-1], "```") {
-			end--
-		}
-		response = strings.Join(lines[start:end], "\n")
-		response = strings.TrimSpace(response)
-	}
+	response = stripFences(response)
 
 	// Find outermost {}
 	startIdx := strings.Index(response, "{")

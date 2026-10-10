@@ -119,6 +119,8 @@ modules:
     batch_size: 40000
     timeout: 30000
     split_prompt: ""
+    # planner: "chat"        # jev (default) or chat — jev bundles via aihub/jev-latest votes, messages via ai above
+    # planner_model: "aihub/jev-latest"
     ai:
       provider: "anthropic"
       model: "claude-sonnet-4-5-20250929"

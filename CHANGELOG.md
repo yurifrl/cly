@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-10 Global Summary Store
+
+### Changed
+- Session summary cards now live in one global directory (~/.omp/agent/summary/) instead of a .omp/summary.json dropped into every project, so projects stop accruing state files
+- Summaries idle for over 30 days are swept automatically (configurable via modules.omp.summary.max_entry_age, 0 disables); empty files are removed, keeping the store from growing without bound
+- The sweep runs hourly from the summary daemon and once at startup, even when no session is live
+- Old per-project files are simply abandoned, not migrated — each live session re-summarizes once on first use
+
+## 2026-10-09 Commit Bundling By Affinity Votes
+
+### Added
+- Commit splitting now uses the jev decision model by default to bundle staged files by affinity, keeping message writing on your normal chat model.
+- Opt out per run or per project with `--planner chat` / `modules.git-commits.planner`; single-bundle changesets skip the decisions call entirely.
+- Renames and same-directory neighbors stay atomic because bundling seeds are built deterministically before any model call.
+- Only mutual votes merge bundles, so no commit ever contains files that one side wanted separate.
+- If the decisions API is down, planning falls back to the chat planner; if message generation fails, heuristic titles keep the plan executable.
+
 ## 2026-09-19 Sidebar Cards Show Live Agent Timeline
 
 ### Changed

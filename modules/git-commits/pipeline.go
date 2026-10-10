@@ -21,6 +21,7 @@ type pipelineOpts struct {
 	NoVerify    bool
 	Push        bool
 	Strategy    string
+	Planner     string
 	Prompt      string
 	Ignored     bool
 	NoSubmodule bool
@@ -85,6 +86,8 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	timeout := defaultTimeout
 	maxGroups := 8
 	customPrompt := opts.Prompt
+	plannerMode := opts.Planner
+	plannerModel := ""
 	var ignorePatterns []string
 
 	cfg := config.Get()
@@ -108,6 +111,16 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 			if sp, ok := mod["split_prompt"]; ok {
 				if v, ok := sp.(string); ok && v != "" && customPrompt == "" {
 					customPrompt = v
+				}
+			}
+			if p, ok := mod["planner"]; ok {
+				if v, ok := p.(string); ok && v != "" {
+					plannerMode = v
+				}
+			}
+			if p, ok := mod["planner_model"]; ok {
+				if v, ok := p.(string); ok && v != "" {
+					plannerModel = v
 				}
 			}
 			if ig, ok := mod["ignore"]; ok {
@@ -185,18 +198,51 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 		MaxGroups:    maxGroups,
 	}
 
+	// Planner selection: flag overrides config; default jev (falls back to
+	// chat automatically when the decisions API is unavailable).
+	if plannerMode == "" {
+		plannerMode = PlannerJev
+	}
+	if plannerMode != PlannerChat && plannerMode != PlannerJev {
+		return fmt.Errorf("unknown planner %q — use 'chat' or 'jev'", plannerMode)
+	}
+	if plannerMode == PlannerJev && strategy == StrategyLine {
+		return fmt.Errorf("planner %q works on whole files — use --strategy file", PlannerJev)
+	}
+
 	var plan *CommitPlan
 	for {
-		fmt.Println(style.BlueStyle.Render("🤖 Planning split..."))
+		fmt.Println(style.BlueStyle.Render(fmt.Sprintf("🤖 Planning split (planner: %s)...", plannerMode)))
 
-		raw, err := PlanSplit(ctx, batches, client, planCfg)
-		if err != nil {
-			// Fallback to single commit
-			fmt.Println(style.YellowStyle.Render("⚠️  Split planning failed, falling back to single commit"))
-			raw, err = GenerateFallbackMessage(ctx, cs, client, timeout)
-			if err != nil {
-				return fmt.Errorf("fallback also failed: %w", err)
+		var raw *RawPlan
+		if plannerMode == PlannerJev {
+			jevCfg := JevPlannerConfig{
+				Model:    plannerModel,
+				Timeout:  timeout,
+				Feedback: planCfg.CustomPrompt,
 			}
+			p, err := PlanJev(ctx, cs.Files, jevCfg)
+			if err != nil {
+				fmt.Println(style.YellowStyle.Render(fmt.Sprintf("⚠️  jev planner unavailable (%v) — falling back to chat", err)))
+				plannerMode = PlannerChat
+			} else {
+				if msgErr := FillMessages(ctx, p, client, timeout, planCfg.CustomPrompt); msgErr != nil {
+					fmt.Println(style.YellowStyle.Render(fmt.Sprintf("⚠️  Message generation failed (%v) — keeping heuristic titles", msgErr)))
+				}
+				raw = p
+			}
+		}
+		if raw == nil {
+			p, err := PlanSplit(ctx, batches, client, planCfg)
+			if err != nil {
+				// Fallback to single commit
+				fmt.Println(style.YellowStyle.Render("⚠️  Split planning failed, falling back to single commit"))
+				p, err = GenerateFallbackMessage(ctx, cs, client, timeout)
+				if err != nil {
+					return fmt.Errorf("fallback also failed: %w", err)
+				}
+			}
+			raw = p
 		}
 
 		// Step 4: Validate and heal
