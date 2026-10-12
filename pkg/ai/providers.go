@@ -5,10 +5,19 @@ import (
 	"strings"
 )
 
+// Provider pools. Every entry belongs to exactly one; selection and
+// failover never cross a pool boundary — a jev entry is never picked for
+// chat, and a chat entry is never picked for decisions.
+const (
+	TypeChat = "chat"
+	TypeJev  = "jev"
+)
+
 // Entry is one named provider in the ai.providers list.
 type Entry struct {
 	Name      string
 	Provider  string
+	Type      string
 	Model     string
 	APIKey    string
 	APIKeyEnv string
@@ -17,6 +26,17 @@ type Entry struct {
 	Condition string
 	Default   bool
 	cond      condExpr
+}
+
+// providersOfType returns the entries in one pool, keeping order.
+func providersOfType(entries []Entry, typ string) []Entry {
+	out := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		if e.Type == typ {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // parseProviders validates the ai.providers list from raw config.
@@ -53,6 +73,14 @@ func parseProviders(global map[string]interface{}) ([]Entry, error) {
 		seen[e.Name] = true
 		if v, ok := m["provider"].(string); ok && v != "" {
 			e.Provider = v
+		}
+		e.Type, _ = m["type"].(string)
+		switch e.Type {
+		case "":
+			e.Type = TypeChat
+		case TypeChat, TypeJev:
+		default:
+			return nil, fmt.Errorf("ai.providers[%d] (%s): unknown type %q (want %q or %q)", i, e.Name, e.Type, TypeChat, TypeJev)
 		}
 		e.Model, _ = m["model"].(string)
 		e.BaseURL, _ = m["base_url"].(string)

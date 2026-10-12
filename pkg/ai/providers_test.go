@@ -84,3 +84,54 @@ func TestParseProvidersErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestParseProvidersTypes(t *testing.T) {
+	global := map[string]interface{}{
+		"providers": []interface{}{
+			map[string]interface{}{"name": "chat1", "model": "m"},
+			map[string]interface{}{"name": "jev1", "model": "j", "type": "jev"},
+			map[string]interface{}{"name": "chat2", "model": "m2", "type": "chat"},
+		},
+	}
+	entries, err := parseProviders(global)
+	require.NoError(t, err)
+	assert.Equal(t, TypeChat, entries[0].Type)
+	assert.Equal(t, TypeJev, entries[1].Type)
+	assert.Equal(t, TypeChat, entries[2].Type)
+
+	chat := providersOfType(entries, TypeChat)
+	require.Len(t, chat, 2)
+	assert.Equal(t, "chat1", chat[0].Name)
+	assert.Equal(t, "chat2", chat[1].Name)
+
+	jev := providersOfType(entries, TypeJev)
+	require.Len(t, jev, 1)
+	assert.Equal(t, "jev1", jev[0].Name)
+}
+
+func TestDecisionsEndpointsIsolation(t *testing.T) {
+	// Chat entries and broken jev entries must never yield a jev endpoint.
+	global := map[string]interface{}{
+		"providers": []interface{}{
+			map[string]interface{}{
+				"name": "chatter", "model": "big-model", "type": "chat",
+				"base_url": "https://chat.example", "api_key": "k",
+			},
+			map[string]interface{}{
+				"name": "jev-good", "model": "aihub/jev-latest", "type": "jev",
+				"base_url": "https://jev.example/", "api_key": "jk",
+			},
+			map[string]interface{}{
+				"name": "jev-nokey", "model": "aihub/jev-latest", "type": "jev",
+				"base_url": "https://jev2.example", "api_key": "$CLY_TEST_UNSET_KEY",
+			},
+		},
+	}
+	entries, err := parseProviders(global)
+	require.NoError(t, err)
+	eps := decisionsEndpoints(entries, selCtx())
+	require.Len(t, eps, 1)
+	assert.Equal(t, "jev-good", eps[0].name)
+	assert.Equal(t, "https://jev.example", eps[0].baseURL) // trailing / trimmed
+	assert.Equal(t, "jk", eps[0].apiKey)
+}

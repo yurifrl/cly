@@ -5,89 +5,146 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
+// jevServer builds a Decisions stub returning the given JSON with status.
+func jevServer(t *testing.T, status int, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+const jevOKResponse = `{
+  "id": "r1",
+  "model": "jev-model",
+  "answers": {
+    "s0": {"type": "choice", "choice": "own", "probabilities": {"own": 0.9, "s1": 0.1}},
+    "s1": {"type": "noul", "noul": 0.75}
+  },
+  "usage": {"input_tokens": 10, "output_tokens": 5, "cost": 0.01}
+}`
+
 func TestDecideWire(t *testing.T) {
-	var gotPath string
-	var gotAuth string
-	var gotBody map[string]any
+	var gotPath, gotAuth string
+	var gotBody decisionsRequestWire
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"gen-1","model":"typesafe/jev-1.13","provider":"aihub","answers":{
-			"q1":{"type":"choice","choice":"b2","confidence":0.7,"probabilities":{"b1":0.2,"b2":0.8}},
-			"q2":{"type":"noul","noul":0.93},
-			"q3":{"type":"score","score":{"position":2.5,"confidence":0.6}}
-		},"usage":{"input_tokens":100,"output_tokens":10,"cost":0.001}}`))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(jevOKResponse))
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	t.Setenv("AIHUB_API_KEY", "test-key")
-	t.Setenv("DECISIONS_BASE_URL", srv.URL)
-	c, err := NewDecisionsClient()
+	c, err := newDecisionsClient([]decisionsEndpoint{
+		{name: "t", model: "jev-model", baseURL: srv.URL, apiKey: "k1"},
+	}, srv.Client())
 	if err != nil {
-		t.Fatalf("NewDecisionsClient: %v", err)
+		t.Fatalf("newDecisionsClient: %v", err)
 	}
-
-	res, err := c.Decide(context.Background(), "aihub/jev-latest",
+	res, err := c.Decide(context.Background(),
 		map[string]string{"repo": "cly"},
 		[]DecisionQuestion{
-			{ID: "q1", Type: "choice", Instructions: "pick", Criteria: map[string]string{"b1": "one", "b2": "two"}},
-			{ID: "q2", Type: "noul", Instructions: "is it so?"},
-			{ID: "q3", Type: "score", Instructions: "rank", Criteria: []string{"low", "mid", "high"}},
+			{ID: "s0", Type: "choice", Instructions: "pick", Criteria: map[string]string{"own": "its own commit"}},
+			{ID: "s1", Type: "noul"},
 		})
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
-
-	if gotPath != "/api/alpha/decisions" {
-		t.Errorf("path = %q", gotPath)
+	if gotPath != decisionsAPIPath {
+		t.Errorf("path = %q, want %q", gotPath, decisionsAPIPath)
 	}
-	if gotAuth != "Bearer test-key" {
-		t.Errorf("auth = %q", gotAuth)
+	if gotAuth != "Bearer k1" {
+		t.Errorf("auth = %q, want Bearer k1", gotAuth)
 	}
-	if gotBody["model"] != "aihub/jev-latest" {
-		t.Errorf("model = %v", gotBody["model"])
+	if gotBody.Model != "jev-model" {
+		t.Errorf("model = %q, want jev-model (model must come from config)", gotBody.Model)
 	}
-	if len(gotBody["questions"].(map[string]any)) != 3 {
-		t.Errorf("questions = %v", gotBody["questions"])
+	if gotBody.State["repo"] != "cly" {
+		t.Errorf("state not sent: %+v", gotBody.State)
 	}
-
-	if res.Answers["q1"].Choice != "b2" || res.Answers["q1"].Probabilities["b2"] != 0.8 {
-		t.Errorf("q1 = %+v", res.Answers["q1"])
+	a := res.Answers["s0"]
+	if a.Type != "choice" || a.Choice != "own" || a.Probabilities["s1"] != 0.1 {
+		t.Errorf("s0 answer = %+v", a)
 	}
-	if res.Answers["q2"].Noul != 0.93 {
-		t.Errorf("q2 = %+v", res.Answers["q2"])
+	if n := res.Answers["s1"].Noul; n != 0.75 {
+		t.Errorf("s1 noul = %v, want 0.75", n)
 	}
-	if res.Answers["q3"].ScorePosition != 2.5 || res.Answers["q3"].Confidence != 0.6 {
-		t.Errorf("q3 = %+v", res.Answers["q3"])
-	}
-	if res.Cost != 0.001 {
-		t.Errorf("cost = %v", res.Cost)
+	if res.Cost != 0.01 {
+		t.Errorf("cost = %v, want 0.01", res.Cost)
 	}
 }
 
-func TestNewDecisionsClientRequiresKey(t *testing.T) {
-	t.Setenv("AIHUB_API_KEY", "")
-	if _, err := NewDecisionsClient(); err == nil {
-		t.Fatal("expected error with unset key")
+func TestDecideFailsOverWithinJevPool(t *testing.T) {
+	var second atomic.Int32
+	bad := jevServer(t, http.StatusInternalServerError, `{"error":"down"}`)
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		second.Add(1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(jevOKResponse))
+	}))
+	t.Cleanup(good.Close)
+
+	c, err := newDecisionsClient([]decisionsEndpoint{
+		{name: "bad", model: "m-bad", baseURL: bad.URL, apiKey: "k"},
+		{name: "good", model: "m-good", baseURL: good.URL, apiKey: "k"},
+	}, http.DefaultClient)
+	if err != nil {
+		t.Fatalf("newDecisionsClient: %v", err)
+	}
+	res, err := c.Decide(context.Background(), nil,
+		[]DecisionQuestion{{ID: "s0", Type: "noul"}})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if second.Load() != 1 {
+		t.Fatalf("second endpoint not tried (hits=%d); failover broken", second.Load())
+	}
+	if len(res.Answers) != 2 {
+		t.Errorf("answers = %d, want 2", len(res.Answers))
+	}
+}
+
+func TestDecideAllEndpointsDown(t *testing.T) {
+	bad1 := jevServer(t, http.StatusInternalServerError, "boom")
+	bad2 := jevServer(t, http.StatusUnauthorized, "denied")
+	c, err := newDecisionsClient([]decisionsEndpoint{
+		{name: "b1", model: "m", baseURL: bad1.URL, apiKey: "k"},
+		{name: "b2", model: "m", baseURL: bad2.URL, apiKey: "k"},
+	}, http.DefaultClient)
+	if err != nil {
+		t.Fatalf("newDecisionsClient: %v", err)
+	}
+	if _, err := c.Decide(context.Background(), nil,
+		[]DecisionQuestion{{ID: "s0", Type: "noul"}}); err == nil {
+		t.Fatal("expected error when every jev endpoint fails")
 	}
 }
 
 func TestDecideRejectsDuplicateIDs(t *testing.T) {
-	t.Setenv("AIHUB_API_KEY", "k")
-	c, err := NewDecisionsClient()
+	c, err := newDecisionsClient([]decisionsEndpoint{
+		{name: "t", model: "m", baseURL: "http://unused", apiKey: "k"},
+	}, nil)
 	if err != nil {
-		t.Fatalf("NewDecisionsClient: %v", err)
+		t.Fatalf("newDecisionsClient: %v", err)
 	}
-	_, err = c.Decide(context.Background(), "m", nil,
+	_, err = c.Decide(context.Background(), nil,
 		[]DecisionQuestion{{ID: "x", Type: "noul"}, {ID: "x", Type: "noul"}})
 	if err == nil {
 		t.Fatal("expected duplicate-id error")
+	}
+}
+
+func TestNewDecisionsClientRequiresPool(t *testing.T) {
+	if _, err := newDecisionsClient(nil, nil); err == nil {
+		t.Fatal("expected error with no jev endpoints")
 	}
 }

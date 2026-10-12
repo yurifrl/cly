@@ -25,12 +25,20 @@
 //	      api_key: $AIHUB_API_KEY         # literal or $ENV / ${ENV}
 //	      model: aihub/claude-sonnet-5
 //	      weight: 10                      # optional, default 0
+//	      type: chat                      # pool: chat (default) or jev;
+//	                                      # pools never cross-fallback
 //	      condition: 'user == "yuri" && dir =~ "~/Workdir/Yuri/*"'
 //	      default: true                   # fallback when no condition matches
 //	    - name: bedrock                   # Anthropic models via AWS Bedrock
 //	      provider: bedrock
 //	      model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
 //	      # no api_key: auth uses AWS_BEARER_TOKEN_BEDROCK or AWS creds/profile
+//	    - name: aihub-jev                 # Decisions API (git-commits jev planner)
+//	      type: jev                       # separate pool; never picked for chat
+//	      provider: openai
+//	      base_url: https://decisions.example   # POST {base_url}/api/alpha/decisions
+//	      api_key: $AIHUB_API_KEY
+//	      model: aihub/jev-latest
 //
 // Condition fields: user, host, arch, os, dir, env.NAME. Operators:
 // ==, !=, =~ (glob), !~, &&, ||, !, parens. Bare field = truthy when set.
@@ -119,9 +127,19 @@ func LastDecision() *Decision { return lastDecision }
 func LastSelectionError() error { return lastSelErr }
 
 // resolveE is resolve with an error return for paths that surface config
-// problems (NewClientWith, cly ai status).
+// problems (NewClientWith, cly ai status). Chat pool only.
 func resolveE(global, override map[string]interface{}) (*Resolved, error) {
+	return resolvePool(global, override, TypeChat)
+}
+
+// resolvePool resolves one provider pool (TypeChat or TypeJev). Pools are
+// strict: selection, overrides, and failover only ever see entries of the
+// requested type.
+func resolvePool(global, override map[string]interface{}, typ string) (*Resolved, error) {
 	if global == nil {
+		if typ != TypeChat {
+			return nil, fmt.Errorf("ai: no providers with type %q configured", typ)
+		}
 		return &Resolved{
 			Provider:  defaultProvider,
 			Model:     defaultModel,
@@ -134,8 +152,12 @@ func resolveE(global, override map[string]interface{}) (*Resolved, error) {
 		lastSelErr = err
 		return nil, err
 	}
-	if len(entries) == 0 {
-		// ai: block present but no providers defined: library defaults.
+	pool := providersOfType(entries, typ)
+	if len(pool) == 0 {
+		if typ != TypeChat {
+			return nil, fmt.Errorf("ai: no providers with type %q configured (add one under ai.providers)", typ)
+		}
+		// ai: block present but no chat providers defined: library defaults.
 		return &Resolved{
 			Provider:  defaultProvider,
 			Model:     defaultModel,
@@ -143,7 +165,7 @@ func resolveE(global, override map[string]interface{}) (*Resolved, error) {
 			Enabled:   true,
 		}, nil
 	}
-	entry, decision := selectProvider(entries, buildContext())
+	entry, decision := selectProvider(pool, buildContext())
 	lastDecision = decision
 	lastSelErr = nil
 	logSelection(decision, entry)
@@ -169,7 +191,7 @@ func resolveE(global, override map[string]interface{}) (*Resolved, error) {
 			r.APIKey = ""
 			r.APIKeyEnv = providerEnv[v]
 			r.BaseURL = ""
-			for _, e := range entries {
+			for _, e := range pool {
 				if e.Provider == v {
 					r.Model = e.Model
 					r.APIKey = e.APIKey
@@ -292,7 +314,7 @@ func NewClientWith(override map[string]interface{}) (llm.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, entry := range orderProviders(entries, buildContext()) {
+	for _, entry := range orderProviders(providersOfType(entries, TypeChat), buildContext()) {
 		fallback := &Resolved{Provider: entry.Provider, Model: entry.Model, APIKey: entry.APIKey, APIKeyEnv: entry.APIKeyEnv, BaseURL: entry.BaseURL, Enabled: true}
 		if fallback.Provider == r.Provider && fallback.Model == r.Model && fallback.BaseURL == r.BaseURL {
 			continue

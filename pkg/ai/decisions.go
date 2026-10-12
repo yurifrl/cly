@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	pkgconfig "github.com/yurifrl/cly/pkg/config"
 )
 
 // decisions.go — Decisions API client against the AIHub gateway, the System
@@ -20,12 +22,12 @@ import (
 // out — no free-form text to parse. The client is domain-blind: it knows the
 // HTTP surface only; modules own how they phrase questions.
 //
-// Requires AIHUB_API_KEY; DECISIONS_BASE_URL overrides the gateway root
-// (dev/test harnesses only).
+// Endpoints come from the ai.providers entries with `type: jev`; model,
+// base_url, and key all live there. The client fails over across the pool
+// and never falls back to chat entries.
 
 const (
 	decisionsAPIPath = "/api/alpha/decisions"
-	decisionsBaseURL = "https://ai-llm-gateway.fbr.land"
 )
 
 // DecisionQuestion is one typed question in a Decisions request.
@@ -61,68 +63,134 @@ type DecisionsResult struct {
 	Cost    float64
 }
 
-// DecisionsClient calls the AIHub gateway's Decisions API. Safe for concurrent use.
-type DecisionsClient struct {
+// decisionsEndpoint is one jev-pool entry ready to call.
+type decisionsEndpoint struct {
+	name    string
+	model   string
 	baseURL string
 	apiKey  string
-	client  *http.Client
 }
 
-// NewDecisionsClient builds the client from AIHUB_API_KEY. It errors
-// when the key is unset so callers can skip wiring (the feature stays off)
-// instead of failing on every call.
-func NewDecisionsClient() (*DecisionsClient, error) {
-	key := strings.TrimSpace(os.Getenv("AIHUB_API_KEY"))
-	if key == "" {
-		return nil, errors.New("AIHUB_API_KEY is not set (required for the AIHub Decisions API)")
-	}
-	baseURL := strings.TrimSpace(os.Getenv("DECISIONS_BASE_URL"))
-	if baseURL == "" {
-		baseURL = decisionsBaseURL
-	}
-	return &DecisionsClient{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey:  key,
-		client:  &http.Client{Timeout: 5 * time.Minute},
-	}, nil
+// DecisionsClient calls the Decisions API across the configured jev
+// provider pool. Safe for concurrent use.
+type DecisionsClient struct {
+	endpoints []decisionsEndpoint
+	client    *http.Client
 }
 
-// NewDecisionsClientWithHTTP is NewDecisionsClient with a custom HTTP client
-// (test harnesses).
-func NewDecisionsClientWithHTTP(httpClient *http.Client) (*DecisionsClient, error) {
-	c, err := NewDecisionsClient()
+// decisionsEndpoints resolves entries into callable jev endpoints. Entries
+// without a model, base_url, or usable key are skipped with a warning so one
+// broken entry can't take the pool down.
+func decisionsEndpoints(entries []Entry, ctx *Context) []decisionsEndpoint {
+	eps := make([]decisionsEndpoint, 0, len(entries))
+	for _, entry := range orderProviders(providersOfType(entries, TypeJev), ctx) {
+		if entry.Model == "" {
+			fmt.Fprintf(os.Stderr, "ai: decisions: skipping jev provider %q: no model\n", entry.Name)
+			continue
+		}
+		if entry.BaseURL == "" {
+			fmt.Fprintf(os.Stderr, "ai: decisions: skipping jev provider %q: no base_url\n", entry.Name)
+			continue
+		}
+		key := entry.APIKey
+		if key == "" && entry.APIKeyEnv != "" {
+			key = os.Getenv(entry.APIKeyEnv)
+		}
+		if key == "" {
+			fmt.Fprintf(os.Stderr, "ai: decisions: skipping jev provider %q: no api key\n", entry.Name)
+			continue
+		}
+		eps = append(eps, decisionsEndpoint{
+			name:    entry.Name,
+			model:   entry.Model,
+			baseURL: strings.TrimRight(entry.BaseURL, "/"),
+			apiKey:  key,
+		})
+	}
+	return eps
+}
+
+// jevEndpoints is the config-facing wrapper: parse the ai: block, resolve
+// the jev pool.
+func jevEndpoints() []decisionsEndpoint {
+	entries, err := parseProviders(pkgconfig.Get().AI)
 	if err != nil {
-		return nil, err
+		fmt.Fprintf(os.Stderr, "ai: decisions: bad provider config: %v\n", err)
+		return nil
 	}
-	if httpClient != nil {
-		c.client = httpClient
+	return decisionsEndpoints(entries, buildContext())
+}
+
+// NewDecisionsClient builds the client from the `type: jev` provider pool.
+// It errors when no jev entry yields a usable endpoint so callers can skip
+// wiring (the feature stays off) instead of failing on every call.
+func NewDecisionsClient() (*DecisionsClient, error) {
+	return newDecisionsClient(jevEndpoints(), &http.Client{Timeout: 5 * time.Minute})
+}
+
+// newDecisionsClient is the testable constructor.
+func newDecisionsClient(eps []decisionsEndpoint, httpClient *http.Client) (*DecisionsClient, error) {
+	if len(eps) == 0 {
+		return nil, errors.New("ai: no jev providers configured (add an ai.providers entry with type: jev)")
 	}
-	return c, nil
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 5 * time.Minute}
+	}
+	return &DecisionsClient{endpoints: eps, client: httpClient}, nil
 }
 
 // Decide submits one state object with the given questions and returns the
-// typed answers. Every question id must be unique.
-func (c *DecisionsClient) Decide(ctx context.Context, model string, state map[string]string, questions []DecisionQuestion) (DecisionsResult, error) {
+// typed answers. Every question id must be unique. The model comes from the
+// winning jev entry's config; on failure the next jev endpoint is tried.
+func (c *DecisionsClient) Decide(ctx context.Context, state map[string]string, questions []DecisionQuestion) (DecisionsResult, error) {
+	qmap, err := encodeQuestions(questions)
+	if err != nil {
+		return DecisionsResult{}, err
+	}
+	var lastErr error
+	for i, ep := range c.endpoints {
+		res, err := c.decideEndpoint(ctx, ep, qmap, state)
+		if err == nil {
+			return res, nil
+		}
+		if ctx.Err() != nil {
+			return DecisionsResult{}, fmt.Errorf("decisions: call %s: %w", ep.name, ctx.Err())
+		}
+		lastErr = err
+		if i < len(c.endpoints)-1 {
+			fmt.Fprintf(os.Stderr, "ai: decisions via %s failed; trying next jev provider: %v\n", ep.name, err)
+		}
+	}
+	return DecisionsResult{}, lastErr
+}
+
+// encodeQuestions validates ids and builds the wire shape.
+func encodeQuestions(questions []DecisionQuestion) (map[string]decisionsQuestionWire, error) {
 	qmap := make(map[string]decisionsQuestionWire, len(questions))
 	for _, q := range questions {
 		if _, duplicate := qmap[q.ID]; duplicate {
-			return DecisionsResult{}, fmt.Errorf("decisions: duplicate question id %q", q.ID)
+			return nil, fmt.Errorf("decisions: duplicate question id %q", q.ID)
 		}
 		qmap[q.ID] = decisionsQuestionWire{Type: q.Type, Instructions: q.Instructions, Criteria: q.Criteria}
 	}
+	return qmap, nil
+}
+
+// decideEndpoint is one attempt against one endpoint.
+func (c *DecisionsClient) decideEndpoint(ctx context.Context, ep decisionsEndpoint, qmap map[string]decisionsQuestionWire, state map[string]string) (DecisionsResult, error) {
 	body, err := json.Marshal(decisionsRequestWire{
-		Model:     model,
+		Model:     ep.model,
 		State:     state,
 		Questions: qmap,
 	})
 	if err != nil {
 		return DecisionsResult{}, fmt.Errorf("decisions: encode request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+decisionsAPIPath, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ep.baseURL+decisionsAPIPath, bytes.NewReader(body))
 	if err != nil {
 		return DecisionsResult{}, fmt.Errorf("decisions: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Authorization", "Bearer "+ep.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -153,11 +221,18 @@ func (c *DecisionsClient) Decide(ctx context.Context, model string, state map[st
 			parsed.Probabilities = answer.Probabilities
 		}
 		if answer.Score != nil {
-			if answer.Score.Position != nil {
-				parsed.ScorePosition = *answer.Score.Position
-			}
-			if answer.Score.Confidence != nil && parsed.Confidence == 0 {
-				parsed.Confidence = *answer.Score.Confidence
+			switch s := any(answer.Score).(type) {
+			case float64:
+				// Observed live: the gateway returns score as a bare
+				// number (often 0 on non-score answers).
+				parsed.ScorePosition = s
+			case map[string]any:
+				if p, ok := s["position"].(float64); ok {
+					parsed.ScorePosition = p
+				}
+				if c, ok := s["confidence"].(float64); ok && parsed.Confidence == 0 {
+					parsed.Confidence = c
+				}
 			}
 		}
 		answers[id] = parsed
@@ -195,16 +270,10 @@ type decisionsResponseWire struct {
 }
 
 type decisionsAnswerWire struct {
-	Type          string              `json:"type"`
-	Choice        string              `json:"choice"`
-	Noul          *float64            `json:"noul"`
-	Score         *decisionsScoreWire `json:"score"`
-	Confidence    *float64            `json:"confidence"`
-	Probabilities map[string]float64  `json:"probabilities"`
-}
-
-type decisionsScoreWire struct {
-	Position      *float64           `json:"position"`
+	Type          string             `json:"type"`
+	Choice        string             `json:"choice"`
+	Noul          *float64           `json:"noul"`
+	Score         any                `json:"score"` // number, or object with position/confidence
 	Confidence    *float64           `json:"confidence"`
 	Probabilities map[string]float64 `json:"probabilities"`
 }
