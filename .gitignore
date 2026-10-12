@@ -45,7 +45,6 @@ Thumbs.db
 
 # config
 *.local
-.local-version
 .ant-colony/
 
 # Beads / Dolt files (added by bd init)
@@ -73,3 +72,6 @@ pkg/notify/swift/.build/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+#
+.build/

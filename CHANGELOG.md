@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-10-11 Typed AI Provider Pools
+
+### Added
+- `ai.providers` entries take `type: chat` (default) or `type: jev`; selection and failover stay inside their pool — normal model picking never lands on a jev entry and jev requests never land on a chat provider
+- The jev planner's endpoint, model, and key all come from configured `type: jev` entries (multiple entries fail over); `AIHUB_API_KEY` env guessing, the hardcoded `ai-llm-gateway.fbr.land` host, the `aihub/jev-latest` model id, and `modules.git-commits.planner_model` are gone
+
+## 2026-10-11 gc Degrades To Deterministic Grouping When Jev Is Down
+
+### Fixed
+- An unreachable decisions gateway no longer hands the whole changeset to the chat planner (which collapsed 156 files into one mega-commit); `gc` falls back to the same deterministic seed bundles jev votes over — migration stays one commit, unrelated areas stay separate — and only titles come from the chat AI (heuristic titles if that fails too)
+
+## 2026-10-11 gc Titles And Groups At Scale
+
+### Added
+- `gc --no-jev` skips the jev planner entirely (default, config, and explicit `--planner jev` alike) and plans with the pre-jev chat planner directly
+
+### Fixed
+- Commit-message generation is chunked (8 groups per LLM call) so large plans no longer exhaust the LLM timeout mid-response and fall back to "chore: update N file(s)" titles
+- Directory moves that git records as separate deletions and additions (contents rewritten past the rename-similarity threshold, e.g. `.claude/**` → `.agents/**`) are pre-grouped into one migration seed before planning instead of one commit per directory; unpaired leftovers (e.g. cache files under the destination) stay in their own groups
+
+## 2026-10-11 gc Prunes Stale Staged Entries
+
+### Fixed
+- `gc -a` no longer crashes mid-plan when the index holds files staged before the run that have since been deleted from disk or become ignored (e.g. tool cache dirs carrying their own `*` ignore rule); such entries are skipped with a warning and unstaged, so the executor's reset-and-re-add step cannot fail and roll back the whole plan
+
+## 2026-10-10 gc Never Commits An Empty Message
+
+### Fixed
+- `gc` no longer commits nothing when the message model call fails: a failed or malformed LLM response now falls back to deterministic titles (`chore: update N file(s)`) instead of leaving groups untitled, which previously made `git commit -m ""` abort every commit.
+- Validators reject the empty-title case outright, so no plan — however it was built — can reach execution with an empty message.
+- A failing `git commit` now reports git's own output (e.g. "Aborting commit due to empty commit message") instead of a bare `exit status 1`.
+
 ## 2026-10-10 Global Summary Store
 
 ### Changed
