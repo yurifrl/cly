@@ -109,8 +109,8 @@ func executeGroup(group CommitGroup, noVerify bool) error {
 		args = append(args, "--no-verify")
 	}
 
-	if _, err := gitExec(args...); err != nil {
-		return fmt.Errorf("git commit failed: %w", err)
+	if out, err := gitExec(args...); err != nil {
+		return fmt.Errorf("git commit failed: %s: %w", strings.TrimSpace(out), err)
 	}
 
 	return nil

@@ -86,7 +86,7 @@ func ValidatePlan(raw *RawPlan, cs *Changeset, skipAutoHeal bool) (*CommitPlan, 
 		}
 
 		groups = append(groups, CommitGroup{
-			Title:   rg.Title,
+			Title:   commitTitle(rg),
 			Type:    rg.Type,
 			Summary: rg.Summary,
 			Body:    rg.Body,
@@ -125,6 +125,22 @@ func ValidatePlan(raw *RawPlan, cs *Changeset, skipAutoHeal bool) (*CommitPlan, 
 	}
 
 	return &CommitPlan{Groups: groups}, nil
+}
+
+// commitTitle returns the group's title, or a deterministic fallback when the
+// planner left it empty so execution never runs `git commit -m ""`.
+func commitTitle(rg RawGroup) string {
+	if t := strings.TrimSpace(rg.Title); t != "" {
+		return t
+	}
+	typ := rg.Type
+	if typ == "" {
+		typ = "chore"
+	}
+	if rg.Scope != "" {
+		return fmt.Sprintf("%s(%s): update %s", typ, rg.Scope, rg.Scope)
+	}
+	return fmt.Sprintf("%s: update %d file(s)", typ, len(rg.Items))
 }
 
 // resolveFile matches a file reference to a changeset entry.

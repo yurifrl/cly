@@ -14,7 +14,7 @@ type stubDecider struct {
 	gotCfg  *ai.DecisionsResult
 }
 
-func (s *stubDecider) Decide(_ context.Context, _ string, _ map[string]string, questions []ai.DecisionQuestion) (ai.DecisionsResult, error) {
+func (s *stubDecider) Decide(_ context.Context, _ map[string]string, questions []ai.DecisionQuestion) (ai.DecisionsResult, error) {
 	ans := map[string]ai.DecisionAnswer{}
 	for _, q := range questions {
 		choice := s.answers[q.ID]
@@ -88,7 +88,7 @@ type feedbackDecider struct {
 	capture *string
 }
 
-func (f *feedbackDecider) Decide(_ context.Context, _ string, _ map[string]string, questions []ai.DecisionQuestion) (ai.DecisionsResult, error) {
+func (f *feedbackDecider) Decide(_ context.Context, _ map[string]string, questions []ai.DecisionQuestion) (ai.DecisionsResult, error) {
 	if len(questions) > 0 {
 		*f.capture = questions[0].Instructions
 	}
@@ -154,6 +154,86 @@ func TestPlanJevSingleSeedSkipsVotes(t *testing.T) {
 // failingDecider panics if consulted; used to prove vote-free paths.
 type failingDecider struct{}
 
-func (failingDecider) Decide(context.Context, string, map[string]string, []ai.DecisionQuestion) (ai.DecisionsResult, error) {
+func (failingDecider) Decide(context.Context, map[string]string, []ai.DecisionQuestion) (ai.DecisionsResult, error) {
 	panic("decider called")
+}
+
+type questionsDecider struct {
+	qs *[]ai.DecisionQuestion
+}
+
+func (q *questionsDecider) Decide(_ context.Context, _ map[string]string, questions []ai.DecisionQuestion) (ai.DecisionsResult, error) {
+	*q.qs = questions
+	return ai.DecisionsResult{Answers: map[string]ai.DecisionAnswer{
+		"s0": {Type: "choice", Choice: jevOwnOption},
+		"s1": {Type: "choice", Choice: jevOwnOption},
+	}}, nil
+}
+
+func TestPlanJevCriteriaAreIdDescriptionMaps(t *testing.T) {
+	files := []FileChange{
+		{Path: "pkg/a/x.go", Status: StatusModified},
+		{Path: "pkg/a/x_test.go", Status: StatusModified},
+		{Path: "docs/readme.md", Status: StatusModified},
+	}
+	var got []ai.DecisionQuestion
+	if _, err := planJevWith(context.Background(), files, JevPlannerConfig{}, &questionsDecider{qs: &got}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("no questions sent")
+	}
+	// The upstream rejects bare id lists with an opaque 400; every choice
+	// question must carry criteria as an id-to-description map.
+	crit, ok := got[0].Criteria.(map[string]string)
+	if !ok {
+		t.Fatalf("criteria type = %T, want map[string]string", got[0].Criteria)
+	}
+	if _, ok := crit["s1"]; !ok {
+		t.Errorf("neighbor option s1 missing: %v", crit)
+	}
+	if crit["own"] == "" {
+		t.Errorf("own option missing description: %v", crit)
+	}
+}
+
+// Regression: jev bundling must never merge the .claude→.agents skill
+// migration with unrelated cleanups; unpaired deletions from the same
+// area join their move. The planner itself (buildSeeds) owns this
+// grouping; jev votes only ever merge across those bundles.
+func TestPlanJevSeedBundlingIsolatesMigrationFromUnrelatedAreas(t *testing.T) {
+	files := []FileChange{
+		{Path: ".agents/skills/a/SKILL.md", OldPath: ".claude/skills/a/SKILL.md", Status: StatusRenamed},
+		{Path: ".agents/skills/b/SKILL.md", OldPath: ".claude/skills/b/SKILL.md", Status: StatusRenamed},
+		{Path: ".claude/CLAUDE.md", Status: StatusDeleted}, // unpaired: joins the move
+		{Path: ".beads/hooks/x", Status: StatusDeleted},    // unrelated cleanup
+		{Path: "modules/git-commits/seeds.go", Status: StatusModified},
+	}
+	plan, err := PlanSeeds(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Groups) < 3 {
+		t.Fatalf("groups = %d, want >= 3 (migration, .beads, modules): %+v", len(plan.Groups), plan.Groups)
+	}
+
+	var migration, beads, mods []string
+	for _, g := range plan.Groups {
+		for _, it := range g.Items {
+			switch {
+			case strings.HasPrefix(it.File, ".agents/") || it.File == ".claude/CLAUDE.md":
+				migration = append(migration, it.File)
+			case strings.HasPrefix(it.File, ".beads/"):
+				beads = append(beads, it.File)
+			case strings.HasPrefix(it.File, "modules/"):
+				mods = append(mods, it.File)
+			}
+		}
+		if g.Title != "" {
+			t.Errorf("group title pre-filled: %q — FillMessages owns titles", g.Title)
+		}
+	}
+	if len(migration) != 3 || len(beads) != 1 || len(mods) != 1 {
+		t.Errorf("split = migration:%v beads:%v modules:%v", migration, beads, mods)
+	}
 }

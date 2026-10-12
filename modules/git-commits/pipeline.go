@@ -22,6 +22,7 @@ type pipelineOpts struct {
 	Push        bool
 	Strategy    string
 	Planner     string
+	NoJev       bool
 	Prompt      string
 	Ignored     bool
 	NoSubmodule bool
@@ -87,7 +88,6 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	maxGroups := 8
 	customPrompt := opts.Prompt
 	plannerMode := opts.Planner
-	plannerModel := ""
 	var ignorePatterns []string
 
 	cfg := config.Get()
@@ -116,11 +116,6 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 			if p, ok := mod["planner"]; ok {
 				if v, ok := p.(string); ok && v != "" {
 					plannerMode = v
-				}
-			}
-			if p, ok := mod["planner_model"]; ok {
-				if v, ok := p.(string); ok && v != "" {
-					plannerModel = v
 				}
 			}
 			if ig, ok := mod["ignore"]; ok {
@@ -199,7 +194,11 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 	}
 
 	// Planner selection: flag overrides config; default jev (falls back to
-	// chat automatically when the decisions API is unavailable).
+	// chat automatically when the decisions API is unavailable). --no-jev
+	// skips the jev attempt entirely and uses the pre-jev chat planner.
+	if opts.NoJev {
+		plannerMode = PlannerChat
+	}
 	if plannerMode == "" {
 		plannerMode = PlannerJev
 	}
@@ -217,20 +216,23 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 		var raw *RawPlan
 		if plannerMode == PlannerJev {
 			jevCfg := JevPlannerConfig{
-				Model:    plannerModel,
 				Timeout:  timeout,
 				Feedback: planCfg.CustomPrompt,
 			}
 			p, err := PlanJev(ctx, cs.Files, jevCfg)
 			if err != nil {
-				fmt.Println(style.YellowStyle.Render(fmt.Sprintf("⚠️  jev planner unavailable (%v) — falling back to chat", err)))
+				// Every type: jev provider failed. The chat planner is the
+				// only remaining split path; it degrades to a single commit
+				// and hard-errors when AI is unavailable. There is no
+				// deterministic split — no AI means no work.
+				fmt.Println(style.YellowStyle.Render(fmt.Sprintf("⚠️  jev planner unavailable (%v) — falling back to chat planner", err)))
 				plannerMode = PlannerChat
-			} else {
-				if msgErr := FillMessages(ctx, p, client, timeout, planCfg.CustomPrompt); msgErr != nil {
-					fmt.Println(style.YellowStyle.Render(fmt.Sprintf("⚠️  Message generation failed (%v) — keeping heuristic titles", msgErr)))
-				}
-				raw = p
+				continue
 			}
+			if msgErr := FillMessages(ctx, p, client, timeout, planCfg.CustomPrompt); msgErr != nil {
+				fmt.Println(style.YellowStyle.Render(fmt.Sprintf("⚠️  Message generation failed (%v) — keeping heuristic titles", msgErr)))
+			}
+			raw = p
 		}
 		if raw == nil {
 			p, err := PlanSplit(ctx, batches, client, planCfg)

@@ -16,6 +16,7 @@ var (
 	yoloFlag        bool
 	strategyFlag    string
 	plannerFlag     string
+	noJevFlag       bool
 	promptFlag      string
 	ignoredFlag     bool
 	noSubmoduleFlag bool
@@ -50,6 +51,7 @@ AI provider: %s (configure via modules.git-commits.ai in config)`,
 	cmd.Flags().BoolVar(&yoloFlag, "yolo", false, "Stage all, auto-confirm, push to current branch")
 	cmd.Flags().StringVarP(&strategyFlag, "strategy", "s", "file", "Split strategy: file (whole files) or line (hunk-level)")
 	cmd.Flags().StringVar(&plannerFlag, "planner", "", "Commit planner: jev (default; bundle votes + chat messages) or chat (LLM plans from diffs)")
+	cmd.Flags().BoolVar(&noJevFlag, "no-jev", false, "Skip the jev planner and use the chat planner directly")
 	cmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "Custom prompt to append to system prompt")
 	cmd.Flags().BoolVar(&ignoredFlag, "ignored", false, "Include files matching modules.git-commits.ignore patterns")
 	cmd.Flags().BoolVar(&noSubmoduleFlag, "no-submodule", false, "Skip committing dirty submodules first")
@@ -68,6 +70,7 @@ func run(cmd *cobra.Command, args []string) error {
 		Push:        yoloFlag,
 		Strategy:    strategyFlag,
 		Planner:     plannerFlag,
+		NoJev:       noJevFlag,
 		Ignored:     ignoredFlag,
 		NoSubmodule: noSubmoduleFlag,
 	})

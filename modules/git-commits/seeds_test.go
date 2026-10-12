@@ -1,6 +1,9 @@
 package gitcommits
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func seedFile(path string, status FileStatus) FileChange {
 	return FileChange{Path: path, Status: status}
@@ -122,5 +125,47 @@ func TestBuildSeedsLabels(t *testing.T) {
 	want := "feat changes in pkg/ai: client.go(M), client_test.go(A)"
 	if seeds[0].Label != want {
 		t.Errorf("label = %q, want %q", seeds[0].Label, want)
+	}
+}
+
+// A directory migration expressed as delete+add pairs (git only detects
+// renames when contents stay similar) must become ONE seed, not one seed per
+// leaf directory.
+func TestBuildSeedsMovePairMigration(t *testing.T) {
+	files := []FileChange{
+		{Path: ".claude/skills/x/SKILL.md", Status: StatusDeleted},
+		{Path: ".claude/skills/y/SKILL.md", Status: StatusDeleted},
+		{Path: ".agents/skills/x/SKILL.md", Status: StatusAdded},
+		{Path: ".agents/skills/y/SKILL.md", Status: StatusAdded},
+		{Path: ".agents/tmp/leftover.png", Status: StatusDeleted}, // unpaired
+		{Path: "pkg/ai/client.go", Status: StatusModified},
+	}
+	seeds := buildSeeds(files)
+	migrated := 0
+	for _, s := range seeds {
+		if len(s.Files) == 4 { // 2 deletions + 2 paired additions
+			migrated++
+			for _, f := range s.Files {
+				if pathTop(f.Path) == ".agents" && strings.HasPrefix(f.Path, ".agents/tmp") {
+					t.Errorf("unpaired deletion joined the migration seed: %+v", f)
+				}
+			}
+		}
+	}
+	if migrated != 1 {
+		t.Errorf("found %d migration seeds, want 1", migrated)
+	}
+}
+
+// When adds mirror deletions into several destinations the pairing is
+// ambiguous — no migration seed is formed.
+func TestMoveMigrationAmbiguous(t *testing.T) {
+	files := []FileChange{
+		{Path: ".claude/x.md", Status: StatusDeleted},
+		{Path: ".agents/x.md", Status: StatusAdded},
+		{Path: ".other/x.md", Status: StatusAdded},
+	}
+	if src, dst, migration := moveMigration(files); migration != nil {
+		t.Errorf("expected no migration, got src=%q dst=%q files=%d", src, dst, len(migration))
 	}
 }

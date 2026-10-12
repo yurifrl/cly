@@ -15,8 +15,6 @@ const (
 )
 
 const (
-	// jevModelDefault is the AIHub System One model id used for bundling votes.
-	jevModelDefault = "aihub/jev-latest"
 	// jevOwnOption is the virtual vote meaning "this bundle is its own commit".
 	jevOwnOption = "own"
 	// jevChunkSize bounds seeds per Decisions call; typical changesets fit in one.
@@ -25,8 +23,6 @@ const (
 
 // JevPlannerConfig configures the jev bundling pass.
 type JevPlannerConfig struct {
-	// Model is the AIHub decisions model id (default aihub/jev-latest).
-	Model string
 	// Timeout bounds each Decisions call.
 	Timeout time.Duration
 	// Feedback is optional user revision text from the preview loop.
@@ -35,7 +31,7 @@ type JevPlannerConfig struct {
 
 // decider is the subset of the Decisions API client the jev planner needs.
 type decider interface {
-	Decide(ctx context.Context, model string, state map[string]string, questions []ai.DecisionQuestion) (ai.DecisionsResult, error)
+	Decide(ctx context.Context, state map[string]string, questions []ai.DecisionQuestion) (ai.DecisionsResult, error)
 }
 
 // PlanJev bundles files into affinity groups by asking the jev decision model
@@ -52,9 +48,6 @@ func PlanJev(ctx context.Context, files []FileChange, cfg JevPlannerConfig) (*Ra
 }
 
 func planJevWith(ctx context.Context, files []FileChange, cfg JevPlannerConfig, client decider) (*RawPlan, error) {
-	if cfg.Model == "" {
-		cfg.Model = jevModelDefault
-	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = defaultTimeout
 	}
@@ -102,6 +95,12 @@ func planJevWith(ctx context.Context, files []FileChange, cfg JevPlannerConfig, 
 		}
 	}
 
+	return planGroups(seeds, find), nil
+}
+
+// planGroups converts seed bundles into plan groups, one per union-find
+// root. find maps a seed index to its bundle representative.
+func planGroups(seeds []Seed, find func(int) int) *RawPlan {
 	groups := make([]RawGroup, 0, len(seeds))
 	byRoot := make(map[int]int) // find(i) -> group index
 	for i, s := range seeds {
@@ -118,7 +117,7 @@ func planJevWith(ctx context.Context, files []FileChange, cfg JevPlannerConfig, 
 		}
 	}
 
-	return &RawPlan{Groups: groups}, nil
+	return &RawPlan{Groups: groups}
 }
 
 // voteChunk asks jev, for each seed in the chunk, which other seed most
@@ -134,17 +133,19 @@ func voteChunk(ctx context.Context, client decider, cfg JevPlannerConfig, seeds 
 		state[id] = s.Label
 		index[id] = offset + i
 
-		options := make([]string, 0, len(seeds))
+		options := make(map[string]string, len(seeds))
 		for j := range seeds {
 			if j == i {
 				continue
 			}
-			options = append(options, fmt.Sprintf("s%d", offset+j))
+			// The upstream requires criteria as an id-to-description map; a
+			// bare id list is rejected with an opaque 400 (systemone_error).
+			options[fmt.Sprintf("s%d", offset+j)] = seeds[j].Label
 		}
-		options = append(options, jevOwnOption)
+		options[jevOwnOption] = "this bundle forms its own separate commit"
 
 		instructions := "You are deciding how to bundle changed files into git commits. " +
-			"Each option names another bundle of changed files; their contents are described in the state. " +
+			"Each option is another bundle of changed files, described on the option itself; " +
 			"Choose the ONE bundle that most clearly belongs in the same commit as the one you are voting for, " +
 			"or \"" + jevOwnOption + "\" if it should be a separate commit. " +
 			"Bundle together when changes serve one purpose (implementation + its tests, config + its feature, rename pairs). " +
@@ -161,7 +162,7 @@ func voteChunk(ctx context.Context, client decider, cfg JevPlannerConfig, seeds 
 		})
 	}
 
-	result, err := client.Decide(ctx, cfg.Model, state, questions)
+	result, err := client.Decide(ctx, state, questions)
 	if err != nil {
 		return nil, fmt.Errorf("jev vote failed: %w", err)
 	}

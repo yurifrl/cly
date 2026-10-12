@@ -22,6 +22,11 @@ type messageResponseWire struct {
 	} `json:"groups"`
 }
 
+// messageChunkSize bounds groups per message-generation LLM call. A 50-group
+// plan in a single call reliably exhausts the timeout while the response body
+// is still streaming, so titles are generated in chunks like the jev votes.
+const messageChunkSize = 8
+
 const messageSystemPrompt = `You write conventional commit messages for planned commit groups.
 You receive numbered groups, each with its files. For EACH group return title, type, scope, summary.
 Rules:
@@ -56,11 +61,49 @@ func FillMessages(ctx context.Context, plan *RawPlan, client llm.Client, timeout
 		return nil
 	}
 
+	// Message generation is chunked: one LLM call per messageChunkSize groups.
+	// A 50-group plan in a single call reliably deadlines (the response body
+	// cannot be read within the timeout), while planning already batches its
+	// calls. Each chunk gets its own timeout and failover attempt.
+	var pending []int
+	for i := range plan.Groups {
+		if strings.TrimSpace(plan.Groups[i].Title) == "" {
+			pending = append(pending, i)
+		}
+	}
+
+	var chunkErrs []string
+	for start := 0; start < len(pending); start += messageChunkSize {
+		end := start + messageChunkSize
+		if end > len(pending) {
+			end = len(pending)
+		}
+		if err := fillMessageChunk(ctx, plan, client, timeout, customPrompt, pending[start:end]); err != nil {
+			chunkErrs = append(chunkErrs, fmt.Sprintf("groups %d-%d: %v", pending[start]+1, pending[end-1]+1, err))
+		}
+	}
+
+	// Any group still untitled (failed chunks) gets a deterministic fallback
+	// so execution never commits an empty message.
+	fillFallbackTitles(plan)
+
+	if len(chunkErrs) > 0 {
+		totalChunks := (len(pending) + messageChunkSize - 1) / messageChunkSize
+		return fmt.Errorf("message generation failed for %d/%d chunk(s): %s", len(chunkErrs), totalChunks, strings.Join(chunkErrs, "; "))
+	}
+	return nil
+}
+
+// fillMessageChunk requests titles for the groups at the given plan indices in
+// one LLM call and applies the response. On failure the caller falls back to
+// deterministic titles for exactly those groups.
+func fillMessageChunk(ctx context.Context, plan *RawPlan, client llm.Client, timeout time.Duration, customPrompt string, idxs []int) error {
 	msgCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	var b strings.Builder
-	for i, g := range plan.Groups {
+	for _, i := range idxs {
+		g := &plan.Groups[i]
 		fmt.Fprintf(&b, "GROUP %d\n", i+1)
 		if g.Type != "" {
 			fmt.Fprintf(&b, "  type hint: %s\n", g.Type)
@@ -73,7 +116,7 @@ func FillMessages(ctx context.Context, plan *RawPlan, client llm.Client, timeout
 		}
 	}
 
-	userMsg := fmt.Sprintf("Write messages for these %d groups:\n\n%s", len(plan.Groups), b.String())
+	userMsg := fmt.Sprintf("Write messages for these %d groups:\n\n%s", len(idxs), b.String())
 	if customPrompt != "" {
 		userMsg = fmt.Sprintf("<user_instructions>\n%s\n</user_instructions>\n\n%s", customPrompt, userMsg)
 	}
@@ -82,7 +125,7 @@ func FillMessages(ctx context.Context, plan *RawPlan, client llm.Client, timeout
 		{Role: llm.RoleUser, Content: userMsg},
 	})
 	if err != nil {
-		return fmt.Errorf("message generation failed: %w", err)
+		return err
 	}
 
 	var wire messageResponseWire
@@ -110,9 +153,13 @@ func FillMessages(ctx context.Context, plan *RawPlan, client llm.Client, timeout
 			g.Summary = wg.Summary
 		}
 	}
+	return nil
+}
 
-	// Any group still untitled gets a deterministic fallback so execution
-	// never commits an empty message.
+// fillFallbackTitles gives every group without a title a deterministic one so
+// execution never runs `git commit -m ""`. Used both as the normal tail of
+// FillMessages and as the fallback on its error paths.
+func fillFallbackTitles(plan *RawPlan) {
 	for i := range plan.Groups {
 		g := &plan.Groups[i]
 		if strings.TrimSpace(g.Title) != "" {
@@ -130,5 +177,4 @@ func FillMessages(ctx context.Context, plan *RawPlan, client llm.Client, timeout
 		}
 		g.Title = title
 	}
-	return nil
 }

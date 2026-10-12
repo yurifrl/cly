@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yurifrl/cly/pkg/style"
 )
 
 // FileStatus represents the type of change to a file.
@@ -70,11 +73,112 @@ func GetChangeset(all bool) (*Changeset, error) {
 	}
 
 	cs := ParseDiff(diffOutput)
+
+	// Drop stale staged entries (staged earlier but since deleted from the
+	// worktree, or now excluded by the worktree's ignore rules) so the
+	// executor's reset-and-re-add flow cannot fail on them mid-run.
+	pruneStaleStaged(cs)
+
 	if len(cs.Files) == 0 {
 		return nil, fmt.Errorf("no staged changes found")
 	}
 
 	return cs, nil
+}
+
+// pruneStaleStaged drops new-file index entries that no longer reflect a
+// commit-able change: files staged earlier but since deleted from the
+// worktree, and files the worktree's ignore rules now exclude (e.g. tool
+// cache dirs carrying their own "*" ignore file). Both are stale: the
+// executor unstages everything before re-adding per group, and re-adding a
+// deleted or ignored path fails mid-run and rolls back the whole plan.
+// Dropped paths are unstaged so the index matches the worktree and the run
+// starts clean. Returns the pruned paths.
+func pruneStaleStaged(cs *Changeset) []string {
+	if cs == nil || len(cs.Files) == 0 {
+		return nil
+	}
+
+	// Only staged-new files can be stale: tracked paths are exempt from
+	// ignore rules, and a tracked path missing from the worktree is a
+	// legitimate staged deletion.
+	var added []string
+	for _, f := range cs.Files {
+		if f.Status == StatusAdded {
+			added = append(added, f.Path)
+		}
+	}
+	if len(added) == 0 {
+		return nil
+	}
+
+	ignored := worktreeIgnored(added)
+	staleSet := make(map[string]bool, len(added))
+	for _, p := range added {
+		if ignored[p] {
+			staleSet[p] = true
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(repoRoot(), filepath.FromSlash(p))); os.IsNotExist(err) {
+			staleSet[p] = true
+		}
+	}
+	if len(staleSet) == 0 {
+		return nil
+	}
+
+	stale := make([]string, 0, len(staleSet))
+	for _, f := range cs.Files {
+		if staleSet[f.Path] {
+			stale = append(stale, f.Path)
+		}
+	}
+
+	restoreArgs := append([]string{"restore", "--staged", "--"}, stale...)
+	if out, err := gitExec(restoreArgs...); err != nil {
+		// Non-fatal: the plan below no longer includes these paths; report
+		// the index hiccup and keep going.
+		fmt.Printf("   %s\n", style.YellowStyle.Render(fmt.Sprintf("⚠️  stale index cleanup failed (%s): %v", strings.TrimSpace(out), err)))
+	}
+
+	kept := cs.Files[:0]
+	for _, f := range cs.Files {
+		if staleSet[f.Path] {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	cs.Files = kept
+
+	fmt.Printf("   %s %d stale staged file(s) skipped (deleted or ignored):\n", style.YellowStyle.Render("⏭"), len(stale))
+	for _, p := range stale {
+		fmt.Printf("     - %s\n", p)
+	}
+	return stale
+}
+
+// worktreeIgnored reports which of the given paths the worktree's ignore
+// rules exclude, regardless of whether they are already staged.
+func worktreeIgnored(paths []string) map[string]bool {
+	set := make(map[string]bool)
+	if len(paths) == 0 {
+		return set
+	}
+	args := []string{"check-ignore", "-z", "--no-index", "--stdin"}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoRoot()
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00"))
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		// Exit 1 (nothing ignored) or an unknown git — skip the check.
+		return set
+	}
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p != "" {
+			set[p] = true
+		}
+	}
+	return set
 }
 
 // ParseDiff parses unified diff output into a Changeset.

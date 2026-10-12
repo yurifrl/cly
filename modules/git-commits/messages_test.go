@@ -107,3 +107,100 @@ func TestFillMessagesEmptyPlan(t *testing.T) {
 	}
 	_ = fmt.Sprint()
 }
+
+// Regression: gc -a -y committed nothing because a failed LLM call left every
+// group title empty and `git commit -m ""` fails. Error paths must still
+// produce deterministic titles.
+func TestFillMessagesErrorStillFillsTitles(t *testing.T) {
+	for name, stub := range map[string]*stubMsgClient{
+		"complete error": {err: fmt.Errorf("llm down")},
+		"bad json":       {resp: "not json at all {"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan := &RawPlan{Groups: []RawGroup{
+				{Items: []RawItem{{File: "a.go"}}},
+				{Type: "docs", Items: []RawItem{{File: "b.md"}}},
+			}}
+			if err := FillMessages(context.Background(), plan, stub, time.Second, ""); err == nil {
+				t.Fatal("expected error to propagate")
+			}
+			for i, g := range plan.Groups {
+				if strings.TrimSpace(g.Title) == "" {
+					t.Errorf("group %d title empty after error path", i)
+				}
+			}
+			if plan.Groups[0].Title != "chore: update 1 file(s)" {
+				t.Errorf("group 0 title = %q", plan.Groups[0].Title)
+			}
+			if !strings.HasPrefix(plan.Groups[1].Title, "docs") {
+				t.Errorf("group 1 title = %q", plan.Groups[1].Title)
+			}
+		})
+	}
+}
+
+// Regression: validators must never emit an execution-ready group with an
+// empty title, even if a caller skips FillMessages.
+func TestValidatePlanFillsEmptyTitle(t *testing.T) {
+	cs := &Changeset{Files: []FileChange{
+		{Path: "a.go", Status: StatusModified},
+	}}
+	raw := &RawPlan{Groups: []RawGroup{{Items: []RawItem{{File: "a.go"}}}}}
+	plan, err := ValidatePlan(raw, cs, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Groups[0].Title == "" {
+		t.Fatal("empty title passed validation")
+	}
+	if plan.Groups[0].Title != "chore: update 1 file(s)" {
+		t.Errorf("title = %q", plan.Groups[0].Title)
+	}
+}
+
+// Regression: a 50-group plan in one LLM call deadlines while the response
+// body streams, so titles fell back to heuristics (gc -a -y pushed 50
+// "chore: update N file(s)" commits). Generation must be chunked.
+func TestFillMessagesChunksCalls(t *testing.T) {
+	groups := make([]RawGroup, 10)
+	for i := range groups {
+		groups[i] = RawGroup{Items: []RawItem{{File: fmt.Sprintf("f%d.go", i)}}}
+	}
+	plan := &RawPlan{Groups: groups}
+	stub := &stubMsgChunks{}
+	if err := FillMessages(context.Background(), plan, stub, time.Second, ""); err != nil {
+		t.Fatal(err)
+	}
+	if stub.calls != 2 { // 10 groups / messageChunkSize 8 → 2 calls
+		t.Errorf("Complete calls = %d, want 2", stub.calls)
+	}
+	for i, g := range plan.Groups {
+		if g.Title != fmt.Sprintf("feat: group %d", i+1) {
+			t.Errorf("group %d title = %q", i+1, g.Title)
+		}
+	}
+}
+
+// stubMsgChunks echoes one valid group entry per "GROUP n" line seen in the
+// prompt, so chunked calls with global ids can be verified end to end.
+type stubMsgChunks struct {
+	calls int
+}
+
+func (s *stubMsgChunks) Complete(ctx context.Context, system string, messages []llm.Message) (string, error) {
+	s.calls++
+	var entries []string
+	for _, m := range messages {
+		for _, line := range strings.Split(m.Content, "\n") {
+			line = strings.TrimSpace(line)
+			if id, ok := strings.CutPrefix(line, "GROUP "); ok {
+				entries = append(entries, fmt.Sprintf(`{"id":%s,"title":"feat: group %s"}`, id, id))
+			}
+		}
+	}
+	return `{"groups":[` + strings.Join(entries, ",") + `]}`, nil
+}
+
+func (s *stubMsgChunks) Stream(ctx context.Context, systemPrompt string, messages []llm.Message) (<-chan llm.StreamChunk, error) {
+	return nil, fmt.Errorf("stream not expected in tests")
+}

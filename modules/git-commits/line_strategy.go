@@ -216,7 +216,7 @@ func ValidateLinePlan(raw *RawPlan, cs *Changeset) (*CommitPlan, error) {
 		}
 
 		groups = append(groups, CommitGroup{
-			Title:   rg.Title,
+			Title:   commitTitle(rg),
 			Type:    rg.Type,
 			Summary: rg.Summary,
 			Body:    rg.Body,
