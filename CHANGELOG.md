@@ -6,10 +6,11 @@
 - `ai.providers` entries take `type: chat` (default) or `type: jev`; selection and failover stay inside their pool — normal model picking never lands on a jev entry and jev requests never land on a chat provider
 - The jev planner's endpoint, model, and key all come from configured `type: jev` entries (multiple entries fail over); `AIHUB_API_KEY` env guessing, the hardcoded `ai-llm-gateway.fbr.land` host, the `aihub/jev-latest` model id, and `modules.git-commits.planner_model` are gone
 
-## 2026-10-11 gc Degrades To Deterministic Grouping When Jev Is Down
+## 2026-10-11 gc Jev Fallback Goes To The Chat Planner
 
 ### Fixed
-- An unreachable decisions gateway no longer hands the whole changeset to the chat planner (which collapsed 156 files into one mega-commit); `gc` falls back to the same deterministic seed bundles jev votes over — migration stays one commit, unrelated areas stay separate — and only titles come from the chat AI (heuristic titles if that fails too)
+- When every `type: jev` provider fails, `gc` re-plans with the chat planner instead of a deterministic no-AI split; the chat planner keeps its own single-commit fallback and hard-errors when AI is unavailable — no AI means no work, never a silent non-AI plan
+- The jev pool now includes OpenRouter's hosted Decisions API (`openrouter.ai`, model `~typesafe/jev-latest`) ahead of the AIHub gateway, so a dead gateway no longer takes jev planning down
 
 ## 2026-10-11 gc Titles And Groups At Scale
 
