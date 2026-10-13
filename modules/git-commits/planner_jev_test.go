@@ -209,7 +209,7 @@ func TestPlanJevSeedBundlingIsolatesMigrationFromUnrelatedAreas(t *testing.T) {
 		{Path: ".beads/hooks/x", Status: StatusDeleted},    // unrelated cleanup
 		{Path: "modules/git-commits/seeds.go", Status: StatusModified},
 	}
-	plan, err := PlanSeeds(files)
+	plan, err := planJevWith(context.Background(), files, JevPlannerConfig{}, &stubDecider{})
 	if err != nil {
 		t.Fatal(err)
 	}
