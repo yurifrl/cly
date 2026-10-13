@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // jevServer builds a Decisions stub returning the given JSON with status.
@@ -127,6 +130,31 @@ func TestDecideAllEndpointsDown(t *testing.T) {
 		[]DecisionQuestion{{ID: "s0", Type: "noul"}}); err == nil {
 		t.Fatal("expected error when every jev endpoint fails")
 	}
+}
+
+// The jev pool preserves ai.providers order among equally-ranked entries,
+// so config order is the failover order (user puts the preferred host
+// first). Both entries here are default:true with no conditions.
+func TestJevPoolKeepsConfigOrder(t *testing.T) {
+	entries, err := parseProviders(map[string]interface{}{
+		"providers": []interface{}{
+			map[string]interface{}{
+				"name": "first", "provider": "openrouter", "type": "jev",
+				"base_url": "https://openrouter.ai", "api_key": "$OPENROUTER_API_KEY",
+				"model": "~typesafe/jev-latest", "default": true,
+			},
+			map[string]interface{}{
+				"name": "second", "provider": "openai", "type": "jev",
+				"base_url": "https://ai-llm-gateway.fbr.land", "api_key": "$AIHUB_API_KEY",
+				"model": "aihub/jev-latest", "default": true,
+			},
+		},
+	})
+	require.NoError(t, err)
+	eps := decisionsEndpoints(entries, buildContext())
+	require.Len(t, eps, 2)
+	assert.Equal(t, "first", eps[0].name)
+	assert.Equal(t, "second", eps[1].name)
 }
 
 func TestDecideRejectsDuplicateIDs(t *testing.T) {
