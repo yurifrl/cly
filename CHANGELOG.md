@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-14 gc Fails Hard Without AI
+
+### Changed
+- `gc` never commits without AI: jev planner failure, failed or malformed message generation, chat-planner failure, and invalid plans all abort the run — no chat-planner fallback, no single-commit fallback, no deterministic `chore: update N file(s)` titles
+- Untitled groups are rejected at validation, so a plan without AI-generated messages can never reach execution; `-m ""` failures are unreachable by construction
+
 ## 2026-10-11 Typed AI Provider Pools
 
 ### Added
