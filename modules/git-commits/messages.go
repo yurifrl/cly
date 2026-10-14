@@ -83,20 +83,24 @@ func FillMessages(ctx context.Context, plan *RawPlan, client llm.Client, timeout
 		}
 	}
 
-	// Any group still untitled (failed chunks) gets a deterministic fallback
-	// so execution never commits an empty message.
-	fillFallbackTitles(plan)
-
 	if len(chunkErrs) > 0 {
 		totalChunks := (len(pending) + messageChunkSize - 1) / messageChunkSize
 		return fmt.Errorf("message generation failed for %d/%d chunk(s): %s", len(chunkErrs), totalChunks, strings.Join(chunkErrs, "; "))
+	}
+
+	// A chunk response that skipped a group would leave an empty title and
+	// later fail `git commit -m ""`. No AI title, no commit.
+	for _, i := range pending {
+		if strings.TrimSpace(plan.Groups[i].Title) == "" {
+			return fmt.Errorf("group %d left untitled by message generation", i+1)
+		}
 	}
 	return nil
 }
 
 // fillMessageChunk requests titles for the groups at the given plan indices in
-// one LLM call and applies the response. On failure the caller falls back to
-// deterministic titles for exactly those groups.
+// one LLM call and applies the response. On failure the caller aborts: no AI
+// title, no commit.
 func fillMessageChunk(ctx context.Context, plan *RawPlan, client llm.Client, timeout time.Duration, customPrompt string, idxs []int) error {
 	msgCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -156,25 +160,3 @@ func fillMessageChunk(ctx context.Context, plan *RawPlan, client llm.Client, tim
 	return nil
 }
 
-// fillFallbackTitles gives every group without a title a deterministic one so
-// execution never runs `git commit -m ""`. Used both as the normal tail of
-// FillMessages and as the fallback on its error paths.
-func fillFallbackTitles(plan *RawPlan) {
-	for i := range plan.Groups {
-		g := &plan.Groups[i]
-		if strings.TrimSpace(g.Title) != "" {
-			continue
-		}
-		typ := g.Type
-		if typ == "" {
-			typ = "chore"
-		}
-		title := typ
-		if g.Scope != "" {
-			title = fmt.Sprintf("%s(%s): update %s", typ, g.Scope, g.Scope)
-		} else {
-			title = fmt.Sprintf("%s: update %d file(s)", typ, len(g.Items))
-		}
-		g.Title = title
-	}
-}

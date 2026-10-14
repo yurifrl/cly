@@ -215,8 +215,12 @@ func ValidateLinePlan(raw *RawPlan, cs *Changeset) (*CommitPlan, error) {
 			continue
 		}
 
+		title, terr := commitTitle(rg)
+		if terr != nil {
+			return nil, terr
+		}
 		groups = append(groups, CommitGroup{
-			Title:   commitTitle(rg),
+			Title:   title,
 			Type:    rg.Type,
 			Summary: rg.Summary,
 			Body:    rg.Body,

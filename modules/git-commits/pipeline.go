@@ -193,9 +193,8 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 		MaxGroups:    maxGroups,
 	}
 
-	// Planner selection: flag overrides config; default jev (falls back to
-	// chat automatically when the decisions API is unavailable). --no-jev
-	// skips the jev attempt entirely and uses the pre-jev chat planner.
+	// Planner selection: flag overrides config; default jev. --no-jev skips
+	// the jev attempt entirely and uses the chat planner.
 	if opts.NoJev {
 		plannerMode = PlannerChat
 	}
@@ -221,28 +220,19 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 			}
 			p, err := PlanJev(ctx, cs.Files, jevCfg)
 			if err != nil {
-				// Every type: jev provider failed. The chat planner is the
-				// only remaining split path; it degrades to a single commit
-				// and hard-errors when AI is unavailable. There is no
-				// deterministic split — no AI means no work.
-				fmt.Println(style.YellowStyle.Render(fmt.Sprintf("⚠️  jev planner unavailable (%v) — falling back to chat planner", err)))
-				plannerMode = PlannerChat
-				continue
+				// Every type: jev provider failed. There is no deterministic
+				// split — no AI means no work.
+				return fmt.Errorf("jev planning failed: %w", err)
 			}
-			if msgErr := FillMessages(ctx, p, client, timeout, planCfg.CustomPrompt); msgErr != nil {
-				fmt.Println(style.YellowStyle.Render(fmt.Sprintf("⚠️  Message generation failed (%v) — keeping heuristic titles", msgErr)))
+			if err := FillMessages(ctx, p, client, timeout, planCfg.CustomPrompt); err != nil {
+				return fmt.Errorf("commit message generation failed: %w", err)
 			}
 			raw = p
 		}
 		if raw == nil {
 			p, err := PlanSplit(ctx, batches, client, planCfg)
 			if err != nil {
-				// Fallback to single commit
-				fmt.Println(style.YellowStyle.Render("⚠️  Split planning failed, falling back to single commit"))
-				p, err = GenerateFallbackMessage(ctx, cs, client, timeout)
-				if err != nil {
-					return fmt.Errorf("fallback also failed: %w", err)
-				}
+				return fmt.Errorf("chat planning failed: %w", err)
 			}
 			raw = p
 		}
@@ -256,15 +246,7 @@ func runPipeline(cmd *cobra.Command, opts pipelineOpts) error {
 			plan, validateErr = ValidatePlan(raw, cs, skipHeal)
 		}
 		if validateErr != nil {
-			fmt.Println(style.YellowStyle.Render("⚠️  Plan validation failed, falling back to single commit"))
-			raw, err = GenerateFallbackMessage(ctx, cs, client, timeout)
-			if err != nil {
-				return fmt.Errorf("fallback also failed: %w", err)
-			}
-			plan, err = ValidatePlan(raw, cs, skipHeal)
-			if err != nil {
-				return fmt.Errorf("even fallback plan failed validation: %w", err)
-			}
+			return fmt.Errorf("plan validation failed: %w", validateErr)
 		}
 
 		// Step 5: Preview

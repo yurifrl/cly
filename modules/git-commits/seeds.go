@@ -10,10 +10,11 @@ import (
 //
 // buildSeeds clusters the changeset into candidate bundles using cheap path
 // heuristics (rename pairing, shared directory area). Jev then re-assigns
-// each file onto one of these seeds (or votes "own"); the heuristic assignment
-// is the default whenever jev is unavailable or unsure, so the planner always
-// produces a valid plan. Seeds carry conventional type/scope so merged groups
-// reuse the same consolidation keys as the chat planner.
+// each file onto one of these seeds (or votes "own"); a seed left unmerged
+// (or voted "own") stands as its own commit. Seeds carry conventional
+// type/scope so merged groups reuse the same consolidation keys as the chat
+// planner. When every jev provider fails the planner errors out — no
+// heuristic-only plan exists.
 
 // Seed is one heuristic affinity bundle.
 type Seed struct {

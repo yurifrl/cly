@@ -252,54 +252,6 @@ func consolidateViaLLM(ctx context.Context, plan *RawPlan, client llm.Client, _ 
 	return out, nil
 }
 
-// GenerateFallbackMessage creates a single conventional commit message.
-func GenerateFallbackMessage(ctx context.Context, cs *Changeset, client llm.Client, timeout time.Duration) (*RawPlan, error) {
-	if timeout == 0 {
-		timeout = defaultTimeout
-	}
-
-	fallbackCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	var fileList strings.Builder
-	for _, f := range cs.Files {
-		fileList.WriteString(fmt.Sprintf("  %s %s\n", f.Status, f.Path))
-	}
-
-	resp, err := client.Complete(fallbackCtx,
-		"Generate a single conventional commit message (e.g. feat:, fix:, chore:) for these changes. Respond with ONLY the commit message, no explanation.",
-		[]llm.Message{
-			{Role: llm.RoleUser, Content: fmt.Sprintf("Changed files:\n%s", fileList.String())},
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("fallback message generation failed: %w", err)
-	}
-
-	title := strings.TrimSpace(resp)
-	// Take only first line
-	if idx := strings.Index(title, "\n"); idx >= 0 {
-		title = title[:idx]
-	}
-
-	// Build a single-group plan with all files
-	items := make([]RawItem, len(cs.Files))
-	for i, f := range cs.Files {
-		items[i] = RawItem{File: f.Path}
-	}
-
-	return &RawPlan{
-		Groups: []RawGroup{
-			{
-				Title:   title,
-				Type:    inferType(title),
-				Summary: "All changes in a single commit (fallback)",
-				Items:   items,
-			},
-		},
-	}, nil
-}
-
 // stripFences removes markdown code fences wrapping a response.
 func stripFences(response string) string {
 	response = strings.TrimSpace(response)

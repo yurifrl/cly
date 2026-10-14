@@ -69,17 +69,20 @@ func TestFillMessagesSkipsTitledGroups(t *testing.T) {
 	}
 }
 
-func TestFillMessagesFallbackTitle(t *testing.T) {
+func TestFillMessagesUncoveredGroupAborts(t *testing.T) {
 	plan := &RawPlan{Groups: []RawGroup{
 		{Type: "docs", Scope: "guide", Items: []RawItem{{File: "docs/g.md"}}},
 		{Items: []RawItem{{File: "x.go"}}},
 	}}
 	stub := &stubMsgClient{resp: `{"groups":[{"id":2,"title":"fix: handle empty input"}]}`}
-	if err := FillMessages(context.Background(), plan, stub, time.Second, ""); err != nil {
-		t.Fatal(err)
+	if err := FillMessages(context.Background(), plan, stub, time.Second, ""); err == nil {
+		t.Fatal("expected response that skips a group to fail the pipeline")
 	}
-	if plan.Groups[0].Title == "" || !strings.HasPrefix(plan.Groups[0].Title, "docs") {
-		t.Errorf("group 0 fallback = %q", plan.Groups[0].Title)
+	if plan.Groups[1].Title != "fix: handle empty input" {
+		t.Errorf("covered group title lost: %q", plan.Groups[1].Title)
+	}
+	if strings.TrimSpace(plan.Groups[0].Title) != "" {
+		t.Errorf("untitled group must not get a deterministic fallback: %q", plan.Groups[0].Title)
 	}
 }
 
@@ -109,9 +112,10 @@ func TestFillMessagesEmptyPlan(t *testing.T) {
 }
 
 // Regression: gc -a -y committed nothing because a failed LLM call left every
-// group title empty and `git commit -m ""` fails. Error paths must still
-// produce deterministic titles.
-func TestFillMessagesErrorStillFillsTitles(t *testing.T) {
+// group title empty and `git commit -m ""` fails. The fix now goes the other
+// way: a failed message generation must abort the pipeline — no AI title, no
+// commit, and never a deterministic fallback title.
+func TestFillMessagesErrorAborts(t *testing.T) {
 	for name, stub := range map[string]*stubMsgClient{
 		"complete error": {err: fmt.Errorf("llm down")},
 		"bad json":       {resp: "not json at all {"},
@@ -125,36 +129,27 @@ func TestFillMessagesErrorStillFillsTitles(t *testing.T) {
 				t.Fatal("expected error to propagate")
 			}
 			for i, g := range plan.Groups {
-				if strings.TrimSpace(g.Title) == "" {
-					t.Errorf("group %d title empty after error path", i)
+				if strings.TrimSpace(g.Title) != "" {
+					t.Errorf("group %d got fallback title %q — no deterministic titles allowed", i, g.Title)
 				}
-			}
-			if plan.Groups[0].Title != "chore: update 1 file(s)" {
-				t.Errorf("group 0 title = %q", plan.Groups[0].Title)
-			}
-			if !strings.HasPrefix(plan.Groups[1].Title, "docs") {
-				t.Errorf("group 1 title = %q", plan.Groups[1].Title)
 			}
 		})
 	}
 }
 
-// Regression: validators must never emit an execution-ready group with an
-// empty title, even if a caller skips FillMessages.
-func TestValidatePlanFillsEmptyTitle(t *testing.T) {
+// Regression: validators must reject an AI plan with an untitled group
+// instead of inventing one.
+func TestValidatePlanRejectsEmptyTitle(t *testing.T) {
 	cs := &Changeset{Files: []FileChange{
 		{Path: "a.go", Status: StatusModified},
 	}}
 	raw := &RawPlan{Groups: []RawGroup{{Items: []RawItem{{File: "a.go"}}}}}
 	plan, err := ValidatePlan(raw, cs, false)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected empty title to fail validation")
 	}
-	if plan.Groups[0].Title == "" {
-		t.Fatal("empty title passed validation")
-	}
-	if plan.Groups[0].Title != "chore: update 1 file(s)" {
-		t.Errorf("title = %q", plan.Groups[0].Title)
+	if plan != nil {
+		t.Errorf("plan returned on invalid input: %+v", plan)
 	}
 }
 

@@ -85,8 +85,12 @@ func ValidatePlan(raw *RawPlan, cs *Changeset, skipAutoHeal bool) (*CommitPlan, 
 			continue
 		}
 
+		title, err := commitTitle(rg)
+		if err != nil {
+			return nil, err
+		}
 		groups = append(groups, CommitGroup{
-			Title:   commitTitle(rg),
+			Title:   title,
 			Type:    rg.Type,
 			Summary: rg.Summary,
 			Body:    rg.Body,
@@ -127,20 +131,14 @@ func ValidatePlan(raw *RawPlan, cs *Changeset, skipAutoHeal bool) (*CommitPlan, 
 	return &CommitPlan{Groups: groups}, nil
 }
 
-// commitTitle returns the group's title, or a deterministic fallback when the
-// planner left it empty so execution never runs `git commit -m ""`.
-func commitTitle(rg RawGroup) string {
+// commitTitle returns the group's title. The planner (chat, or jev + chat
+// message fill) must set it via AI; an empty title means message generation
+// failed and there is no deterministic fallback.
+func commitTitle(rg RawGroup) (string, error) {
 	if t := strings.TrimSpace(rg.Title); t != "" {
-		return t
+		return t, nil
 	}
-	typ := rg.Type
-	if typ == "" {
-		typ = "chore"
-	}
-	if rg.Scope != "" {
-		return fmt.Sprintf("%s(%s): update %s", typ, rg.Scope, rg.Scope)
-	}
-	return fmt.Sprintf("%s: update %d file(s)", typ, len(rg.Items))
+	return "", fmt.Errorf("group %q has no title — AI message generation is required", rg.Items[0].File)
 }
 
 // resolveFile matches a file reference to a changeset entry.
