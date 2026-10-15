@@ -26,10 +26,11 @@ func Register(parent *cobra.Command) {
 
 func NewRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "mcp",
-		Short: "MCP server manager for AI tools",
-		Long:  "Manage MCP servers for Claude Code, Cursor IDE, and Claude Desktop",
-		RunE:  runTUI,
+		Use:     "mcp",
+		Aliases: []string{"m"},
+		Short:   "MCP server manager for AI tools",
+		Long:    "Manage MCP servers for Claude Code, Cursor IDE, and Claude Desktop",
+		RunE:    runTUI,
 	}
 
 	cmd.PersistentFlags().StringVar(&contextFlag, "context", "", "Context: <ai>:<scope> (e.g., pi:user)")
