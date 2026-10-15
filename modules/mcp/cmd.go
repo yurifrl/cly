@@ -243,8 +243,10 @@ func getAdapter(ai string) (Adapter, error) {
 		return &DesktopAdapter{}, nil
 	case "pi":
 		return &PiAdapter{}, nil
+	case "omp":
+		return &OmpAdapter{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported AI tool: %s (available: agents, claude, cursor, desktop, pi)", ai)
+		return nil, fmt.Errorf("unsupported AI tool: %s (available: agents, claude, cursor, desktop, pi, omp)", ai)
 	}
 }
 
@@ -743,11 +745,11 @@ func setContext(contextStr string) error {
 
 	ai, scope := parts[0], parts[1]
 
-	validAI := map[string]bool{"agents": true, "claude": true, "cursor": true, "desktop": true, "pi": true}
+	validAI := map[string]bool{"agents": true, "claude": true, "cursor": true, "desktop": true, "pi": true, "omp": true}
 	validScope := map[string]bool{"user": true, "project": true, "local": true}
 
 	if !validAI[ai] {
-		return fmt.Errorf("invalid AI: %s (available: agents, claude, cursor, desktop, pi)", ai)
+		return fmt.Errorf("invalid AI: %s (available: agents, claude, cursor, desktop, pi, omp)", ai)
 	}
 	if !validScope[scope] {
 		return fmt.Errorf("invalid scope: %s (available: user, project, local)", scope)

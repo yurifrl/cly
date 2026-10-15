@@ -21,6 +21,8 @@ var contextOptions = []contextOption{
 	{"claude", "local", "Claude Code (local)", "edits ~/.claude.json under projects[cwd] key"},
 	{"pi", "project", "Pi (project)", "project .pi/mcp.json"},
 	{"pi", "user", "Pi (user)", "global ~/.pi/agent/mcp.json"},
+	{"omp", "project", "omp (project)", "project .omp/mcp.json"},
+	{"omp", "user", "omp (user)", "global ~/.omp/agent/mcp.json"},
 	{"cursor", "user", "Cursor IDE (user)", "global cursor settings"},
 	{"cursor", "project", "Cursor IDE (project)", "project .cursor/mcp.json"},
 	{"desktop", "user", "Claude Desktop", "desktop app config"},
@@ -52,6 +54,8 @@ func (m Model) renderContextSwitcher() string {
 			adapter = &ClaudeAdapter{}
 		case "pi":
 			adapter = &PiAdapter{}
+		case "omp":
+			adapter = &OmpAdapter{}
 		case "cursor":
 			adapter = &CursorAdapter{}
 		case "desktop":

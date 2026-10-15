@@ -29,8 +29,10 @@ func GetAdapter(ai string) (Adapter, error) {
 		return &DesktopAdapter{}, nil
 	case "pi":
 		return &PiAdapter{}, nil
+	case "omp":
+		return &OmpAdapter{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported AI tool: %s (valid: agents, claude, cursor, desktop, pi)", ai)
+		return nil, fmt.Errorf("unsupported AI tool: %s (valid: agents, claude, cursor, desktop, pi, omp)", ai)
 	}
 }
 
@@ -262,11 +264,11 @@ func (a *ClaudeAdapter) IsInstalled() bool {
 // PiAdapter implements the Adapter interface for Pi
 type PiAdapter struct{}
 
-type piMCP struct {
+type agentMCP struct {
 	MCP
 }
 
-func (p piMCP) MarshalJSON() ([]byte, error) {
+func (p agentMCP) MarshalJSON() ([]byte, error) {
 	m := make(map[string]interface{})
 	if p.Type != "" {
 		m["type"] = p.Type
@@ -290,7 +292,7 @@ func (p piMCP) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-func (p *piMCP) UnmarshalJSON(data []byte) error {
+func (p *agentMCP) UnmarshalJSON(data []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -379,7 +381,7 @@ func (a *PiAdapter) ReadConfig(scope string) (*ToolConfig, error) {
 	if mcpServers, ok := raw["mcpServers"].(map[string]interface{}); ok {
 		for name, serverData := range mcpServers {
 			serverJSON, _ := json.Marshal(serverData)
-			var wrapped piMCP
+			var wrapped agentMCP
 			if err := json.Unmarshal(serverJSON, &wrapped); err == nil {
 				wrapped.Name = name
 				toolCfg.MCPServers[name] = wrapped.MCP
@@ -404,9 +406,9 @@ func (a *PiAdapter) WriteConfig(scope string, mcps []MCP) error {
 		config = make(map[string]interface{})
 	}
 
-	mcpServers := make(map[string]piMCP)
+	mcpServers := make(map[string]agentMCP)
 	for _, mcp := range mcps {
-		mcpServers[mcp.Name] = piMCP{MCP: mcp}
+		mcpServers[mcp.Name] = agentMCP{MCP: mcp}
 	}
 
 	config["mcpServers"] = mcpServers
@@ -439,6 +441,113 @@ func (a *PiAdapter) IsInstalled() bool {
 		return false
 	}
 	_, err = os.Stat(filepath.Join(homeDir, ".pi"))
+	return err == nil
+}
+
+// OmpAdapter implements the Adapter interface for the omp agent
+type OmpAdapter struct{}
+
+func (a *OmpAdapter) GetConfigPath(scope string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	switch scope {
+	case "user":
+		return filepath.Join(homeDir, ".omp", "agent", "mcp.json"), nil
+	case "local", "project":
+		return ".omp/mcp.json", nil
+	default:
+		return "", fmt.Errorf("unsupported scope for OMP: %s (only user, local, and project)", scope)
+	}
+}
+
+func (a *OmpAdapter) ReadConfig(scope string) (*ToolConfig, error) {
+	path, err := a.GetConfigPath(scope)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return &ToolConfig{MCPServers: make(map[string]MCP)}, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("malformed JSON: %w", err)
+	}
+
+	toolCfg := &ToolConfig{MCPServers: make(map[string]MCP)}
+
+	if mcpServers, ok := raw["mcpServers"].(map[string]interface{}); ok {
+		for name, serverData := range mcpServers {
+			serverJSON, _ := json.Marshal(serverData)
+			var m MCP
+			if err := json.Unmarshal(serverJSON, &m); err == nil {
+				m.Name = name
+				toolCfg.MCPServers[name] = m
+			}
+		}
+	}
+
+	return toolCfg, nil
+}
+
+func (a *OmpAdapter) WriteConfig(scope string, mcps []MCP) error {
+	path, err := a.GetConfigPath(scope)
+	if err != nil {
+		return err
+	}
+
+	var config map[string]interface{}
+	if data, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(data, &config)
+	}
+	if config == nil {
+		config = make(map[string]interface{})
+	}
+
+	mcpServers := make(map[string]agentMCP)
+	for _, mcp := range mcps {
+		mcpServers[mcp.Name] = agentMCP{MCP: mcp}
+	}
+
+	config["mcpServers"] = mcpServers
+
+	tempPath := path + ".tmp"
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tempPath, path); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	return nil
+}
+
+func (a *OmpAdapter) IsInstalled() bool {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(homeDir, ".omp"))
 	return err == nil
 }
 

@@ -19,6 +19,8 @@ func (m Model) switchContext(ai, scope string) tea.Cmd {
 			adapter = &ClaudeAdapter{}
 		case "pi":
 			adapter = &PiAdapter{}
+		case "omp":
+			adapter = &OmpAdapter{}
 		case "cursor":
 			adapter = &CursorAdapter{}
 		case "desktop":
