@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-15 Go Bundler
+
+### Added
+- `cly bundle go` — declarative Go tool management from `Gofile` (default `~/.config/cly/bundles/Gofile`, `modules.bundle.go_file`); `go` accepted in `bundle`, `bundle check`, `bundle cleanup`, and `bundle all`
+- Gofile semantics mirror the js bundler: bare name installs once (`--upgrade`/`--force` refresh), `@latest` tracks upstream on every sync, `pkg@vX.Y.Z` pins and reinstalls on mismatch; specs may name the module root (`mvdan.cc/gofumpt`) or a command inside it (`golang.org/x/tools/cmd/goimports`)
+- Go tool state is read from each binary's embedded build info (`debug/buildinfo`), so sync/cleanup are truthful with no bookkeeping store; files in the Go bin dir without build info are never touched
+- Check reports planned installs (with installed versions) and removals without changing anything
+
 ## 2026-10-14 gc Fails Hard Without AI
 
 ### Changed
