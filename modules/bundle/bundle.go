@@ -35,6 +35,7 @@ func Register(root *cobra.Command) {
 		}
 		bundlers := map[string]Bundler{
 			"brew":   NewBrewBundler(),
+			"go":     NewGoBundler(),
 			"js":     NewJsBundler(s),
 			"python": NewPythonBundler(s),
 			"py":     NewPythonBundler(s),
@@ -52,7 +53,7 @@ func Register(root *cobra.Command) {
 		Use:          "bundle [type]",
 		Short:        "Edit and sync packages from declarative bundle files",
 		SilenceUsage: true,
-		Long: `Unified declarative package management for brew, js, python, and rust.
+		Long: `Unified declarative package management for brew, js, python, rust, and go.
 
 Opens bundle file in $EDITOR, syncs after save, prompts to continue editing.
 
@@ -60,7 +61,8 @@ Types:
   brew       Sync Homebrew packages from Brewfile (default)
   js         Sync JavaScript packages from package.json
   python/py  Sync Python tools from Pythonfile
-  rust       Sync Rust crates from Rsfile`,
+  rust       Sync Rust crates from Rsfile
+  go         Sync Go tools from Gofile`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			bundlers, cleanup, err := getBundlers()
@@ -84,7 +86,7 @@ Types:
 	cmd.Flags().BoolVar(&verboseFlag, "verbose", false, "show detailed output")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "skip interactive editor mode, just sync")
 	cmd.Flags().BoolVar(&forceFlag, "force", false, "force reinstall packages even if already installed")
-	cmd.Flags().BoolVar(&upgradeFlag, "upgrade", false, "force upgrade packages to latest (js only)")
+	cmd.Flags().BoolVar(&upgradeFlag, "upgrade", false, "force upgrade packages to latest (js, go)")
 	cmd.Flags().BoolVar(&noUpdateFlag, "no-update", false, "skip brew upgrade (brew only)")
 	cmd.Flags().BoolVar(&tapsFlag, "taps", false, "install taps first (brew only)")
 	cmd.Flags().BoolVar(&noCleanupFlag, "no-cleanup", false, "skip force-cleanup after sync")
@@ -185,7 +187,7 @@ func runSync(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, go, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -208,7 +210,7 @@ func runCheck(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, go, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -227,7 +229,7 @@ func runCleanup(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, all)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, go, all)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
@@ -238,7 +240,7 @@ func runCleanup(bundlers map[string]Bundler, bundleType string) error {
 }
 
 func runAll(bundlers map[string]Bundler, fn func(Bundler) error) error {
-	order := []string{"brew", "js", "python", "rust"}
+	order := []string{"brew", "js", "python", "rust", "go"}
 	var errs []error
 
 	for _, name := range order {
@@ -293,7 +295,7 @@ func runIterative(bundlers map[string]Bundler, bundleType string) error {
 
 	bundler, ok := bundlers[bundleType]
 	if !ok {
-		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust)", bundleType)
+		return fmt.Errorf("unknown bundle type: %s (valid: brew, js, python/py, rust, go)", bundleType)
 	}
 
 	if err := bundler.CheckDeps(); err != nil {
