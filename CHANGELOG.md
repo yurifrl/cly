@@ -4,7 +4,8 @@
 
 ### Added
 - `cly bundle go` — declarative Go tool management from `Gofile` (default `~/.config/cly/bundles/Gofile`, `modules.bundle.go_file`); `go` accepted in `bundle`, `bundle check`, `bundle cleanup`, and `bundle all`
-- Gofile semantics mirror the js bundler: bare name installs once (`--upgrade`/`--force` refresh), `@latest` tracks upstream on every sync, `pkg@vX.Y.Z` pins and reinstalls on mismatch; specs may name the module root (`mvdan.cc/gofumpt`) or a command inside it (`golang.org/x/tools/cmd/goimports`)
+- Gofile semantics mirror the js bundler: bare names and `@latest` float to the module proxy's latest on every sync, `pkg@vX.Y.Z` pins and moves on mismatch; `--force` reinstalls in place; specs may name the module root (`mvdan.cc/gofumpt`) or a command inside it (`golang.org/x/tools/cmd/goimports`)
+- Sync classifies every entry (install/upgrade/downgrade/reinstall) up front and runs the plan serially or through the parallel TUI (`--parallel`, js and go); the `--upgrade` flag is gone — floating entries always track upstream
 - Go tool state is read from each binary's embedded build info (`debug/buildinfo`), so sync/cleanup are truthful with no bookkeeping store; files in the Go bin dir without build info are never touched
 - Check reports planned installs (with installed versions) and removals without changing anything
 
