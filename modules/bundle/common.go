@@ -6,7 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/yurifrl/cly/pkg/store"
 	"github.com/yurifrl/cly/pkg/style"
@@ -283,4 +286,204 @@ func (b *baseBundler) Cleanup(bundleFile string, verbose bool, force bool) error
 
 	printGreen("\nCleanup done!")
 	return nil
+}
+
+// syncAction is one planned sync operation for a package.
+type syncAction struct {
+	pkg  string // full spec from the bundle file (may carry pin or tag)
+	base string
+	verb string // install, upgrade, downgrade, reinstall
+	from string
+	to   string
+}
+
+// label is the sync-time line shown while the action runs.
+func (a syncAction) label() string {
+	switch a.verb {
+	case "install":
+		return fmt.Sprintf("Installing: %s", a.pkg)
+	case "upgrade":
+		return fmt.Sprintf("Upgrading: %s (%s -> %s)", a.base, a.from, a.to)
+	case "downgrade":
+		return fmt.Sprintf("Downgrading: %s (%s -> %s)", a.base, a.from, a.to)
+	default:
+		return fmt.Sprintf("Reinstalling: %s", a.base)
+	}
+}
+
+// doneLabel is the past-tense summary shown by the parallel TUI.
+func (a syncAction) doneLabel() string {
+	switch a.verb {
+	case "upgrade":
+		return fmt.Sprintf("upgraded %s -> %s", a.from, a.to)
+	case "downgrade":
+		return fmt.Sprintf("downgraded %s -> %s", a.from, a.to)
+	case "reinstall":
+		return "reinstalled"
+	default:
+		return "installed"
+	}
+}
+
+// syncSummary renders the end-of-sync tally.
+func syncSummary(actions []syncAction, examined int) string {
+	if len(actions) == 0 {
+		return fmt.Sprintf("Nothing changed - all %d packages up to date", examined)
+	}
+	counts := make(map[string]int)
+	for _, a := range actions {
+		counts[a.verb]++
+	}
+	var parts []string
+	add := func(n int, label string) {
+		if n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, label))
+		}
+	}
+	add(counts["install"], "installed")
+	add(counts["upgrade"], "upgraded")
+	add(counts["downgrade"], "downgraded")
+	add(counts["reinstall"], "reinstalled")
+	if upToDate := examined - len(actions); upToDate > 0 {
+		parts = append(parts, fmt.Sprintf("%d up to date", upToDate))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// fetchConcurrent resolves a version for each base package concurrently
+// (metadata requests only, at most 8 at a time). Resolved entries are
+// returned; failures are named in the error and simply absent from the map
+// so callers can leave those packages untouched.
+func fetchConcurrent(bases []string, tags map[string]string, fetch func(base string) (string, error)) (map[string]string, error) {
+	type result struct {
+		base    string
+		version string
+		err     error
+	}
+	results := make(chan result, len(bases))
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for _, base := range bases {
+		wg.Add(1)
+		go func(base string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			v, err := fetch(base)
+			results <- result{base: base, version: v, err: err}
+		}(base)
+	}
+	wg.Wait()
+	close(results)
+
+	latest := make(map[string]string, len(bases))
+	var failed []string
+	for r := range results {
+		if r.err != nil {
+			failed = append(failed, r.base)
+			continue
+		}
+		latest[r.base] = r.version
+	}
+	if len(failed) > 0 {
+		sort.Strings(failed)
+		return latest, fmt.Errorf("could not check latest versions of %s - leaving them untouched", strings.Join(failed, ", "))
+	}
+	return latest, nil
+}
+
+// normalizeVersion strips lock prefixes so versions compare cleanly.
+func normalizeVersion(v string) string {
+	return strings.TrimLeft(strings.TrimPrefix(v, "="), "v")
+}
+
+// compareVersions compares versions with basic semver ordering: dotted
+// cores numerically, prerelease ranks below the release it belongs to
+// (2.0.0-beta.1 < 2.0.0). Returns -1, 0 or 1.
+func compareVersions(a, b string) int {
+	ac, ap := splitSemver(normalizeVersion(a))
+	bc, bp := splitSemver(normalizeVersion(b))
+	if c := compareDotted(ac, bc, true); c != 0 {
+		return c
+	}
+	switch {
+	case ap == bp:
+		return 0
+	case ap == "":
+		return 1 // release outranks any prerelease
+	case bp == "":
+		return -1
+	}
+	return compareDotted(ap, bp, false)
+}
+
+// splitSemver splits "1.2.3-beta.1" into core "1.2.3" and prerelease
+// "beta.1"; build metadata after "+" is ignored.
+func splitSemver(v string) (core, pre string) {
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
+	}
+	if i := strings.IndexByte(v, '-'); i >= 0 {
+		return v[:i], v[i+1:]
+	}
+	return v, ""
+}
+
+// compareDotted compares dot-separated identifiers. padZero pads missing
+// trailing segments with "0" (core semantics: 1.2 == 1.2.0); without it a
+// missing segment is smaller (prerelease semantics per semver). Numeric
+// identifiers rank below non-numeric ones in prereleases.
+func compareDotted(a, b string, padZero bool) int {
+	as := strings.Split(a, ".")
+	bs := strings.Split(b, ".")
+	n := len(as)
+	if len(bs) > n {
+		n = len(bs)
+	}
+	for i := range n {
+		av, bv := "", ""
+		if i < len(as) {
+			av = as[i]
+		}
+		if i < len(bs) {
+			bv = bs[i]
+		}
+		if av == "" || bv == "" {
+			if padZero {
+				if av == "" && bv == "" {
+					return 0
+				}
+				if av == "" {
+					av = "0"
+				} else {
+					bv = "0"
+				}
+			} else if av == "" {
+				return -1
+			} else {
+				return 1
+			}
+		}
+		an, aerr := strconv.Atoi(av)
+		bn, berr := strconv.Atoi(bv)
+		switch {
+		case aerr == nil && berr == nil:
+			if an != bn {
+				if an < bn {
+					return -1
+				}
+				return 1
+			}
+		case aerr == nil:
+			return -1 // numeric identifiers rank below non-numeric
+		case berr == nil:
+			return 1
+		case av != bv:
+			if av < bv {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
 }

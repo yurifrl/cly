@@ -2,7 +2,7 @@ package bundle
 
 import (
 	"fmt"
-	"os/exec"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +27,7 @@ const (
 type pkgResultMsg struct {
 	index  int
 	output string
+	note   string // fallback-registry notice; non-empty when fallback was used
 	err    error
 }
 
@@ -35,9 +36,10 @@ type tickMsg struct{}
 
 // parallelModel is the Bubbletea model for parallel JS installs.
 type parallelModel struct {
-	packages []string
+	actions  []syncAction
 	statuses []pkgStatus
 	outputs  []string // final output line per package
+	notes    []string // fallback-registry notice per package
 	errors   []error
 
 	spinner  spinner.Model
@@ -48,12 +50,9 @@ type parallelModel struct {
 	failed    int
 	width     int
 
-	resultCh chan pkgResultMsg
-	done     bool
-	force    bool
-	verbose  bool
-	manager  string
-	addCmd   string
+	resultCh  chan pkgResultMsg
+	done      bool
+	installFn func(pkg string) (string, string, error)
 }
 
 var (
@@ -62,9 +61,10 @@ var (
 	failStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
+	noteStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
 
-func newParallelModel(manager, addCmd string, packages []string, force bool, verbose bool) parallelModel {
+func newParallelModel(installFn func(pkg string) (string, string, error), actions []syncAction) parallelModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
@@ -73,31 +73,29 @@ func newParallelModel(manager, addCmd string, packages []string, force bool, ver
 	p.SetWidth(50)
 
 	return parallelModel{
-		packages: packages,
-		statuses: make([]pkgStatus, len(packages)),
-		outputs:  make([]string, len(packages)),
-		errors:   make([]error, len(packages)),
-		spinner:  s,
-		progress: p,
-		total:    len(packages),
-		resultCh: make(chan pkgResultMsg, len(packages)),
-		force:    force,
-		verbose:  verbose,
-		manager:  manager,
-		addCmd:   addCmd,
+		actions:   actions,
+		statuses:  make([]pkgStatus, len(actions)),
+		outputs:   make([]string, len(actions)),
+		notes:     make([]string, len(actions)),
+		errors:    make([]error, len(actions)),
+		spinner:   s,
+		progress:  p,
+		total:     len(actions),
+		resultCh:  make(chan pkgResultMsg, len(actions)),
+		installFn: installFn,
 	}
 }
 
 func (m parallelModel) Init() tea.Cmd {
 	// Launch all installs as goroutines
 	var wg sync.WaitGroup
-	for i, pkg := range m.packages {
+	for i, action := range m.actions {
 		wg.Add(1)
-		go func(idx int, p string) {
+		go func(idx int, spec string) {
 			defer wg.Done()
-			out, err := runManagerInstall(m.manager, m.addCmd, p, m.force)
-			m.resultCh <- pkgResultMsg{index: idx, output: out, err: err}
-		}(i, pkg)
+			out, note, err := m.installFn(spec)
+			m.resultCh <- pkgResultMsg{index: idx, output: out, note: note, err: err}
+		}(i, action.pkg)
 	}
 
 	// Close channel when all done
@@ -135,6 +133,7 @@ func (m parallelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pkgResultMsg:
 		m.statuses[msg.index] = pkgDone
 		m.outputs[msg.index] = summarizePnpmOutput(msg.output)
+		m.notes[msg.index] = msg.note
 		m.completed++
 		if msg.err != nil {
 			m.statuses[msg.index] = pkgFailed
@@ -175,7 +174,7 @@ func (m parallelModel) View() tea.View {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(titleStyle.Render(fmt.Sprintf("  Installing %d packages", m.total)))
+	b.WriteString(titleStyle.Render(fmt.Sprintf("  Syncing %d packages", m.total)))
 	b.WriteString("\n\n")
 
 	// Overall progress bar
@@ -187,21 +186,23 @@ func (m parallelModel) View() tea.View {
 	b.WriteString("\n\n")
 
 	// Per-package status
-	for i, pkg := range m.packages {
-		base := extractJsBasePkg(pkg)
+	for i, action := range m.actions {
 		switch m.statuses[i] {
 		case pkgRunning:
-			b.WriteString(fmt.Sprintf("  %s %s\n", m.spinner.View(), pkgStyle.Render(base)))
+			b.WriteString(fmt.Sprintf("  %s %s\n", m.spinner.View(), pkgStyle.Render(action.label())))
 		case pkgDone:
 			out := m.outputs[i]
 			if out == "" {
-				out = "installed"
+				out = action.doneLabel()
 			}
 			b.WriteString(fmt.Sprintf("  %s %s %s\n",
 				doneStyle.Render("✓"),
-				pkgStyle.Render(base),
+				pkgStyle.Render(action.base),
 				pendingStyle.Render(out),
 			))
+			if note := m.notes[i]; note != "" {
+				b.WriteString("        " + noteStyle.Render(note) + "\n")
+			}
 		case pkgFailed:
 			errMsg := "failed"
 			if m.errors[i] != nil {
@@ -213,13 +214,13 @@ func (m parallelModel) View() tea.View {
 			}
 			b.WriteString(fmt.Sprintf("  %s %s %s\n",
 				failStyle.Render("✗"),
-				pkgStyle.Render(base),
+				pkgStyle.Render(action.label()),
 				failStyle.Render(errMsg),
 			))
 		default:
 			b.WriteString(fmt.Sprintf("  %s %s\n",
 				pendingStyle.Render("○"),
-				pendingStyle.Render(base),
+				pendingStyle.Render(action.label()),
 			))
 		}
 	}
@@ -227,7 +228,7 @@ func (m parallelModel) View() tea.View {
 	if m.done {
 		b.WriteString("\n")
 		if m.failed == 0 {
-			b.WriteString(doneStyle.Render("  All packages installed successfully!") + "\n")
+			b.WriteString(doneStyle.Render("  "+syncSummary(m.actions, len(m.actions))) + "\n")
 		} else {
 			b.WriteString(failStyle.Render(fmt.Sprintf("  %d packages failed to install", m.failed)) + "\n")
 		}
@@ -246,20 +247,6 @@ func pollResults(ch <-chan pkgResultMsg) tea.Cmd {
 		}
 		return msg
 	}
-}
-
-// runManagerInstall runs `<manager> <addCmd> -g <pkg>` and returns combined output.
-func runManagerInstall(manager, addCmd, pkg string, force bool) (string, error) {
-	args := []string{addCmd, "-g", pkg}
-	if force {
-		args = append(args, "--force")
-	}
-	cmd := exec.Command(manager, args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(output), fmt.Errorf("%s %s failed: %s", manager, addCmd, strings.TrimSpace(string(output)))
-	}
-	return string(output), nil
 }
 
 // summarizePnpmOutput extracts a useful one-liner from pnpm/npm output.
@@ -282,10 +269,21 @@ func summarizePnpmOutput(output string) string {
 	return ""
 }
 
+// ttyAvailable reports whether an interactive terminal exists, so the
+// Bubbletea progress TUI can run. Without one (scripts, CI) the caller
+// falls back to serial installs.
+func ttyAvailable() bool {
+	f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	return f.Close() == nil
+}
+
 // runParallelInstall runs the TUI for parallel package installation.
 // Returns error only if the TUI itself fails; individual package errors are displayed.
-func runParallelInstall(manager, addCmd string, packages []string, force bool, verbose bool) error {
-	m := newParallelModel(manager, addCmd, packages, force, verbose)
+func runParallelInstall(installFn func(pkg string) (string, string, error), actions []syncAction) error {
+	m := newParallelModel(installFn, actions)
 	p := tea.NewProgram(m)
 	finalModel, err := p.Run()
 	if err != nil {
