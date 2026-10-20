@@ -30,7 +30,7 @@ type LockEntry struct {
 	Config      string `json:"config,omitempty"`
 }
 
-// CacheLockEntry stores the metadata for one @cache entry. Hash is the
+// CacheLockEntry stores the metadata for one @exec entry. Hash is the
 // primary key (sha256 of the command); Command is kept for audit so the
 // lock is human-readable. LastRun is RFC3339 UTC. FlaggedForDelete
 // (RFC3339 UTC) marks an entry whose hash no longer appears in the
@@ -355,7 +355,7 @@ func buildLock(cfg *Config, prev *DotfilesLock) *DotfilesLock {
 		h := hashCacheEntry(e)
 		cfgHashes[h] = true
 		if seen[h] {
-			// Duplicate identical @cache lines collapse into one lock entry.
+			// Duplicate identical @exec lines collapse into one lock entry.
 			continue
 		}
 		seen[h] = true

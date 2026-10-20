@@ -9,7 +9,7 @@ import (
 )
 
 // runScript executes a shell script (already on disk, +x) in the given dir.
-// Used by @install and @cache execution paths.
+// Used by @install and @exec execution paths.
 func runScript(scriptPath, baseDir string) error {
 	return mut.ExecDir(baseDir, scriptPath)
 }

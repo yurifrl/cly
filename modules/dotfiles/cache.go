@@ -24,7 +24,7 @@ type CacheApplyOptions struct {
 	FailFast bool
 }
 
-// cacheShell is the shell used to execute @cache commands. Overridable in
+// cacheShell is the shell used to execute @exec commands. Overridable in
 // tests so we don't depend on fish being installed in CI.
 var cacheShell = "fish"
 
@@ -60,10 +60,11 @@ func truncateCmd(cmd string) string {
 	return string(r[:max]) + "…"
 }
 
-// isScriptURL reports whether a @cache entry's command is an http(s) URL.
+// isScriptURL reports whether a @exec entry's command is an http(s) URL.
 // URL entries download, cache and execute a script (replacing @install).
 func isScriptURL(cmd string) bool {
-	return strings.HasPrefix(cmd, "http://") || strings.HasPrefix(cmd, "https://")
+	lower := strings.ToLower(cmd)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
 }
 
 // fetchAndCacheScript downloads url, stores it under
@@ -101,7 +102,7 @@ func fetchAndCacheScript(url string) (sha, path string, err error) {
 	return sha, path, nil
 }
 
-// installCacheDir is where downloaded @cache URL scripts are stored.
+// installCacheDir is where downloaded @exec URL scripts are stored.
 func installCacheDir() string {
 	dataDir := pkgconfig.GetString("app.data_dir")
 	if dataDir == "" {
@@ -110,7 +111,7 @@ func installCacheDir() string {
 	return filepath.Join(expandTilde(dataDir), "dotfiles/install-cache")
 }
 
-// ApplyCache runs every @cache entry whose hash differs from the lock. With
+// ApplyCache runs every @exec entry whose hash differs from the lock. With
 // opts.Force the hash check is bypassed and every entry runs. Failures are
 // streamed live; without --fail-fast they are summarised at the end.
 //
@@ -118,11 +119,11 @@ func installCacheDir() string {
 //   - If lock has an entry with the same hash, skip (preserve metadata).
 //   - Otherwise run the command, capture exit code, and rewrite the lock
 //     entry with hash, command, last-run timestamp and exit code.
-//   - Two identical @cache lines hash to the same value: the first run
+//   - Two identical @exec lines hash to the same value: the first run
 //     populates the lock entry and the second is a cache hit, so the
 //     command runs once.
 //
-// URL entries ('@cache <url>' pointing at an http(s) script) replace the
+// URL entries ('@exec <url>' pointing at an http(s) script) replace the
 // removed '@install': the script is downloaded, cached under its content
 // hash, and executed once. The entry's identity is sha256(script content),
 // so an upstream change re-runs the install while an unchanged script is a
@@ -164,7 +165,7 @@ func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 		if isScriptURL(entry.Command) {
 			sha, path, err := fetchAndCacheScript(entry.Command)
 			if err != nil {
-				wrapped := fmt.Errorf("fetch @cache %s: %w", entry.Command, err)
+				wrapped := fmt.Errorf("fetch @exec %s: %w", entry.Command, err)
 				fmt.Printf("  %s cache %s: %s\n", style.RedStyle.Render("❌"), entry.Command, err)
 				if opts.FailFast {
 					return wrapped
@@ -218,7 +219,7 @@ func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 		upsert(updated)
 
 		if runErr != nil {
-			wrapped := fmt.Errorf("run @cache %s: %w", short, runErr)
+			wrapped := fmt.Errorf("run @exec %s: %w", short, runErr)
 			fmt.Printf("  %s %s\n", style.RedStyle.Render("❌"), wrapped)
 			if opts.FailFast {
 				return wrapped
@@ -228,7 +229,7 @@ func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 	}
 
 	if len(errs) > 0 {
-		fmt.Printf("%s %d @cache entry/entries failed (continuing without --fail-fast)\n",
+		fmt.Printf("%s %d @exec entry/entries failed (continuing without --fail-fast)\n",
 			style.YellowStyle.Render("⚠️ "), len(errs))
 	}
 	return nil

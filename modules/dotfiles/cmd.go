@@ -16,17 +16,17 @@ import (
 )
 
 var (
-	installFlag bool
-	opFlag      bool
-	allFlag     bool
-	cacheFlag   bool
-	forceFlag   bool
-	verboseFlag     bool
-	dryRunFlag      bool
-	failFastFlag    bool
-	configFlag      string
-	userFlag        string
-	noItFlag        bool
+	installFlag  bool
+	opFlag       bool
+	allFlag      bool
+	cacheFlag    bool
+	forceFlag    bool
+	verboseFlag  bool
+	dryRunFlag   bool
+	failFastFlag bool
+	configFlag   string
+	userFlag     string
+	noItFlag     bool
 )
 
 func Register(parent *cobra.Command) {
@@ -38,8 +38,8 @@ func Register(parent *cobra.Command) {
 Config syntax (dotfiles.conf):
   ./src -> ~/dst                        symlink (dirs need trailing /); ~/ and $VAR/${VAR} both expand on the destination
   !cmd                                  run shell command (-i flag)
-  @cache <command>                      runs once; re-runs only when the command text changes (sha256-keyed)
-  @cache <url>                          download+run http(s) install script; re-runs when the script's content changes
+  @exec <command>                      runs once; re-runs only when the command text changes (sha256-keyed)
+  @exec <url>                          download+run http(s) install script; re-runs when the script's content changes
   @op account=x ./s.op -> ~/d                       1Password inject (-o flag)
   @op account=x op://vault/item/field -> ~/d         1Password read secret (-o flag)
   @op account=x op://vault/item/field -> ~/key | format-ssh @target os=linux
@@ -61,7 +61,7 @@ a conflicting destination the overlay wins.
 Use --user <name> to apply another user's overlay (and to drive @target user=)
 instead of the detected username.
 
-Use --cache to force re-run of every @cache entry (ignores the hash skip).
+Use --cache to force re-run of every @exec entry (ignores the hash skip).
 
 Maintenance:
   cly dotfiles prune                    dry-run cleanup of stale cache entries
@@ -72,7 +72,7 @@ Maintenance:
 	cmd.Flags().BoolVarP(&installFlag, "install", "i", false, "Execute install commands (lines starting with !)")
 	cmd.Flags().BoolVarP(&opFlag, "op", "o", false, "Inject 1Password templates")
 	cmd.Flags().BoolVarP(&allFlag, "all", "a", false, "Run everything (install, 1Password)")
-	cmd.Flags().BoolVar(&cacheFlag, "cache", false, "Run all @cache entries (bypass the 'already installed' check; during normal sync the check is honored)")
+	cmd.Flags().BoolVar(&cacheFlag, "cache", false, "Run all @exec entries (bypass the 'already installed' check; during normal sync the check is honored)")
 	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions")
 	cmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Verbose output (show overwrites, intermediate steps)")
 	cmd.PersistentFlags().BoolVarP(&dryRunFlag, "dry-run", "n", false, "Dry run: log every mutation (fs writes, shell commands) without executing")
@@ -249,7 +249,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		fmt.Printf("⚠️  %s\n", e)
 	}
 
-	// --cache short-circuits the rest of sync: re-run every @cache entry
+	// --cache short-circuits the rest of sync: re-run every @exec entry
 	// regardless of the hash skip. The lock is still updated so subsequent
 	// runs benefit from the refreshed metadata.
 	if cacheFlag {
@@ -310,14 +310,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Reload lock to pick up hashes written by ApplyInstalls.
+	// Reload lock to pick up hashes written by ApplyCache.
 	postApplyLock, _ := loadLock(lockFile)
 
 	// Build new lock (carries forward cache metadata + stale candidates).
 	newLock := buildLock(cfg, postApplyLock)
 
 	if len(cfg.CacheEntries) > 0 {
-		fmt.Printf("\n%s Applying %d @cache entry/entries\n", style.BlueStyle.Render("⚙️"), len(cfg.CacheEntries))
+		fmt.Printf("\n%s Applying %d @exec entry/entries\n", style.BlueStyle.Render("⚙️"), len(cfg.CacheEntries))
 		if err := ApplyCache(cfg, newLock, CacheApplyOptions{Force: forceFlag, FailFast: failFastFlag}); err != nil {
 			return err
 		}
@@ -549,7 +549,7 @@ func executeCommand(cmdStr, baseDir string) error {
 }
 
 // runPrune implements `cly dotfiles prune`. By default it is a dry run that
-// reports stale @cache lock entries; --apply commits the deletions. The
+// reports stale @exec lock entries; --apply commits the deletions. The
 // orphan symlink/jsonc/op/install paths are already handled by the normal
 // sync diff/apply machinery (see applyDiff), so prune intentionally only
 // touches the cache section.

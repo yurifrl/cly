@@ -1,9 +1,15 @@
 package dotfiles
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,7 +109,7 @@ func TestApplyCache_DuplicateLinesCollapse(t *testing.T) {
 	withShellSh(t)
 	tmp := t.TempDir()
 	counter := filepath.Join(tmp, "count")
-	// Two identical @cache lines hash to the same value: the first
+	// Two identical @exec lines hash to the same value: the first
 	// populates the lock entry, the second is a cache hit.
 	cfg := &Config{
 		BaseDir: tmp,
@@ -117,7 +123,7 @@ func TestApplyCache_DuplicateLinesCollapse(t *testing.T) {
 	require.Len(t, lock.Cache, 1, "duplicate identical commands collapse to one lock entry")
 	data, err := os.ReadFile(counter)
 	require.NoError(t, err)
-	assert.Equal(t, "x\n", string(data), "duplicate identical @cache lines run only once")
+	assert.Equal(t, "x\n", string(data), "duplicate identical @exec lines run only once")
 }
 
 func TestPruneStaleCacheEntries_FlagOnFirstMiss(t *testing.T) {
@@ -195,4 +201,111 @@ func TestCacheLockEntry_BackwardCompatRoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out, &lock2))
 	assert.Equal(t, "echo hi", lock2.Cache[0].Command)
 	assert.Equal(t, "2026-05-25T00:00:00Z", lock2.Cache[0].LastRun)
+}
+
+// urlCacheFixture spins up a server serving one installer script and wires a
+// HOME-scoped lock path, mirroring the old @install test setup.
+func urlCacheFixture(t *testing.T, script string) (*Config, string) {
+	t.Helper()
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, script)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := &Config{BaseDir: tmpHome, CacheEntries: []CacheEntry{{Command: srv.URL + "/install.sh"}}}
+	return cfg, script
+}
+
+func TestApplyCache_URL_RunsScript(t *testing.T) {
+	script := "#!/bin/sh\necho installed\n"
+	cfg, script := urlCacheFixture(t, script)
+	lock := &DotfilesLock{}
+
+	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{}))
+	require.Len(t, lock.Cache, 1)
+	want := sha256.Sum256([]byte(script))
+	assert.Equal(t, hex.EncodeToString(want[:]), lock.Cache[0].Hash, "identity is the script content hash")
+	assert.Equal(t, cfg.CacheEntries[0].Command, lock.Cache[0].Command)
+	assert.Equal(t, 0, lock.Cache[0].ExitCode)
+	assert.NotEmpty(t, lock.Cache[0].LastRun)
+}
+
+func TestApplyCache_URL_SkipsWhenContentUnchanged(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	runsPath := filepath.Join(tmpHome, "runs")
+	script := "#!/bin/sh\necho x >> " + runsPath + "\n"
+
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		fmt.Fprint(w, script)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := &Config{BaseDir: tmpHome, CacheEntries: []CacheEntry{{Command: srv.URL + "/install.sh"}}}
+	lock := &DotfilesLock{}
+
+	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{}))
+	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{}))
+
+	// Fetched fresh both times (content may have changed upstream), but the
+	// script ran only once because its content hash matched the lock.
+	assert.Equal(t, 2, hits)
+	data, err := os.ReadFile(runsPath)
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(string(data), "x\n"), "second run must be a cache hit")
+	assert.Len(t, lock.Cache, 1)
+}
+
+func TestApplyCache_URL_RerunsWhenContentChanges(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	runsPath := filepath.Join(tmpHome, "runs")
+
+	scripts := []string{
+		"#!/bin/sh\necho x >> " + runsPath + "\n",
+		"#!/bin/sh\necho x >> " + runsPath + "\necho y >> " + runsPath + "\n",
+	}
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls < len(scripts) {
+			fmt.Fprint(w, scripts[calls])
+		} else {
+			fmt.Fprint(w, scripts[len(scripts)-1])
+		}
+		calls++
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := &Config{BaseDir: tmpHome, CacheEntries: []CacheEntry{{Command: srv.URL + "/install.sh"}}}
+	lock := &DotfilesLock{}
+
+	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{}))
+	require.NoError(t, ApplyCache(cfg, lock, CacheApplyOptions{}))
+
+	data, err := os.ReadFile(runsPath)
+	require.NoError(t, err)
+	assert.Equal(t, 2, strings.Count(string(data), "x\n"), "upstream change must re-run the script")
+	assert.Len(t, lock.Cache, 2, "old content entry stays until prune")
+}
+
+func TestIsScriptURL(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"https://example.com/install.sh", true},
+		{"http://example.com/install.sh", true},
+		{"echo hi", false},
+		{"curl https://example.com/install.sh | sh", false},
+		{"HTTPS://EXAMPLE.COM/i.sh", true},
+		{"", false},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, isScriptURL(tc.in), "input %q", tc.in)
+	}
 }

@@ -23,14 +23,14 @@ type Mapping struct {
 	Gate string
 }
 
-// CacheEntry models a single `@cache` directive. The whole rest-of-line
-// after `@cache ` is the command; sha256(Command) is the identity used to
+// CacheEntry models a single `@exec` directive. The whole rest-of-line
+// after `@exec ` is the command; sha256(Command) is the identity used to
 // decide whether to skip the run on subsequent invocations. When the
 // command is an http(s) URL, the fetched script's sha256 is the identity
 // instead: unchanged scripts are cache hits, upstream edits re-run the
 // script. This form replaces the removed `@install` directive.
 //
-// Two identical `@cache` lines hash to the same value and are de-facto
+// Two identical `@exec` lines hash to the same value and are de-facto
 // idempotent — the second occurrence becomes a cache hit on the first's
 // lock entry, so the command runs once per unique command text.
 type CacheEntry struct {
@@ -183,7 +183,7 @@ func ParseConfig(configPath string) (*Config, error) {
 	return cfg, nil
 }
 
-// legacyCacheNameForm matches the removed `@cache <name> -- <command>`
+// legacyCacheNameForm matches the removed `@exec <name> -- <command>`
 // grammar. We only flag it when the remainder of the line begins with a
 // bareword identifier followed by ` -- ` so that legitimate `--flag`
 // arguments inside a real command are not misclassified.
@@ -195,14 +195,16 @@ func parseJobLine(cfg *Config, line string, lineNum int) error {
 	case strings.HasPrefix(line, "@startup ") || line == "@startup":
 		return fmt.Errorf("@startup is removed; migrate background processes to process-compose.yaml")
 	case strings.HasPrefix(line, "@install ") || line == "@install":
-		return fmt.Errorf("@install is removed; use '@cache <url>' (cache accepts installer URLs and re-runs when the script content changes)")
+		return fmt.Errorf("@install is removed; use '@exec <url>' (the exec directive accepts installer URLs and re-runs when the script content changes)")
+	case strings.HasPrefix(line, "@cache ") || line == "@cache":
+		return fmt.Errorf("@cache is renamed to @exec; rename the directive in dotfiles.conf")
 	case strings.HasPrefix(line, "@interval ") || line == "@interval":
 		return fmt.Errorf("@interval is removed; migrate scheduled tasks to process-compose.yaml")
 	case strings.HasPrefix(line, "@once ") || line == "@once":
-		return fmt.Errorf("@once is removed; use @cache instead")
+		return fmt.Errorf("@once is removed; use @exec instead")
 	}
 
-	if !strings.HasPrefix(line, "@cache ") && line != "@cache" {
+	if !strings.HasPrefix(line, "@exec ") && line != "@exec" {
 		fields := strings.Fields(line)
 		name := "@"
 		if len(fields) > 0 {
@@ -211,13 +213,13 @@ func parseJobLine(cfg *Config, line string, lineNum int) error {
 		return fmt.Errorf("unknown directive %q", name)
 	}
 
-	command := strings.TrimSpace(strings.TrimPrefix(line, "@cache"))
+	command := strings.TrimSpace(strings.TrimPrefix(line, "@exec"))
 	if command == "" {
-		return fmt.Errorf("@cache requires a command")
+		return fmt.Errorf("@exec requires a command")
 	}
 
 	if legacyCacheNameForm.MatchString(command) {
-		return fmt.Errorf("@cache no longer takes a name; use '@cache <command>' (the command itself is the identity)")
+		return fmt.Errorf("@exec no longer takes a name; use '@exec <command>' (the command itself is the identity)")
 	}
 
 	cfg.CacheEntries = append(cfg.CacheEntries, CacheEntry{

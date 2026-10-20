@@ -113,8 +113,8 @@ func TestParseConfig_InlineTargetGatesIndividualDirectives(t *testing.T) {
 		"./always -> " + filepath.Join(dir, "always.out"),
 		"!echo darwin @target os=darwin",
 		"!echo linux @target os=linux",
-		"@cache echo cached @target arch=arm64",
-		"@cache echo skipped @target arch=s390x",
+		"@exec echo cached @target arch=arm64",
+		"@exec echo skipped @target arch=s390x",
 	}, "\n")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -154,8 +154,8 @@ func TestParseConfig_MatchedGateIsRecordedOnEntries(t *testing.T) {
 	content := strings.Join([]string{
 		"./mac -> " + filepath.Join(dir, "mac.out") + " @target os=darwin arch=arm64",
 		"./always -> " + filepath.Join(dir, "always.out"),
-		"@cache echo c @target os=darwin",
-		"@install https://example.com/i.sh @target os=darwin",
+		"@exec echo c @target os=darwin",
+		"@exec https://example.com/i.sh @target os=darwin",
 	}, "\n")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -181,8 +181,8 @@ func TestParseConfig_MatchedGateIsRecordedOnEntries(t *testing.T) {
 	if got, want := cfg.CacheEntries[0].Gate, "@target os=darwin"; got != want {
 		t.Fatalf("cache gate = %q, want %q", got, want)
 	}
-	if got, want := cfg.Installs[0].Gate, "@target os=darwin"; got != want {
-		t.Fatalf("install gate = %q, want %q", got, want)
+	if got, want := cfg.CacheEntries[1].Gate, "@target os=darwin"; got != want {
+		t.Fatalf("url cache gate = %q, want %q", got, want)
 	}
 }
 

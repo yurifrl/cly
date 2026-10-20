@@ -151,11 +151,11 @@ func TestParseConfig_RemovedDirectivesAreErrors(t *testing.T) {
 	require.Len(t, cfg.Errors, 3)
 	assert.Contains(t, cfg.Errors[0], "@startup is removed; migrate background processes to process-compose.yaml")
 	assert.Contains(t, cfg.Errors[1], "@interval is removed; migrate scheduled tasks to process-compose.yaml")
-	assert.Contains(t, cfg.Errors[2], "@once is removed; use @cache instead")
+	assert.Contains(t, cfg.Errors[2], "@once is removed; use @exec instead")
 }
 
 func TestParseConfig_CacheNewForm(t *testing.T) {
-	content := "@cache echo hello\n@cache git pull --ff-only\n"
+	content := "@exec echo hello\n@exec git pull --ff-only\n"
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "dotfiles.conf")
 	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
@@ -169,7 +169,7 @@ func TestParseConfig_CacheNewForm(t *testing.T) {
 }
 
 func TestParseConfig_CacheLegacyFormRejected(t *testing.T) {
-	content := "@cache foo -- echo hi\n"
+	content := "@exec foo -- echo hi\n"
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "dotfiles.conf")
 	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
@@ -178,11 +178,11 @@ func TestParseConfig_CacheLegacyFormRejected(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, cfg.CacheEntries)
 	require.Len(t, cfg.Errors, 1)
-	assert.Contains(t, cfg.Errors[0], "@cache no longer takes a name; use '@cache <command>' (the command itself is the identity)")
+	assert.Contains(t, cfg.Errors[0], "@exec no longer takes a name; use '@exec <command>' (the command itself is the identity)")
 }
 
 func TestParseConfig_CacheEmptyCommand(t *testing.T) {
-	content := "@cache\n"
+	content := "@exec\n"
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "dotfiles.conf")
 	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
@@ -190,7 +190,7 @@ func TestParseConfig_CacheEmptyCommand(t *testing.T) {
 	cfg, err := ParseConfig(configPath)
 	require.NoError(t, err)
 	require.Len(t, cfg.Errors, 1)
-	assert.Contains(t, cfg.Errors[0], "@cache requires a command")
+	assert.Contains(t, cfg.Errors[0], "@exec requires a command")
 }
 
 func buildBinary(t *testing.T) string {
