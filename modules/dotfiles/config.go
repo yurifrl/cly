@@ -25,7 +25,10 @@ type Mapping struct {
 
 // CacheEntry models a single `@cache` directive. The whole rest-of-line
 // after `@cache ` is the command; sha256(Command) is the identity used to
-// decide whether to skip the run on subsequent invocations.
+// decide whether to skip the run on subsequent invocations. When the
+// command is an http(s) URL, the fetched script's sha256 is the identity
+// instead: unchanged scripts are cache hits, upstream edits re-run the
+// script. This form replaces the removed `@install` directive.
 //
 // Two identical `@cache` lines hash to the same value and are de-facto
 // idempotent — the second occurrence becomes a cache hit on the first's
@@ -51,14 +54,6 @@ type OpMapping struct {
 	Gate        string
 }
 
-type Install struct {
-	URL     string
-	LineNum int
-	Gate    string
-}
-
-// InstallCommand is a `!cmd` line. Command is the lock identity, so the gate is
-// kept beside it rather than inside the text.
 type InstallCommand struct {
 	Command string
 	Gate    string
@@ -70,7 +65,6 @@ type Config struct {
 	Mappings        []Mapping
 	InstallCommands []InstallCommand
 	CacheEntries    []CacheEntry
-	Installs        []Install
 	OpMappings      []OpMapping
 	Errors          []string
 }
@@ -88,7 +82,6 @@ func (cfg *Config) merge(src *Config, configPath string) {
 	cfg.Mappings = append(cfg.Mappings, src.Mappings...)
 	cfg.InstallCommands = append(cfg.InstallCommands, src.InstallCommands...)
 	cfg.CacheEntries = append(cfg.CacheEntries, src.CacheEntries...)
-	cfg.Installs = append(cfg.Installs, src.Installs...)
 	cfg.OpMappings = append(cfg.OpMappings, src.OpMappings...)
 	for _, e := range src.Errors {
 		cfg.Errors = append(cfg.Errors, fmt.Sprintf("%s: %s", filepath.Base(configPath), e))
@@ -96,12 +89,12 @@ func (cfg *Config) merge(src *Config, configPath string) {
 }
 
 // entryCounts snapshots the length of every entry slice.
-func (cfg *Config) entryCounts() [5]int {
-	return [5]int{len(cfg.Mappings), len(cfg.InstallCommands), len(cfg.CacheEntries), len(cfg.Installs), len(cfg.OpMappings)}
+func (cfg *Config) entryCounts() [4]int {
+	return [4]int{len(cfg.Mappings), len(cfg.InstallCommands), len(cfg.CacheEntries), len(cfg.OpMappings)}
 }
 
 // stampGate records gate on every entry appended since the given snapshot.
-func (cfg *Config) stampGate(before [5]int, gate string) {
+func (cfg *Config) stampGate(before [4]int, gate string) {
 	for i := before[0]; i < len(cfg.Mappings); i++ {
 		cfg.Mappings[i].Gate = gate
 	}
@@ -111,10 +104,7 @@ func (cfg *Config) stampGate(before [5]int, gate string) {
 	for i := before[2]; i < len(cfg.CacheEntries); i++ {
 		cfg.CacheEntries[i].Gate = gate
 	}
-	for i := before[3]; i < len(cfg.Installs); i++ {
-		cfg.Installs[i].Gate = gate
-	}
-	for i := before[4]; i < len(cfg.OpMappings); i++ {
+	for i := before[3]; i < len(cfg.OpMappings); i++ {
 		cfg.OpMappings[i].Gate = gate
 	}
 }
@@ -167,11 +157,6 @@ func ParseConfig(configPath string) (*Config, error) {
 		case strings.HasPrefix(line, "!"):
 			cmd := strings.TrimSpace(line[1:])
 			cfg.InstallCommands = append(cfg.InstallCommands, InstallCommand{Command: cmd})
-		case strings.HasPrefix(line, "@install "):
-			url := strings.TrimSpace(strings.TrimPrefix(line, "@install "))
-			if url != "" {
-				cfg.Installs = append(cfg.Installs, Install{URL: url, LineNum: lineNum})
-			}
 		case strings.HasPrefix(line, "@op "):
 			if err := parseOpLine(cfg, line, lineNum, baseDir); err != nil {
 				cfg.Errors = append(cfg.Errors, fmt.Sprintf("line %d: %s", lineNum, err.Error()))
@@ -209,6 +194,8 @@ func parseJobLine(cfg *Config, line string, lineNum int) error {
 	switch {
 	case strings.HasPrefix(line, "@startup ") || line == "@startup":
 		return fmt.Errorf("@startup is removed; migrate background processes to process-compose.yaml")
+	case strings.HasPrefix(line, "@install ") || line == "@install":
+		return fmt.Errorf("@install is removed; use '@cache <url>' (cache accepts installer URLs and re-runs when the script content changes)")
 	case strings.HasPrefix(line, "@interval ") || line == "@interval":
 		return fmt.Errorf("@interval is removed; migrate scheduled tasks to process-compose.yaml")
 	case strings.HasPrefix(line, "@once ") || line == "@once":

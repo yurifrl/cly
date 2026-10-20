@@ -5,9 +5,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
+	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/mut"
 	"github.com/yurifrl/cly/pkg/style"
 )
@@ -27,8 +33,9 @@ var cacheShell = "fish"
 const cacheGracePeriod = 7 * 24 * time.Hour
 
 // hashCacheEntry returns the sha256 hex digest of the entry's command.
-// The command text is the only identity for a @cache entry; editing it
-// invalidates the cache.
+// For plain commands the command text is the only identity; editing it
+// invalidates the cache. URL entries override this with the fetched
+// script's content hash at run time.
 func hashCacheEntry(e CacheEntry) string {
 	sum := sha256.Sum256([]byte(e.Command))
 	return hex.EncodeToString(sum[:])
@@ -53,6 +60,56 @@ func truncateCmd(cmd string) string {
 	return string(r[:max]) + "…"
 }
 
+// isScriptURL reports whether a @cache entry's command is an http(s) URL.
+// URL entries download, cache and execute a script (replacing @install).
+func isScriptURL(cmd string) bool {
+	return strings.HasPrefix(cmd, "http://") || strings.HasPrefix(cmd, "https://")
+}
+
+// fetchAndCacheScript downloads url, stores it under
+// <data_dir>/dotfiles/install-cache/<sha256>.sh and returns the content
+// hash and cached script path. Re-downloads are skipped when the file
+// already exists.
+func fetchAndCacheScript(url string) (sha, path string, err error) {
+	resp, err := http.Get(url) //nolint:noctx
+	if err != nil {
+		return "", "", fmt.Errorf("fetch: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("fetch: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("read: %w", err)
+	}
+
+	sum := sha256.Sum256(body)
+	sha = hex.EncodeToString(sum[:])
+
+	cacheDir := installCacheDir()
+	if err := mut.MkdirAll(cacheDir, 0755); err != nil {
+		return "", "", fmt.Errorf("cache dir: %w", err)
+	}
+	path = filepath.Join(cacheDir, sha+".sh")
+	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+		if err := mut.WriteFile(path, body, 0755); err != nil {
+			return "", "", fmt.Errorf("cache write: %w", err)
+		}
+	}
+	return sha, path, nil
+}
+
+// installCacheDir is where downloaded @cache URL scripts are stored.
+func installCacheDir() string {
+	dataDir := pkgconfig.GetString("app.data_dir")
+	if dataDir == "" {
+		dataDir = "~/.local/share/cly"
+	}
+	return filepath.Join(expandTilde(dataDir), "dotfiles/install-cache")
+}
+
 // ApplyCache runs every @cache entry whose hash differs from the lock. With
 // opts.Force the hash check is bypassed and every entry runs. Failures are
 // streamed live; without --fail-fast they are summarised at the end.
@@ -64,6 +121,13 @@ func truncateCmd(cmd string) string {
 //   - Two identical @cache lines hash to the same value: the first run
 //     populates the lock entry and the second is a cache hit, so the
 //     command runs once.
+//
+// URL entries ('@cache <url>' pointing at an http(s) script) replace the
+// removed '@install': the script is downloaded, cached under its content
+// hash, and executed once. The entry's identity is sha256(script content),
+// so an upstream change re-runs the install while an unchanged script is a
+// cache hit. Any other command runs verbatim under the configured shell and
+// is keyed by the command text itself.
 func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 	if len(cfg.CacheEntries) == 0 {
 		return nil
@@ -95,6 +159,27 @@ func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 			prev = lock.Cache[i]
 		}
 
+		// URL entries run a downloaded script keyed by its content hash.
+		var scriptPath string
+		if isScriptURL(entry.Command) {
+			sha, path, err := fetchAndCacheScript(entry.Command)
+			if err != nil {
+				wrapped := fmt.Errorf("fetch @cache %s: %w", entry.Command, err)
+				fmt.Printf("  %s cache %s: %s\n", style.RedStyle.Render("❌"), entry.Command, err)
+				if opts.FailFast {
+					return wrapped
+				}
+				errs = append(errs, wrapped)
+				continue
+			}
+			newHash = sha
+			scriptPath = path
+			short = shortHash(newHash)
+			if i, ok := idx[newHash]; ok {
+				prev = lock.Cache[i]
+			}
+		}
+
 		if !opts.Force && prev.Hash == newHash {
 			fmt.Printf("  %s cache %s: %s%s\n", style.SubtleStyle.Render("✓"), short, display, gateSuffix(entry.Gate))
 			// Make sure FlaggedForDelete is cleared (entry is in cfg) and
@@ -108,7 +193,12 @@ func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 		}
 
 		fmt.Printf("  %s cache %s: %s%s\n", style.BlueStyle.Render("⚙️"), short, display, gateSuffix(entry.Gate))
-		runErr := mut.ExecDir(cfg.BaseDir, cacheShell, "-c", entry.Command)
+		var runErr error
+		if scriptPath != "" {
+			runErr = runScript(scriptPath, cfg.BaseDir)
+		} else {
+			runErr = mut.ExecDir(cfg.BaseDir, cacheShell, "-c", entry.Command)
+		}
 		exitCode := 0
 		if runErr != nil {
 			var ee *exec.ExitError

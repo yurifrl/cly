@@ -43,32 +43,13 @@ type CacheLockEntry struct {
 	FlaggedForDelete string `json:"flagged_for_delete,omitempty"`
 }
 
-// ScriptManifest records what an install script installs so it can be reversed.
-type ScriptManifest struct {
-	Binaries       []string `json:"binaries,omitempty"`
-	Dirs           []string `json:"dirs,omitempty"`
-	Files          []string `json:"files,omitempty"`
-	ShellRCChanges []string `json:"shell_rc_changes,omitempty"`
-	FetchesOther   bool     `json:"fetches_other_scripts,omitempty"`
-	NeedsSudo      bool     `json:"needs_sudo,omitempty"`
-}
-
-// InstallManifest is the lock entry for an @install directive.
-type InstallManifest struct {
-	URL      string          `json:"url"`
-	SHA      string          `json:"sha"`
-	Bypassed bool            `json:"bypassed,omitempty"`
-	Manifest *ScriptManifest `json:"manifest,omitempty"`
-}
-
 // DotfilesLock records everything applied during the last dotfiles run.
 type DotfilesLock struct {
-	Symlinks        []LockEntry       `json:"symlinks"`
-	JsoncCopies     []LockEntry       `json:"jsonc_copies"`
-	Cache           []CacheLockEntry  `json:"cache"`
-	InstallCommands []string          `json:"install_commands"`
-	Installs        []InstallManifest `json:"installs,omitempty"`
-	OpMappings      []LockEntry       `json:"op_mappings"`
+	Symlinks        []LockEntry      `json:"symlinks"`
+	JsoncCopies     []LockEntry      `json:"jsonc_copies"`
+	Cache           []CacheLockEntry `json:"cache"`
+	InstallCommands []string         `json:"install_commands"`
+	OpMappings      []LockEntry      `json:"op_mappings"`
 }
 
 // UnmarshalJSON handles legacy formats:
@@ -124,7 +105,6 @@ type LockDiff struct {
 	RemovedJsoncCopies     []LockEntry
 	RemovedCache           []string
 	RemovedInstallCommands []string
-	RemovedInstalls        []InstallManifest
 	RemovedOpMappings      []LockEntry
 }
 
@@ -261,17 +241,6 @@ func adoptPerUserLock(lock *DotfilesLock, basePath string) {
 		if e.Hash != "" && !seenCache[e.Hash] {
 			lock.Cache = append(lock.Cache, e)
 			seenCache[e.Hash] = true
-		}
-	}
-
-	seenInstalls := make(map[string]bool, len(lock.Installs))
-	for _, e := range lock.Installs {
-		seenInstalls[e.URL] = true
-	}
-	for _, e := range prior.Installs {
-		if !seenInstalls[e.URL] {
-			lock.Installs = append(lock.Installs, e)
-			seenInstalls[e.URL] = true
 		}
 	}
 
@@ -419,18 +388,6 @@ func buildLock(cfg *Config, prev *DotfilesLock) *DotfilesLock {
 		lock.InstallCommands = append(lock.InstallCommands, ic.Command)
 	}
 
-	if prev != nil {
-		prevInstalls := make(map[string]InstallManifest, len(prev.Installs))
-		for _, e := range prev.Installs {
-			prevInstalls[e.URL] = e
-		}
-		for _, inst := range cfg.Installs {
-			if e, ok := prevInstalls[inst.URL]; ok {
-				lock.Installs = append(lock.Installs, e)
-			}
-		}
-	}
-
 	for _, op := range cfg.OpMappings {
 		lock.OpMappings = append(lock.OpMappings, LockEntry{Source: op.Source, Destination: op.Destination, Config: op.ConfigPath})
 	}
@@ -465,23 +422,8 @@ func diffLocks(old, new *DotfilesLock) LockDiff {
 	diff.RemovedJsoncCopies = removedEntries(old.JsoncCopies, new.JsoncCopies)
 	diff.RemovedCache = removedCacheEntries(old.Cache, new.Cache)
 	diff.RemovedInstallCommands = removedStrings(old.InstallCommands, new.InstallCommands)
-	diff.RemovedInstalls = removedInstallEntries(old.Installs, new.Installs)
 	diff.RemovedOpMappings = removedEntries(old.OpMappings, new.OpMappings)
 	return diff
-}
-
-func removedInstallEntries(old, new []InstallManifest) []InstallManifest {
-	newSet := make(map[string]bool, len(new))
-	for _, e := range new {
-		newSet[e.URL] = true
-	}
-	var removed []InstallManifest
-	for _, e := range old {
-		if !newSet[e.URL] {
-			removed = append(removed, e)
-		}
-	}
-	return removed
 }
 
 func removedEntries(old, new []LockEntry) []LockEntry {

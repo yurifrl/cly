@@ -16,13 +16,11 @@ import (
 )
 
 var (
-	installFlag     bool
-	opFlag          bool
-	allFlag         bool
-	cacheFlag       bool
-	installOnlyFlag bool
-	reinstallFlag   bool
-	forceFlag       bool
+	installFlag bool
+	opFlag      bool
+	allFlag     bool
+	cacheFlag   bool
+	forceFlag   bool
 	verboseFlag     bool
 	dryRunFlag      bool
 	failFastFlag    bool
@@ -40,8 +38,8 @@ func Register(parent *cobra.Command) {
 Config syntax (dotfiles.conf):
   ./src -> ~/dst                        symlink (dirs need trailing /); ~/ and $VAR/${VAR} both expand on the destination
   !cmd                                  run shell command (-i flag)
-  @install <url>                        fetch+analyze install script (-i flag)
   @cache <command>                      runs once; re-runs only when the command text changes (sha256-keyed)
+  @cache <url>                          download+run http(s) install script; re-runs when the script's content changes
   @op account=x ./s.op -> ~/d                       1Password inject (-o flag)
   @op account=x op://vault/item/field -> ~/d         1Password read secret (-o flag)
   @op account=x op://vault/item/field -> ~/key | format-ssh @target os=linux
@@ -64,7 +62,6 @@ Use --user <name> to apply another user's overlay (and to drive @target user=)
 instead of the detected username.
 
 Use --cache to force re-run of every @cache entry (ignores the hash skip).
-Use --install-only to run only @install directives (skips everything else).
 
 Maintenance:
   cly dotfiles prune                    dry-run cleanup of stale cache entries
@@ -84,8 +81,6 @@ Maintenance:
 	cmd.PersistentFlags().StringVarP(&configFlag, "config", "c", "", "Path to config file (default: <dotfiles_dir>/dotfiles.conf)")
 	cmd.PersistentFlags().StringVar(&userFlag, "user", "", "Apply this user's dotfiles.<user>.conf overlay and @target user= gates (default: current user)")
 	cmd.Flags().BoolVar(&noItFlag, "no-it", false, "Skip interactive prompts (non-interactive mode)")
-	cmd.Flags().BoolVar(&installOnlyFlag, "install-only", false, "Run only @install directives (skips symlinks, jobs, op)")
-	cmd.Flags().BoolVar(&reinstallFlag, "reinstall", false, "Force reinstall @install directives even if SHA unchanged")
 
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -265,9 +260,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 		pruneStaleCacheEntries(cacheLock, cfg, time.Now().UTC(), false)
 		return saveLock(lockFile, cacheLock)
 	}
-	if installOnlyFlag {
-		return runInstallsOnly(cfg)
-	}
 
 	if !mut.DryRun() && !noItFlag {
 		if err := confirmBackups(cfg, oldLock); err != nil {
@@ -289,7 +281,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(cfg.InstallCommands) > 0 || len(cfg.Installs) > 0 {
+	if len(cfg.InstallCommands) > 0 {
 		if installFlag || allFlag {
 			for _, ic := range cfg.InstallCommands {
 				fmt.Printf("%s %s%s\n", style.BlueStyle.Render("⚡ Executing:"), ic.Command, gateSuffix(ic.Gate))
@@ -300,19 +292,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 					}
 				}
 			}
-			if len(cfg.Installs) > 0 {
-				fmt.Printf("\n%s Applying %d @install directive(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Installs))
-				if err := ApplyInstalls(cfg, InstallOptions{
-					Reinstall: reinstallFlag,
-					FailFast:  failFastFlag,
-				}); err != nil {
-					return err
-				}
-			}
 		} else {
-			skipped := len(cfg.InstallCommands) + len(cfg.Installs)
-			fmt.Printf("\n%s %d install command(s)/@install directive(s) skipped (use -i to execute)\n",
-				style.YellowStyle.Render("⏭️ "), skipped)
+			fmt.Printf("\n%s %d install command(s) skipped (use -i to execute)\n",
+				style.YellowStyle.Render("⏭️ "), len(cfg.InstallCommands))
 		}
 	}
 
@@ -368,10 +350,6 @@ func applyDiff(diff LockDiff) {
 		if RemoveJsoncCopy(m) {
 			fmt.Printf("%s %s\n", style.YellowStyle.Render("🗑️  Removed jsonc copy:"), shortenPath(e.Destination))
 		}
-	}
-
-	for _, e := range diff.RemovedInstalls {
-		RemoveInstallArtifacts(e)
 	}
 
 	for _, e := range diff.RemovedOpMappings {
@@ -555,15 +533,6 @@ func shortenPath(path string) string {
 		return "~" + path[len(home):]
 	}
 	return path
-}
-
-func runInstallsOnly(cfg *Config) error {
-	if len(cfg.Installs) == 0 {
-		fmt.Println("No @install directives declared.")
-		return nil
-	}
-	fmt.Printf("%s Applying %d @install directive(s)\n", style.BlueStyle.Render("⚙️"), len(cfg.Installs))
-	return ApplyInstalls(cfg, InstallOptions{Reinstall: reinstallFlag, FailFast: failFastFlag})
 }
 
 func executeCommand(cmdStr, baseDir string) error {
