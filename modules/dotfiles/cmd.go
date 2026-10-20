@@ -61,7 +61,9 @@ a conflicting destination the overlay wins.
 Use --user <name> to apply another user's overlay (and to drive @target user=)
 instead of the detected username.
 
-Use --cache to force re-run of every @exec entry (ignores the hash skip).
+Use -i to force re-run of every @exec entry along with ! commands.
+Use --cache to run only the @exec entries (skips the rest of sync); both ignore
+the hash skip.
 
 Maintenance:
   cly dotfiles prune                    dry-run cleanup of stale cache entries
@@ -69,10 +71,10 @@ Maintenance:
 		RunE: runSync,
 	}
 
-	cmd.Flags().BoolVarP(&installFlag, "install", "i", false, "Execute install commands (lines starting with !)")
+	cmd.Flags().BoolVarP(&installFlag, "install", "i", false, "Execute install commands (! lines) and force re-run of @exec entries")
 	cmd.Flags().BoolVarP(&opFlag, "op", "o", false, "Inject 1Password templates")
-	cmd.Flags().BoolVarP(&allFlag, "all", "a", false, "Run everything (install, 1Password)")
-	cmd.Flags().BoolVar(&cacheFlag, "cache", false, "Run all @exec entries (bypass the 'already installed' check; during normal sync the check is honored)")
+	cmd.Flags().BoolVarP(&allFlag, "all", "a", false, "Run everything (install commands, @exec, 1Password)")
+	cmd.Flags().BoolVar(&cacheFlag, "cache", false, "Run only the @exec entries, bypassing the hash skip (skips the rest of sync)")
 	cmd.PersistentFlags().BoolVarP(&forceFlag, "force", "f", false, "Force actions")
 	cmd.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Verbose output (show overwrites, intermediate steps)")
 	cmd.PersistentFlags().BoolVarP(&dryRunFlag, "dry-run", "n", false, "Dry run: log every mutation (fs writes, shell commands) without executing")
@@ -318,7 +320,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	if len(cfg.CacheEntries) > 0 {
 		fmt.Printf("\n%s Applying %d @exec entry/entries\n", style.BlueStyle.Render("⚙️"), len(cfg.CacheEntries))
-		if err := ApplyCache(cfg, newLock, CacheApplyOptions{Force: forceFlag, FailFast: failFastFlag}); err != nil {
+		if err := ApplyCache(cfg, newLock, CacheApplyOptions{Force: forceFlag || installFlag || allFlag, FailFast: failFastFlag}); err != nil {
 			return err
 		}
 	}

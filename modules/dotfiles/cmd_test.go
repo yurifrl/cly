@@ -70,6 +70,39 @@ func TestDotfilesIntegration(t *testing.T) {
 		assert.NoError(t, err, "marker file should exist")
 	})
 
+	t.Run("sync forces @exec entries with -i flag", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		logFile := filepath.Join(tmpDir, "runs.log")
+		configContent := "@exec printf x >> " + logFile
+		configPath := filepath.Join(tmpDir, "dotfiles.conf")
+		require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+		readLog := func() string {
+			data, err := os.ReadFile(logFile)
+			require.NoError(t, err)
+			return string(data)
+		}
+
+		// First sync runs the entry (no lock entry yet).
+		cmd := exec.Command(binary, "dotfiles", "--config", configPath)
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "output: %s", output)
+		require.Equal(t, "x", readLog())
+
+		// Second sync skips it: hash unchanged.
+		cmd = exec.Command(binary, "dotfiles", "--config", configPath)
+		output, err = cmd.CombinedOutput()
+		require.NoError(t, err, "output: %s", output)
+		assert.Equal(t, "x", readLog())
+		assert.Contains(t, string(output), "✓")
+
+		// -i forces a re-run despite the unchanged hash.
+		cmd = exec.Command(binary, "dotfiles", "-i", "--config", configPath)
+		output, err = cmd.CombinedOutput()
+		require.NoError(t, err, "output: %s", output)
+		assert.Equal(t, "xx", readLog())
+	})
+
 	t.Run("status shows mapping states", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		sourceFile := filepath.Join(tmpDir, "source.txt")
