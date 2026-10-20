@@ -168,6 +168,29 @@ func TestPruneStaleCacheEntries_HardPrune(t *testing.T) {
 	assert.Empty(t, lock.Cache)
 }
 
+// URL lock entries are keyed by fetched script content hash, which the
+// config can't produce without fetching, so prune must keep them by their
+// URL command instead of flagging them as stale.
+func TestPruneStaleCacheEntries_KeepsURLEntriesByCommand(t *testing.T) {
+	cfg := &Config{CacheEntries: []CacheEntry{
+		{Command: "echo alive"},
+		{Command: "https://example.com/i.sh"},
+	}}
+	aliveHash := hashCacheEntry(cfg.CacheEntries[0])
+	now := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
+	lock := &DotfilesLock{Cache: []CacheLockEntry{
+		{Hash: "deadbeef", Command: "https://example.com/i.sh", FlaggedForDelete: now.Format(time.RFC3339)},
+		{Hash: "feedface", Command: "https://removed.example/old.sh"},
+		{Hash: aliveHash, Command: "echo alive"},
+	}}
+	kept, flagged, pruned := pruneStaleCacheEntries(lock, cfg, now, false)
+	require.Len(t, kept, 2)
+	require.Len(t, flagged, 1)
+	assert.Empty(t, pruned)
+	assert.Empty(t, kept[0].FlaggedForDelete)
+	assert.Equal(t, "https://removed.example/old.sh", flagged[0].Command)
+}
+
 func TestPruneStaleCacheEntries_KeepsConfigEntriesAndClearsFlag(t *testing.T) {
 	cfg := &Config{CacheEntries: []CacheEntry{{Command: "echo alive"}}}
 	aliveHash := hashCacheEntry(cfg.CacheEntries[0])

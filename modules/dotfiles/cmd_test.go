@@ -193,6 +193,18 @@ func TestParseConfig_CacheEmptyCommand(t *testing.T) {
 	assert.Contains(t, cfg.Errors[0], "@exec requires a command")
 }
 
+func TestParseConfig_CacheDirectiveRenamed(t *testing.T) {
+	content := "@cache echo hi\n"
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "dotfiles.conf")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+	cfg, err := ParseConfig(configPath)
+	require.NoError(t, err)
+	require.Len(t, cfg.Errors, 1)
+	assert.Contains(t, cfg.Errors[0], "@cache is renamed to @exec")
+}
+
 func buildBinary(t *testing.T) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "cly")

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-19 @exec Directive
+
+### Changed
+- `@install` is removed and `@cache` is renamed to `@exec`: one directive now covers shell commands and http(s) installer URLs — `@exec <command>` stays keyed on the command text, `@exec <url>` downloads the script, keys on its sha256 content, and re-runs only when the upstream script changes
+- Existing locks migrate in place: old install URLs become `@exec` cache entries carrying their stored sha, so already-installed URLs stay cache hits; `dotfiles.lock` loses the `installs` section
+- `--install-only`, `--reinstall`, and the install-only run path are gone; `!` install commands execute only with `-i`/`-a` as before; `@install` and `@cache` directives in configs now hard-fail with migration hints
+
 ## 2026-10-15 Go Bundler
 
 ### Added

@@ -240,18 +240,27 @@ func ApplyCache(cfg *Config, lock *DotfilesLock, opts CacheApplyOptions) error {
 // policy. With hardPrune=true, any entry not in cfg is dropped immediately
 // regardless of flag age (used by `cly dotfiles prune --apply`).
 //
+// URL entries are keyed in the lock by the fetched script's content hash,
+// which cfg cannot know without fetching, so they are also matched by
+// their command (the URL) — a lock entry whose command is a URL still
+// present in cfg stays alive regardless of hash.
+//
 // Returns the entries that were kept (in cfg or still flagged within
 // grace), newly-or-still flagged, and pruned this call.
 func pruneStaleCacheEntries(lock *DotfilesLock, cfg *Config, now time.Time, hardPrune bool) (kept, flagged, pruned []CacheLockEntry) {
 	cfgHashes := make(map[string]bool, len(cfg.CacheEntries))
+	cfgURLCmds := make(map[string]bool, len(cfg.CacheEntries))
 	for _, e := range cfg.CacheEntries {
 		cfgHashes[hashCacheEntry(e)] = true
+		if isScriptURL(e.Command) {
+			cfgURLCmds[e.Command] = true
+		}
 	}
 
 	var newCache []CacheLockEntry
 	for _, e := range lock.Cache {
 		display := fmt.Sprintf("%s: %s", shortHash(e.Hash), truncateCmd(e.Command))
-		if cfgHashes[e.Hash] {
+		if cfgHashes[e.Hash] || (e.Command != "" && cfgURLCmds[e.Command]) {
 			e.FlaggedForDelete = ""
 			kept = append(kept, e)
 			newCache = append(newCache, e)
