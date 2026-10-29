@@ -14,16 +14,20 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "envs",
 	Short: "Load environment variables from 1Password",
-	Long: `Fetches secrets from 1Password and caches them in macOS Keychain.
+	Long: `Fetches secrets from 1Password and caches them encrypted locally
+(macOS Keychain, or an age-encrypted file elsewhere).
 
-  cly envs                 Fetch from 1Password → store in Keychain
-  cly envs --fish          Read from Keychain → fish format (instant)
-  cly envs --plain         Read from Keychain → KEY=VALUE format (instant)
+  cly envs                 Fetch from 1Password → refresh the cache
+  cly envs --fish          Read from cache → fish format (instant)
+  cly envs --plain         Read from cache → KEY=VALUE format (instant)
   cly envs --refresh       Force re-fetch from 1Password
   cly envs --refresh --fish  Re-fetch + output fish format
+  cly envs install fish    Write shell startup integration
 
-If Keychain is empty, --fish/--plain will fetch automatically.
-Disable Keychain with keychain: false in ~/.config/cly/config.yaml.`,
+If the cache is empty, --fish/--plain will fetch automatically.
+Cache backends: macOS uses the Keychain; Linux (or store: age in
+~/.config/cly/config.yaml) uses an age-encrypted file that decrypts with
+your SSH keys or a generated age identity.`,
 	RunE: runEnvs,
 }
 
@@ -74,10 +78,10 @@ func runEnvs(cmd *cobra.Command, args []string) error {
 	}
 
 	wantOutput := fishFlag || plainFlag
-	keychainEnabled := config.Keychain
+	cacheEnabled := config.Cache
 
-	// If keychain disabled: always fetch and output
-	if !keychainEnabled {
+	// If cache disabled: always fetch and output
+	if !cacheEnabled {
 		fields, err := fetchFromOP(ctx, config, !wantOutput)
 		if err != nil {
 			return err
@@ -88,15 +92,15 @@ func runEnvs(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Keychain enabled
+	// Cache enabled
 	if wantOutput && !refreshFlag {
-		// Try reading from Keychain first
-		fields, err := keychainReadAll()
+		// Try reading from the cache first
+		fields, err := cacheReadAll()
 		if err == nil && len(fields) > 0 {
 			writeOutput(os.Stdout, fields, fishFlag, sectionsFlag)
 			return nil
 		}
-		// Keychain empty — fall through to fetch
+		// Cache empty — fall through to fetch
 	}
 
 	// Fetch from 1Password
@@ -105,13 +109,13 @@ func runEnvs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Store in Keychain
-	if err := keychainStoreAll(fields); err != nil {
+	// Store in the cache
+	if err := cacheStoreAll(fields); err != nil {
 		if !wantOutput {
-			fmt.Fprintf(os.Stderr, "⚠ Keychain store failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "⚠ Cache store failed: %v\n", err)
 		}
 	} else if !wantOutput {
-		fmt.Fprintf(os.Stderr, "✓ Cached %d variables in macOS Keychain\n", len(fields))
+		fmt.Fprintf(os.Stderr, "✓ Cached %d variables in %s\n", len(fields), cacheLabel())
 	}
 
 	// Output if requested

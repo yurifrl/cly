@@ -416,6 +416,9 @@ func loadViper() *viper.Viper {
 	configDir := filepath.Join(homeDir, ".config/cly")
 
 	v.SetEnvPrefix("CLY")
+	// Map viper keys with dots to env vars with underscores, so
+	// envs.store is overridable via CLY_ENVS_STORE.
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
 	configFound := false

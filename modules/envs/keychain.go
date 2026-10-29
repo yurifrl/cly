@@ -12,16 +12,8 @@ import (
 const keychainService = "nsx-envs"
 
 // keychainStoreAll stores all fields as a single Keychain entry.
-// Format: tab-separated label/section/value lines, base64-encoded for a
-// reliable round-trip through the security CLI.
 func keychainStoreAll(fields []Field) error {
-	var lines []string
-	for _, f := range fields {
-		lines = append(lines, f.Label+"\t"+f.Section+"\t"+f.Value)
-	}
-	raw := strings.Join(lines, "\n")
-	encoded := base64Encode(raw)
-	return keychainSet("__blob__", encoded)
+	return keychainSet("__blob__", encodeBlob(fields))
 }
 
 // keychainReadAll reads all fields from a single Keychain entry.
@@ -33,12 +25,32 @@ func keychainReadAll() ([]Field, error) {
 	if encoded == "" {
 		return nil, fmt.Errorf("empty blob")
 	}
+	return decodeBlob(encoded)
+}
 
+// --- blob format shared by every cache backend ---
+
+// encodeBlob renders fields as tab-separated label/section/value lines,
+// base64-encoded so the payload round-trips safely through the `security`
+// CLI and stays one opaque string on disk for the age backend.
+//
+// Known limitation (inherited from nsx): a value containing a literal
+// newline corrupts the blob, because values are newline-joined. Tabs are
+// fine (SplitN keeps them in the value part).
+func encodeBlob(fields []Field) string {
+	var lines []string
+	for _, f := range fields {
+		lines = append(lines, f.Label+"\t"+f.Section+"\t"+f.Value)
+	}
+	return base64Encode(strings.Join(lines, "\n"))
+}
+
+// decodeBlob parses the blob format produced by encodeBlob.
+func decodeBlob(encoded string) ([]Field, error) {
 	raw, err := base64Decode(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("decode blob: %w", err)
 	}
-
 	lines := strings.Split(raw, "\n")
 	fields := make([]Field, 0, len(lines))
 	for _, line := range lines {

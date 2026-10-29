@@ -18,7 +18,7 @@ type Config struct {
 	Account  string
 	Vault    string
 	Sections bool
-	Keychain bool
+	Cache    bool
 	Secrets  []string
 }
 
@@ -31,7 +31,7 @@ func LoadConfig() Config {
 		Account:  pkgconfig.GetString("envs.account"),
 		Vault:    pkgconfig.GetString("envs.vault"),
 		Sections: pkgconfig.GetBoolWithDefault("envs.sections", DefaultSections),
-		Keychain: pkgconfig.GetBoolWithDefault("envs.keychain", true),
+		Cache:    pkgconfig.GetBoolWithDefault("envs.cache", true),
 		Secrets:  pkgconfig.GetStringSlice("envs.secrets"),
 	}
 	if cfg.Account == "" {
