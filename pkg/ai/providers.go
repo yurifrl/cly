@@ -23,6 +23,9 @@ type Entry struct {
 	APIKeyEnv string
 	BaseURL   string
 	Weight    int
+	// MaxTokens caps output tokens for OpenAI-compatible clients
+	// (max_tokens request field; 0 = unset).
+	MaxTokens int
 	Condition string
 	Default   bool
 	cond      condExpr
@@ -85,6 +88,7 @@ func parseProviders(global map[string]interface{}) ([]Entry, error) {
 		e.Model, _ = m["model"].(string)
 		e.BaseURL, _ = m["base_url"].(string)
 		e.Weight = toInt(m["weight"])
+		e.MaxTokens = toInt(m["max_tokens"])
 		e.Default, _ = m["default"].(bool)
 		e.Condition, _ = m["condition"].(string)
 		if e.Condition != "" {

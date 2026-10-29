@@ -11,14 +11,15 @@ func TestParseProviders(t *testing.T) {
 	global := map[string]interface{}{
 		"providers": []interface{}{
 			map[string]interface{}{
-				"name":      "aihub",
-				"provider":  "openai",
-				"base_url":  "https://aihub-gateway.fbrai.dev/v1",
-				"api_key":   "$AIHUB_API_KEY",
-				"model":     "aihub/claude-sonnet-5",
-				"weight":    10,
-				"condition": `user == "yuri" && dir =~ "~/Workdir/Yuri/*"`,
-				"default":   true,
+				"name":       "aihub",
+				"provider":   "openai",
+				"base_url":   "https://aihub-gateway.fbrai.dev/v1",
+				"api_key":    "$AIHUB_API_KEY",
+				"model":      "aihub/claude-sonnet-5",
+				"weight":     10,
+				"max_tokens": 4000,
+				"condition":  `user == "yuri" && dir =~ "~/Workdir/Yuri/*"`,
+				"default":    true,
 			},
 			map[string]interface{}{
 				"name":     "bedrock",
@@ -38,6 +39,8 @@ func TestParseProviders(t *testing.T) {
 	assert.Equal(t, "AIHUB_API_KEY", entries[0].APIKeyEnv) // $ENV expanded to env name
 	assert.Equal(t, "aihub/claude-sonnet-5", entries[0].Model)
 	assert.Equal(t, 10, entries[0].Weight)
+	assert.Equal(t, 4000, entries[0].MaxTokens)
+	assert.Equal(t, 0, entries[1].MaxTokens)
 	assert.True(t, entries[0].Default)
 	require.NotNil(t, entries[0].cond)
 

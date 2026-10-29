@@ -5,7 +5,8 @@
 // Architecture:
 //
 //	pkg/ai          ←  reads top-level `ai:` config block. Knows about
-//	                    providers, models, api_key resolution. Period.
+//	                    providers, models, api_key and max_tokens resolution.
+//	                    Period.
 //
 //	modules/foo     →  owns its own config under `modules.foo.*`. If
 //	                    module foo wants to override AI settings, it puts
@@ -24,6 +25,8 @@
 //	      base_url: https://gw.example/v1 # else first entry
 //	      api_key: $AIHUB_API_KEY         # literal or $ENV / ${ENV}
 //	      model: aihub/claude-sonnet-5
+//	      max_tokens: 8000               # output cap for OpenAI-compatible
+//	                                      # endpoints that price by max_tokens
 //	      weight: 10                      # optional, default 0
 //	      type: chat                      # pool: chat (default) or jev;
 //	                                      # pools never cross-fallback
@@ -92,7 +95,9 @@ type Resolved struct {
 	APIKey    string // literal key (resolved from $ENV expansion)
 	APIKeyEnv string // env var name (set when api_key is empty)
 	BaseURL   string // optional override for OpenAI-compatible endpoints
+	MaxTokens int64  // output cap for OpenAI-compatible clients (0 = unset)
 	Enabled   bool
+	Name      string // owning entry's name, for diagnostics
 }
 
 // LoadConfig returns the effective AI config from the top-level `ai:`
@@ -176,7 +181,9 @@ func resolvePool(global, override map[string]interface{}, typ string) (*Resolved
 		APIKey:    entry.APIKey,
 		APIKeyEnv: entry.APIKeyEnv,
 		BaseURL:   entry.BaseURL,
+		MaxTokens: int64(entry.MaxTokens),
 		Enabled:   true,
+		Name:      entry.Name,
 	}
 
 	// Override layer: may switch the active provider type; if so, re-base
@@ -197,6 +204,8 @@ func resolvePool(global, override map[string]interface{}, typ string) (*Resolved
 					r.APIKey = e.APIKey
 					r.APIKeyEnv = e.APIKeyEnv
 					r.BaseURL = e.BaseURL
+					r.MaxTokens = int64(e.MaxTokens)
+					r.Name = e.Name
 					break
 				}
 			}
@@ -258,6 +267,9 @@ func applyOverrideBlock(o map[string]interface{}, r *Resolved) {
 		r.APIKey = ""
 		r.APIKeyEnv = v
 	}
+	if n := toInt(o["max_tokens"]); n > 0 {
+		r.MaxTokens = int64(n)
+	}
 }
 
 // setKeyOrEnv accepts either a literal key or "$VAR" / "${VAR}" form and
@@ -299,6 +311,7 @@ func NewClientWith(override map[string]interface{}) (llm.Client, error) {
 		client, err := llm.NewClient(llm.Config{
 			Provider: llm.Provider(resolved.Provider), Model: resolved.Model,
 			APIKey: resolved.APIKey, APIKeyEnv: resolved.APIKeyEnv, BaseURL: resolved.BaseURL,
+			MaxTokens: resolved.MaxTokens,
 		})
 		if err != nil {
 			return err
@@ -306,7 +319,11 @@ func NewClientWith(override map[string]interface{}) (llm.Client, error) {
 		candidates = append(candidates, llm.Candidate{Name: name, Client: client})
 		return nil
 	}
-	if err := addCandidate(fmt.Sprintf("%s/%s", r.Provider, r.Model), r); err != nil {
+	primary := r.Name
+	if primary == "" {
+		primary = fmt.Sprintf("%s/%s", r.Provider, r.Model)
+	}
+	if err := addCandidate(primary, r); err != nil {
 		return nil, err
 	}
 
@@ -315,7 +332,7 @@ func NewClientWith(override map[string]interface{}) (llm.Client, error) {
 		return nil, err
 	}
 	for _, entry := range orderProviders(providersOfType(entries, TypeChat), buildContext()) {
-		fallback := &Resolved{Provider: entry.Provider, Model: entry.Model, APIKey: entry.APIKey, APIKeyEnv: entry.APIKeyEnv, BaseURL: entry.BaseURL, Enabled: true}
+		fallback := &Resolved{Provider: entry.Provider, Model: entry.Model, APIKey: entry.APIKey, APIKeyEnv: entry.APIKeyEnv, BaseURL: entry.BaseURL, MaxTokens: int64(entry.MaxTokens), Enabled: true}
 		if fallback.Provider == r.Provider && fallback.Model == r.Model && fallback.BaseURL == r.BaseURL {
 			continue
 		}
@@ -327,7 +344,11 @@ func NewClientWith(override map[string]interface{}) (llm.Client, error) {
 		return candidates[0].Client, nil
 	}
 	return llm.NewFallbackClient(candidates, func(failure llm.AttemptFailure) {
-		fmt.Fprintf(os.Stderr, "ai: %s failed; trying next configured model: %v\n", failure.Candidate, failure.Err)
+		if failure.Next != "" {
+			fmt.Fprintf(os.Stderr, "ai: %s failed: %v; trying next: %s\n", failure.Candidate, failure.Err, failure.Next)
+		} else {
+			fmt.Fprintf(os.Stderr, "ai: %s failed: %v; no candidates remain\n", failure.Candidate, failure.Err)
+		}
 	}), nil
 }
 
