@@ -43,16 +43,19 @@ func TestFallbackClientCompletesWithNextCandidateAfterAnyFailure(t *testing.T) {
 	require.Len(t, failures, 1)
 	assert.Equal(t, "primary", failures[0].Candidate)
 	assert.EqualError(t, failures[0].Err, "quota exhausted")
+	assert.Equal(t, "fallback", failures[0].Next)
+	assert.Equal(t, 1, failures[0].Remaining)
 }
 
 func TestFallbackClientReturnsAllFailuresAfterExhaustingCandidates(t *testing.T) {
 	first := &fallbackTestClient{err: errors.New("first unavailable")}
 	second := &fallbackTestClient{err: errors.New("second unavailable")}
+	var failures []AttemptFailure
 
 	client := NewFallbackClient([]Candidate{
 		{Name: "first", Client: first},
 		{Name: "second", Client: second},
-	}, nil)
+	}, func(f AttemptFailure) { failures = append(failures, f) })
 
 	_, err := client.Complete(context.Background(), "system", nil)
 
@@ -61,4 +64,9 @@ func TestFallbackClientReturnsAllFailuresAfterExhaustingCandidates(t *testing.T)
 	assert.ErrorContains(t, err, "second")
 	assert.Equal(t, 1, first.calls)
 	assert.Equal(t, 1, second.calls)
+	require.Len(t, failures, 2)
+	assert.Equal(t, "second", failures[0].Next)
+	assert.Equal(t, "second", failures[1].Candidate)
+	assert.Equal(t, "", failures[1].Next, "final failure must name no next candidate")
+	assert.Equal(t, 0, failures[1].Remaining)
 }

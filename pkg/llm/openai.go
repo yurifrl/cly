@@ -9,11 +9,12 @@ import (
 )
 
 type openaiClient struct {
-	client *openai.Client
-	model  string
+	client    *openai.Client
+	model     string
+	maxTokens int64
 }
 
-func newOpenAIClient(apiKey, model, baseURL string) (*openaiClient, error) {
+func newOpenAIClient(apiKey, model, baseURL string, maxTokens int64) (*openaiClient, error) {
 	if model == "" {
 		model = "gpt-4o"
 	}
@@ -26,8 +27,9 @@ func newOpenAIClient(apiKey, model, baseURL string) (*openaiClient, error) {
 	client := openai.NewClient(opts...)
 
 	return &openaiClient{
-		client: &client,
-		model:  model,
+		client:    &client,
+		model:     model,
+		maxTokens: maxTokens,
 	}, nil
 }
 
@@ -46,10 +48,14 @@ func (c *openaiClient) Stream(ctx context.Context, systemPrompt string, messages
 		}
 	}
 
-	stream := c.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Model:    c.model,
 		Messages: openaiMsgs,
-	})
+	}
+	if c.maxTokens > 0 {
+		params.MaxTokens = openai.Int(c.maxTokens)
+	}
+	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 
 	ch := make(chan StreamChunk, 64)
 
@@ -64,7 +70,7 @@ func (c *openaiClient) Stream(ctx context.Context, systemPrompt string, messages
 		}
 
 		if err := stream.Err(); err != nil {
-			ch <- StreamChunk{Err: fmt.Errorf("openai stream error: %w", err)}
+			ch <- StreamChunk{Err: fmt.Errorf("stream error: %w", err)}
 			return
 		}
 
@@ -88,16 +94,20 @@ func (c *openaiClient) Complete(ctx context.Context, systemPrompt string, messag
 		}
 	}
 
-	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Model:    c.model,
 		Messages: openaiMsgs,
-	})
+	}
+	if c.maxTokens > 0 {
+		params.MaxTokens = openai.Int(c.maxTokens)
+	}
+	resp, err := c.client.Chat.Completions.New(ctx, params)
 	if err != nil {
-		return "", fmt.Errorf("openai complete error: %w", err)
+		return "", fmt.Errorf("complete error: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("openai returned no choices")
+		return "", fmt.Errorf("provider returned no choices")
 	}
 
 	return resp.Choices[0].Message.Content, nil

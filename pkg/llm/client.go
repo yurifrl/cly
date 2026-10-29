@@ -60,6 +60,12 @@ type Config struct {
 	APIKeyEnv    string
 	BaseURL      string
 	SystemPrompt string
+
+	// MaxTokens caps output tokens per request. Zero means "unset": the
+	// request carries no max_tokens field. For OpenAI-compatible gateways
+	// that price by max_tokens (e.g. OpenRouter), unset means the model's
+	// full context — which can 402 an otherwise affordable account.
+	MaxTokens int64
 }
 
 // NewClient creates a new LLM client based on the config.
@@ -79,13 +85,13 @@ func NewClient(cfg Config) (Client, error) {
 	case ProviderAnthropic:
 		return newAnthropicClient(apiKey, cfg.Model, false)
 	case ProviderOpenAI:
-		return newOpenAIClient(apiKey, cfg.Model, cfg.BaseURL)
+		return newOpenAIClient(apiKey, cfg.Model, cfg.BaseURL, cfg.MaxTokens)
 	case ProviderOpenRouter:
 		baseURL := cfg.BaseURL
 		if baseURL == "" {
 			baseURL = openRouterBaseURL
 		}
-		return newOpenAIClient(apiKey, cfg.Model, baseURL)
+		return newOpenAIClient(apiKey, cfg.Model, baseURL, cfg.MaxTokens)
 	default:
 		return nil, fmt.Errorf("unknown provider: %s (supported: anthropic, openai, openrouter, bedrock)", cfg.Provider)
 	}

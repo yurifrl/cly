@@ -16,7 +16,8 @@ type anthropicClient struct {
 	model  string
 }
 
-func newAnthropicClient(apiKey, model string, useBedrock bool) (*anthropicClient, error) {	if model == "" {
+func newAnthropicClient(apiKey, model string, useBedrock bool) (*anthropicClient, error) {
+	if model == "" {
 		model = "claude-sonnet-4-5-20250929"
 	}
 

@@ -2,6 +2,11 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -151,4 +156,55 @@ func TestNewClient_Bedrock_NoAPIKeyRequired(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.NotNil(t, client)
+}
+
+// completeStub captures the request body and replies with a minimal
+// OpenAI-compatible chat completion so Complete exercises the real wire.
+func completeStub(t *testing.T, body *map[string]interface{}) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(raw, body))
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"x","object":"chat.completion","created":1,"model":"test-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestOpenAIClientSendsConfiguredMaxTokens(t *testing.T) {
+	var body map[string]interface{}
+	srv := completeStub(t, &body)
+
+	client, err := NewClient(Config{
+		Provider:  ProviderOpenAI,
+		Model:     "test-model",
+		APIKey:    "test-key",
+		BaseURL:   srv.URL,
+		MaxTokens: 1234,
+	})
+	require.NoError(t, err)
+
+	_, err = client.Complete(context.Background(), "", []Message{{Role: RoleUser, Content: "hi"}})
+	require.NoError(t, err)
+	assert.Equal(t, float64(1234), body["max_tokens"])
+}
+
+func TestOpenAIClientOmitsMaxTokensWhenUnset(t *testing.T) {
+	var body map[string]interface{}
+	srv := completeStub(t, &body)
+
+	client, err := NewClient(Config{
+		Provider: ProviderOpenAI,
+		Model:    "test-model",
+		APIKey:   "test-key",
+		BaseURL:  srv.URL,
+	})
+	require.NoError(t, err)
+
+	_, err = client.Complete(context.Background(), "", []Message{{Role: RoleUser, Content: "hi"}})
+	require.NoError(t, err)
+	_, present := body["max_tokens"]
+	assert.False(t, present, "unset MaxTokens must leave max_tokens off the wire so gateways apply their own default")
 }
