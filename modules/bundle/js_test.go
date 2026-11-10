@@ -471,3 +471,54 @@ func TestCompareVersions(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistryFromNpmrcLike(t *testing.T) {
+	dir := t.TempDir()
+	npmrc := filepath.Join(dir, ".npmrc")
+	writeFile(t, npmrc, "@nsxbet:registry=https://npm.pkg.github.com\nregistry=https://proxy.example.com/npm/\n")
+	if got := registryFromNpmrcLike(npmrc); got != "https://proxy.example.com/npm/" {
+		t.Errorf("npmrc = %q", got)
+	}
+	bunfig := filepath.Join(dir, ".bunfig.toml")
+	writeFile(t, bunfig, "install.registry = \"https://bun.example.com\"\n")
+	if got := registryFromNpmrcLike(bunfig); got != "https://bun.example.com" {
+		t.Errorf("bunfig = %q", got)
+	}
+	if got := registryFromNpmrcLike(filepath.Join(dir, "missing")); got != "" {
+		t.Errorf("missing = %q", got)
+	}
+}
+
+func TestRewriteLockRegistry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bun.lock")
+	writeFile(t, path, `{
+    "a": ["a@1.0.0", "https://proxy.example.com/npm/a/-/a-1.0.0.tgz", {}, "sha512-x"],
+    "@s/b": ["@s/b@2.0.0", "https://proxy.example.com/npm/@s/b/-/b-2.0.0.tgz", {}, "sha512-y"],
+    "@nsxbet/c": ["@nsxbet/c@1.0.0", "https://npm.pkg.github.com/download/@nsxbet/c/1.0.0/abc", {}, "sha512-z"],
+}`)
+	n, err := rewriteLockRegistry(path, "https://proxy.example.com/npm/", "https://registry.npmjs.org/")
+	if err != nil || n != 2 {
+		t.Fatalf("n=%d err=%v, want 2 rewrites", n, err)
+	}
+	data, _ := os.ReadFile(path)
+	got := string(data)
+	for _, want := range []string{
+		`"https://registry.npmjs.org/a/-/a-1.0.0.tgz"`,
+		`"https://registry.npmjs.org/@s/b/-/b-2.0.0.tgz"`,
+		`"https://npm.pkg.github.com/download/@nsxbet/c/1.0.0/abc"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lock missing %s:\n%s", want, got)
+		}
+	}
+	// Idempotent; same-registry and missing file are no-ops.
+	if n, _ := rewriteLockRegistry(path, "https://proxy.example.com/npm/", "https://registry.npmjs.org/"); n != 0 {
+		t.Errorf("second pass n=%d, want 0", n)
+	}
+	if n, _ := rewriteLockRegistry(path, "https://registry.npmjs.org", "https://registry.npmjs.org/"); n != 0 {
+		t.Errorf("same registry n=%d, want 0", n)
+	}
+	if n, err := rewriteLockRegistry(filepath.Join(t.TempDir(), "nope"), "https://a", "https://b"); n != 0 || err != nil {
+		t.Errorf("missing file n=%d err=%v", n, err)
+	}
+}

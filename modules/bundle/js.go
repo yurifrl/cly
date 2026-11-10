@@ -158,6 +158,7 @@ func jsInstallArgs(addCmd, pkg string, force bool, registry string) []string {
 }
 
 func (b *JsBundler) install(pkg string, verbose bool, force bool) error {
+	b.migrateBunLock()
 	_, note, err := jsInstallWithFallback(b.manager, b.addSubcommand(), pkg, force)
 	if note != "" {
 		printYellow(note)
@@ -391,6 +392,7 @@ func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate b
 	}
 
 	if len(actions) > 0 {
+		b.migrateBunLock()
 		if parallelFlag && !ttyAvailable() {
 			printYellow("No TTY available - running installs serially")
 		}
