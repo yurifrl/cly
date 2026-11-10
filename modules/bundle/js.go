@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -114,22 +113,24 @@ func jsFallbackRegistry() string {
 	return strings.TrimSpace(pkgconfig.GetString("modules.bundle.js_fallback_registry"))
 }
 
-// jsInstallWithFallback runs the manager install unchanged; when it fails
-// and a fallback registry is configured, it retries once with
+// jsInstallWithFallback installs with --registry=<jsRegistry()> so the
+// user's .npmrc/bunfig default registry is always bypassed; when that fails
+// and a different fallback registry is configured, it retries once with
 // --registry=<fallback>. The returned note is non-empty whenever the
 // fallback was used, so callers can surface it to the user.
 func jsInstallWithFallback(manager, addCmd, pkg string, force bool) (output, note string, err error) {
-	output, err = runJsInstall(manager, addCmd, pkg, force, "")
+	registry := jsRegistry()
+	output, err = runJsInstall(manager, addCmd, pkg, force, registry)
 	if err == nil {
 		return output, "", nil
 	}
 	fallback := jsFallbackRegistry()
-	if fallback == "" {
+	if fallback == "" || strings.TrimSuffix(fallback, "/") == strings.TrimSuffix(registry, "/") {
 		return output, "", err
 	}
 	retryOutput, retryErr := runJsInstall(manager, addCmd, pkg, force, fallback)
 	if retryErr == nil {
-		note = fmt.Sprintf("%s failed on the default registry, installed via fallback registry %s", pkg, fallback)
+		note = fmt.Sprintf("%s failed on registry %s, installed via fallback registry %s", pkg, registry, fallback)
 		return retryOutput, note, nil
 	}
 	return output, "", fmt.Errorf("%w (fallback registry %s also failed: %v)", err, fallback, retryErr)
@@ -384,7 +385,7 @@ func (b *JsBundler) Sync(bundleFile string, verbose bool, force bool, noUpdate b
 
 	// Classify: installs for missing packages, upgrades/downgrades for
 	// version moves, nothing for already-current entries.
-	actions, examined, planErr := planJsSync(desired, installed, force, jsDefaultRegistry())
+	actions, examined, planErr := planJsSync(desired, installed, force, jsRegistry())
 	if planErr != nil {
 		printYellow("Warning: " + planErr.Error())
 	}
@@ -445,7 +446,7 @@ func (b *JsBundler) Check(bundleFile string) error {
 		return fmt.Errorf("failed to list installed packages: %w", err)
 	}
 	desiredMap := jsDesiredMap(desired)
-	actions, examined, planErr := planJsSync(desired, installed, false, jsDefaultRegistry())
+	actions, examined, planErr := planJsSync(desired, installed, false, jsRegistry())
 	if planErr != nil {
 		printYellow("Warning: " + planErr.Error())
 	}
@@ -575,48 +576,18 @@ func planJsSync(desired []string, installed map[string]string, force bool, regis
 	return actions, len(desiredMap), planErr
 }
 
-// jsDefaultRegistry resolves the registry the manager's plain installs go
-// through: npm_config_registry env, then bunfig.toml / .npmrc in the home
-// directory, finally the public npm registry.
-func jsDefaultRegistry() string {
-	if r := strings.TrimSpace(os.Getenv("npm_config_registry")); r != "" {
+// npmRegistry is the public npm registry every JS install goes through.
+const npmRegistry = "https://registry.npmjs.org/"
+
+// jsRegistry is the registry used for every install and version lookup.
+// It is passed explicitly as --registry so a default registry set in
+// ~/.npmrc, ~/.bunfig.toml or npm_config_registry (e.g. a company proxy)
+// never applies. Override with modules.bundle.js_registry.
+func jsRegistry() string {
+	if r := strings.TrimSpace(pkgconfig.GetString("modules.bundle.js_registry")); r != "" {
 		return r
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		for _, path := range []string{filepath.Join(home, ".bunfig.toml"), filepath.Join(home, ".npmrc")} {
-			if r := registryFromNpmrcLike(path); r != "" {
-				return r
-			}
-		}
-	}
-	return "https://registry.npmjs.org/"
-}
-
-// registryFromNpmrcLike scans a bunfig.toml/.npmrc file for a top-level
-// `registry = value` entry.
-func registryFromNpmrcLike(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		// bunfig.toml writes `install.registry = value`; .npmrc writes
-		// `registry=value`. Both reduce to the same key.
-		line = strings.TrimPrefix(line, "install.")
-		if !strings.HasPrefix(line, "registry") {
-			continue
-		}
-		rest := strings.TrimSpace(strings.TrimPrefix(line, "registry"))
-		if !strings.HasPrefix(rest, "=") {
-			continue
-		}
-		rest = strings.Trim(strings.TrimSpace(rest[1:]), `"'`)
-		if rest != "" {
-			return rest
-		}
-	}
-	return ""
+	return npmRegistry
 }
 
 // fetchLatestVersions resolves the given dist-tag for each base package
@@ -637,7 +608,7 @@ func fetchDistTag(client *http.Client, registry, pkg, tag string) (string, error
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Accept", "application/vnd.npm.install-v1+json")
+	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err

@@ -142,8 +142,8 @@ func TestJsInstallWithFallback_SucceedsNoRetry(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("calls = %v, want single attempt", calls)
 	}
-	if calls[0] != "add -g pkg" {
-		t.Errorf("call = %q, want plain install without registry flag", calls[0])
+	if calls[0] != "add -g pkg --registry=https://registry.npmjs.org/" {
+		t.Errorf("call = %q, want install pinned to npm registry", calls[0])
 	}
 }
 
@@ -165,8 +165,8 @@ func TestJsInstallWithFallback_NoRetryWhenUnset(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("calls = %v, want single attempt with no fallback configured", calls)
 	}
-	if calls[0] != "add -g pkg" {
-		t.Errorf("call = %q, want plain install without registry flag", calls[0])
+	if calls[0] != "add -g pkg --registry=https://registry.npmjs.org/" {
+		t.Errorf("call = %q, want install pinned to npm registry", calls[0])
 	}
 }
 
@@ -184,15 +184,15 @@ func TestJsInstallWithFallback_RetriesWithConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v, want fallback retry success", err)
 	}
-	if !strings.Contains(note, configured) || !strings.Contains(note, "failed on the default registry") {
+	if !strings.Contains(note, configured) || !strings.Contains(note, "failed on registry https://registry.npmjs.org/") {
 		t.Errorf("note = %q, want user-visible fallback notice mentioning %s", note, configured)
 	}
 	calls := readCallLog(t, log)
 	if len(calls) != 2 {
 		t.Fatalf("calls = %v, want 2 attempts", calls)
 	}
-	if calls[0] != "add -g pkg" {
-		t.Errorf("first attempt = %q, want plain install without registry flag", calls[0])
+	if calls[0] != "add -g pkg --registry=https://registry.npmjs.org/" {
+		t.Errorf("first attempt = %q, want install pinned to npm registry", calls[0])
 	}
 	wantRetry := "add -g pkg --registry=" + configured
 	if calls[1] != wantRetry {
@@ -224,8 +224,8 @@ func TestJsInstallWithFallback_BothFail(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("calls = %v, want 2 attempts", calls)
 	}
-	if calls[0] != "add -g pkg" {
-		t.Errorf("first attempt = %q, want plain install without registry flag", calls[0])
+	if calls[0] != "add -g pkg --registry=https://registry.npmjs.org/" {
+		t.Errorf("first attempt = %q, want install pinned to npm registry", calls[0])
 	}
 	wantRetry := "add -g pkg --registry=" + configured
 	if calls[1] != wantRetry {
@@ -255,49 +255,36 @@ func TestParseBunTree(t *testing.T) {
 	}
 }
 
-func TestRegistryFromNpmrcLike(t *testing.T) {
-	dir := t.TempDir()
-	npmrc := filepath.Join(dir, ".npmrc")
-	bunfig := filepath.Join(dir, ".bunfig.toml")
-	if err := os.WriteFile(bunfig, []byte("install.registry = \"https://bun.example.com\"\n"), 0o644); err != nil {
-		t.Fatal(err)
+func TestJsRegistry(t *testing.T) {
+	// npmrc/bunfig/env defaults must not leak in.
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("npm_config_registry", "https://env.example.com")
+	writeFile(t, filepath.Join(tmp, ".npmrc"), "registry=https://proxy.example.com/\n")
+	withTempConfig(t, nil)
+	if got := jsRegistry(); got != "https://registry.npmjs.org/" {
+		t.Errorf("default = %q, want npm registry", got)
 	}
-	// bunfig.toml form: install.registry = value.
-	if got := registryFromNpmrcLike(bunfig); got != "https://bun.example.com" {
-		t.Errorf("bunfig = %q", got)
-	}
-	// .npmrc form: registry=value.
-	if err := os.WriteFile(npmrc, []byte("registry=https://npm.example.com/\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := registryFromNpmrcLike(npmrc); got != "https://npm.example.com/" {
-		t.Errorf("npmrc = %q", got)
-	}
-	// Missing file -> empty.
-	if got := registryFromNpmrcLike(filepath.Join(dir, "missing")); got != "" {
-		t.Errorf("missing file = %q, want empty", got)
+	withTempConfig(t, map[string]string{"modules.bundle.js_registry": "https://mirror.example.com/"})
+	if got := jsRegistry(); got != "https://mirror.example.com/" {
+		t.Errorf("configured = %q", got)
 	}
 }
 
-func TestJsDefaultRegistry(t *testing.T) {
-	t.Setenv("npm_config_registry", "")
-	// Unset npm env, no config files -> npm default.
-	withTempConfig(t, nil)
-	if got := jsDefaultRegistry(); got != "https://registry.npmjs.org/" {
-		t.Errorf("default = %q", got)
+func TestJsInstallWithFallback_SkipsFallbackEqualToRegistry(t *testing.T) {
+	withTempConfig(t, map[string]string{
+		"modules.bundle.js_fallback_registry": "https://registry.npmjs.org",
+	})
+	log := filepath.Join(t.TempDir(), "calls")
+	mgr := writeFakeManager(t)
+	t.Setenv("CALL_LOG", log)
+	t.Setenv("FAIL_FIRST", "1")
+
+	if _, _, err := jsInstallWithFallback(mgr, "add", "pkg", false); err == nil {
+		t.Fatal("err = nil, want failure")
 	}
-	// bunfig wins when present.
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	writeFile(t, filepath.Join(tmp, ".bunfig.toml"),
-		"install.registry = \"https://mirror.example.com\"\n")
-	if got := jsDefaultRegistry(); got != "https://mirror.example.com" {
-		t.Errorf("bunfig = %q", got)
-	}
-	// Env var wins over bunfig.
-	t.Setenv("npm_config_registry", "https://env.example.com")
-	if got := jsDefaultRegistry(); got != "https://env.example.com" {
-		t.Errorf("env = %q", got)
+	if calls := readCallLog(t, log); len(calls) != 1 {
+		t.Fatalf("calls = %v, want single attempt when fallback equals registry", calls)
 	}
 }
 
