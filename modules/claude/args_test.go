@@ -86,9 +86,9 @@ func TestParseArgs(t *testing.T) {
 			},
 		},
 		{
-			name:     "no-tern is a wrapper flag",
-			args:     []string{"--no-tern", "--yolo"},
-			expected: ParsedArgs{NoTern: true, Yolo: true, PassArgs: session.YoloArgs()},
+			name:     "cli is a wrapper flag",
+			args:     []string{"--cli", "--yolo"},
+			expected: ParsedArgs{PlainCLI: true, Yolo: true, PassArgs: session.YoloArgs()},
 		},
 		{
 			name:     "empty args",

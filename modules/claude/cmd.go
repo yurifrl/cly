@@ -18,7 +18,7 @@ func Register(parent *cobra.Command) {
 		Use:                "claude",
 		Aliases:            []string{"c"},
 		Short:              "Run Claude Code with session management",
-		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --no-tern forces claude. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
+		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --cli forces claude. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
 		DisableFlagParsing: true,
 		RunE:               run,
 	}
@@ -95,13 +95,13 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// Plain `c` / `c --yolo` launch the UI picked by modules.claude.open;
 	// it only returns if it can't start, then fall back to claude. Extra
-	// claude args or --no-tern → claude.
+	// claude args or --cli → claude.
 	extra := p.PassArgs
 	if p.Yolo {
 		extra = extra[len(session.YoloArgs()):]
 	}
 	acpArgs, acpOK := ternACPArgs(extra)
-	if !p.NoTern {
+	if !p.PlainCLI {
 		switch openMode() {
 		case "acp":
 			if acpOK {
