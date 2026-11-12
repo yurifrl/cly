@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -99,16 +100,49 @@ func run(cmd *cobra.Command, args []string) error {
 	if p.Yolo {
 		extra = extra[len(session.YoloArgs()):]
 	}
-	if len(extra) == 0 && !p.NoTern {
+	acpArgs, acpOK := ternACPArgs(extra)
+	if !p.NoTern {
 		switch openMode() {
 		case "acp":
-			_ = sess.ExecTernACP(p.Yolo, session.WithTaskListID(p.TaskListID))
+			if acpOK {
+				_ = sess.ExecTernACP(p.Yolo, acpArgs, session.WithTaskListID(p.TaskListID))
+			}
 		case "tern":
+			if len(extra) != 0 {
+				break
+			}
 			_ = sess.ExecTclaude(p.Yolo, session.WithTaskListID(p.TaskListID))
 		}
 	}
 
 	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID))
+}
+
+// ternACPArgs translates claude flags that `tern acp claude` has an
+// equivalent for (-r/--resume [id], -c/--continue, --model <m>). ok is
+// false when any other arg is present, so the caller falls back to claude.
+func ternACPArgs(args []string) (out []string, ok bool) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		hasVal := i+1 < len(args) && !strings.HasPrefix(args[i+1], "-")
+		switch {
+		case a == "-r" || a == "--resume":
+			if hasVal {
+				out = append(out, "--resume", args[i+1])
+				i++
+			} else {
+				out = append(out, "--sessions") // picker
+			}
+		case a == "-c" || a == "--continue":
+			out = append(out, "--continue")
+		case a == "--model" && hasVal:
+			out = append(out, "--model", args[i+1])
+			i++
+		default:
+			return nil, false
+		}
+	}
+	return out, true
 }
 
 // openMode returns how plain `c` opens Claude Code, from

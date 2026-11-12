@@ -16,7 +16,7 @@ import (
 // yolo opens in bypassPermissions mode and sets CLY_YOLO=1. ACP can't
 // append a system prompt, so the safe-autonomous prompt is injected by a
 // SessionStart hook (`cly claude-yolo-context`) gated on CLY_YOLO.
-func (s *Session) ExecTernACP(yolo bool, opts ...ExecOption) error {
+func (s *Session) ExecTernACP(yolo bool, extra []string, opts ...ExecOption) error {
 	if os.Getenv("TERN_PANE") == "" {
 		return exec.ErrNotFound
 	}
@@ -38,6 +38,7 @@ func (s *Session) ExecTernACP(yolo bool, opts ...ExecOption) error {
 	}
 
 	args := []string{"tern", "acp", "claude"}
+	args = append(args, extra...)
 	if yolo {
 		env = append(env, "CLY_YOLO=1")
 		args = append(args, "--mode", "bypassPermissions")
