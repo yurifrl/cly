@@ -66,6 +66,16 @@ func run(cmd *cobra.Command, args []string) error {
 
 	_ = sess.RenameZellijTab()
 
+	// Plain `c` / `c --yolo`: try tclaude first; it only returns if it
+	// can't start, then fall back to claude. Extra claude args → claude.
+	extra := p.PassArgs
+	if p.Yolo {
+		extra = extra[len(session.YoloArgs()):]
+	}
+	if len(extra) == 0 {
+		_ = sess.ExecTclaude(p.Yolo, session.WithTaskListID(p.TaskListID))
+	}
+
 	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID))
 }
 
