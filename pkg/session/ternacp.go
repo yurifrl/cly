@@ -12,7 +12,11 @@ import (
 // agent view over @agentclientprotocol/claude-agent-acp. It only returns
 // on failure (not inside a Tern pane, or tern not in PATH), so callers
 // fall back to ExecClaude.
-func (s *Session) ExecTernACP(opts ...ExecOption) error {
+//
+// yolo opens in bypassPermissions mode and sets CLY_YOLO=1. ACP can't
+// append a system prompt, so the safe-autonomous prompt is injected by a
+// SessionStart hook (`cly claude-yolo-context`) gated on CLY_YOLO.
+func (s *Session) ExecTernACP(yolo bool, opts ...ExecOption) error {
 	if os.Getenv("TERN_PANE") == "" {
 		return exec.ErrNotFound
 	}
@@ -33,5 +37,10 @@ func (s *Session) ExecTernACP(opts ...ExecOption) error {
 		env = append(env, "CLAUDE_CODE_TASK_LIST_ID="+cfg.taskListID)
 	}
 
-	return syscall.Exec(path, []string{"tern", "acp", "claude"}, env)
+	args := []string{"tern", "acp", "claude"}
+	if yolo {
+		env = append(env, "CLY_YOLO=1")
+		args = append(args, "--mode", "bypassPermissions")
+	}
+	return syscall.Exec(path, args, env)
 }

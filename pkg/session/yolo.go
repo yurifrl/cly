@@ -9,3 +9,9 @@ var safeAutonomousPrompt string
 func YoloArgs() []string {
 	return []string{"--dangerously-skip-permissions", "--append-system-prompt", safeAutonomousPrompt}
 }
+
+// SafeAutonomousPrompt returns the safe-autonomous-mode preprompt that
+// yolo sessions get appended to their system prompt.
+func SafeAutonomousPrompt() string {
+	return safeAutonomousPrompt
+}

@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -16,7 +17,7 @@ func Register(parent *cobra.Command) {
 		Use:                "claude",
 		Aliases:            []string{"c"},
 		Short:              "Run Claude Code with session management",
-		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --no-tern forces claude.",
+		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --no-tern forces claude. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
 		DisableFlagParsing: true,
 		RunE:               run,
 	}
@@ -24,11 +25,35 @@ func Register(parent *cobra.Command) {
 	parent.AddCommand(cmd)
 
 	parent.AddCommand(&cobra.Command{
+		Use:    "claude-yolo-context",
+		Short:  "SessionStart hook: emit the safe-autonomous prompt when CLY_YOLO=1",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE:   runYoloContext,
+	})
+
+	parent.AddCommand(&cobra.Command{
 		Use:   "claude-rename <name>",
 		Short: "Rename the current Claude session and Zellij tab",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runRename,
 	})
+}
+
+// runYoloContext is a Claude Code SessionStart hook. `c --yolo` in acp
+// mode sets CLY_YOLO=1 because tern acp can't append a system prompt;
+// this injects the safe-autonomous prompt as session context instead.
+func runYoloContext(cmd *cobra.Command, args []string) error {
+	if os.Getenv("CLY_YOLO") != "1" {
+		return nil
+	}
+	out := map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":     "SessionStart",
+			"additionalContext": session.SafeAutonomousPrompt(),
+		},
+	}
+	return json.NewEncoder(cmd.OutOrStdout()).Encode(out)
 }
 
 func runRename(cmd *cobra.Command, args []string) error {
@@ -77,10 +102,7 @@ func run(cmd *cobra.Command, args []string) error {
 	if len(extra) == 0 && !p.NoTern {
 		switch openMode() {
 		case "acp":
-			// tern acp can't append the yolo system prompt → claude.
-			if !p.Yolo {
-				_ = sess.ExecTernACP(session.WithTaskListID(p.TaskListID))
-			}
+			_ = sess.ExecTernACP(p.Yolo, session.WithTaskListID(p.TaskListID))
 		case "tern":
 			_ = sess.ExecTclaude(p.Yolo, session.WithTaskListID(p.TaskListID))
 		}
