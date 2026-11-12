@@ -16,7 +16,7 @@ func Register(parent *cobra.Command) {
 		Use:                "claude",
 		Aliases:            []string{"c"},
 		Short:              "Run Claude Code with session management",
-		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens tclaude (tern) first, falling back to claude. Skip tern with --no-tern, or disable it by default with modules.claude.tern: false in config.",
+		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` inside a Tern pane opens Tern's ACP agent view (`tern acp claude`), falling back to claude. Skip tern with --no-tern, or disable it by default with modules.claude.tern: false in config.",
 		DisableFlagParsing: true,
 		RunE:               run,
 	}
@@ -67,21 +67,19 @@ func run(cmd *cobra.Command, args []string) error {
 
 	_ = sess.RenameZellijTab()
 
-	// Plain `c` / `c --yolo`: try tclaude first; it only returns if it
-	// can't start, then fall back to claude. Extra claude args,
-	// --no-tern, or modules.claude.tern: false → claude.
-	extra := p.PassArgs
-	if p.Yolo {
-		extra = extra[len(session.YoloArgs()):]
-	}
-	if len(extra) == 0 && !p.NoTern && ternEnabled() {
-		_ = sess.ExecTclaude(p.Yolo, session.WithTaskListID(p.TaskListID))
+	// Plain `c`: inside a Tern pane, open Tern's ACP agent view
+	// (`tern acp claude`); it only returns if it can't start, then fall
+	// back to claude. Extra claude args, --yolo (needs the appended
+	// system prompt ACP can't pass), --no-tern, or
+	// modules.claude.tern: false → claude.
+	if len(p.PassArgs) == 0 && !p.Yolo && !p.NoTern && ternEnabled() {
+		_ = sess.ExecTernACP(session.WithTaskListID(p.TaskListID))
 	}
 
 	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID))
 }
 
-// ternEnabled reports whether plain `c` should try tclaude first.
+// ternEnabled reports whether plain `c` should open Tern's ACP view.
 // Controlled by modules.claude.tern in config; defaults to true when unset.
 func ternEnabled() bool {
 	return config.GetBoolWithDefault("modules.claude.tern", true)
