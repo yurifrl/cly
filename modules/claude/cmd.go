@@ -16,7 +16,7 @@ func Register(parent *cobra.Command) {
 		Use:                "claude",
 		Aliases:            []string{"c"},
 		Short:              "Run Claude Code with session management",
-		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` inside a Tern pane opens Tern's ACP agent view (`tern acp claude`), falling back to claude. Skip tern with --no-tern, or disable it by default with modules.claude.tern: false in config.",
+		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --no-tern forces claude.",
 		DisableFlagParsing: true,
 		RunE:               run,
 	}
@@ -67,22 +67,41 @@ func run(cmd *cobra.Command, args []string) error {
 
 	_ = sess.RenameZellijTab()
 
-	// Plain `c`: inside a Tern pane, open Tern's ACP agent view
-	// (`tern acp claude`); it only returns if it can't start, then fall
-	// back to claude. Extra claude args, --yolo (needs the appended
-	// system prompt ACP can't pass), --no-tern, or
-	// modules.claude.tern: false → claude.
-	if len(p.PassArgs) == 0 && !p.Yolo && !p.NoTern && ternEnabled() {
-		_ = sess.ExecTernACP(session.WithTaskListID(p.TaskListID))
+	// Plain `c` / `c --yolo` launch the UI picked by modules.claude.open;
+	// it only returns if it can't start, then fall back to claude. Extra
+	// claude args or --no-tern → claude.
+	extra := p.PassArgs
+	if p.Yolo {
+		extra = extra[len(session.YoloArgs()):]
+	}
+	if len(extra) == 0 && !p.NoTern {
+		switch openMode() {
+		case "acp":
+			// tern acp can't append the yolo system prompt → claude.
+			if !p.Yolo {
+				_ = sess.ExecTernACP(session.WithTaskListID(p.TaskListID))
+			}
+		case "tern":
+			_ = sess.ExecTclaude(p.Yolo, session.WithTaskListID(p.TaskListID))
+		}
 	}
 
 	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID))
 }
 
-// ternEnabled reports whether plain `c` should open Tern's ACP view.
-// Controlled by modules.claude.tern in config; defaults to true when unset.
-func ternEnabled() bool {
-	return config.GetBoolWithDefault("modules.claude.tern", true)
+// openMode returns how plain `c` opens Claude Code, from
+// modules.claude.open in config:
+//
+//	acp    Tern's ACP agent view (`tern acp claude`, claude-agent-acp) — default
+//	tern   tclaude (tern-agents-ui)
+//	claude the plain Claude Code TUI
+func openMode() string {
+	switch m := config.GetString("modules.claude.open"); m {
+	case "tern", "claude":
+		return m
+	default:
+		return "acp"
+	}
 }
 
 func restoreSession(name string) error {
