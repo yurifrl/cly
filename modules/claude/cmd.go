@@ -3,8 +3,11 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -18,7 +21,7 @@ func Register(parent *cobra.Command) {
 		Use:                "claude",
 		Aliases:            []string{"c"},
 		Short:              "Run Claude Code with session management",
-		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --cli forces claude. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
+		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --cli forces claude.\n\nWhen claude is launched directly and headroom is on PATH, it runs through `headroom wrap claude` (modules.claude.headroom, default true). --no-headroom skips it; --no-wrappers skips all wrappers. In acp/tern modes ANTHROPIC_BASE_URL is pointed at the running headroom proxy (modules.claude.headroom_url) when reachable. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
 		DisableFlagParsing: true,
 		RunE:               run,
 	}
@@ -70,18 +73,19 @@ func runRename(cmd *cobra.Command, args []string) error {
 
 func run(cmd *cobra.Command, args []string) error {
 	p := ParseArgs(args)
+	wrap := session.WithHeadroom(headroomEnabled(p))
 
 	if p.Anonymous {
 		fmt.Println("🥷 Anonymous mode")
-		return session.ExecClaudeAnonymous(p.PassArgs)
+		return session.ExecClaudeAnonymous(p.PassArgs, wrap)
 	}
 
 	if p.ContinueSession != "" {
-		return restoreSession(p.ContinueSession)
+		return restoreSession(p.ContinueSession, wrap)
 	}
 
 	if p.SessionName != "" {
-		return resumeOrCreateSession(p.SessionName)
+		return resumeOrCreateSession(p.SessionName, wrap)
 	}
 
 	sess, err := session.Initialize(p.Name)
@@ -96,6 +100,7 @@ func run(cmd *cobra.Command, args []string) error {
 	// Plain `c` / `c --yolo` launch the UI picked by modules.claude.open;
 	// it only returns if it can't start, then fall back to claude. Extra
 	// claude args or --cli → claude.
+	proxy := session.WithAnthropicBaseURL(headroomProxyURL(p))
 	extra := p.PassArgs
 	if p.Yolo {
 		extra = extra[len(session.YoloArgs()):]
@@ -105,17 +110,17 @@ func run(cmd *cobra.Command, args []string) error {
 		switch openMode() {
 		case "acp":
 			if acpOK {
-				_ = sess.ExecTernACP(p.Yolo, acpArgs, session.WithTaskListID(p.TaskListID))
+				_ = sess.ExecTernACP(p.Yolo, acpArgs, session.WithTaskListID(p.TaskListID), proxy)
 			}
 		case "tern":
 			if len(extra) != 0 {
 				break
 			}
-			_ = sess.ExecTclaude(p.Yolo, session.WithTaskListID(p.TaskListID))
+			_ = sess.ExecTclaude(p.Yolo, session.WithTaskListID(p.TaskListID), proxy)
 		}
 	}
 
-	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID))
+	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID), wrap)
 }
 
 // ternACPArgs translates claude flags that `tern acp claude` has an
@@ -145,6 +150,44 @@ func ternACPArgs(args []string) (out []string, ok bool) {
 	return out, true
 }
 
+// headroomEnabled reports whether claude should launch through
+// `headroom wrap claude`: modules.claude.headroom (default true), unless
+// --no-wrappers or --no-headroom is given. The launch itself only wraps
+// when the headroom binary is on PATH.
+func headroomEnabled(p ParsedArgs) bool {
+	if p.NoWrappers || p.NoHeadroom {
+		return false
+	}
+	return config.GetBoolWithDefault("modules.claude.headroom", true)
+}
+
+// headroomProxyURL returns the Headroom proxy base URL for launchers that
+// spawn claude themselves (tern acp, tclaude), where `headroom wrap` can't
+// be used. The proxy is expected to be running under a process manager;
+// nothing is started here. Returns "" when headroom is disabled or the
+// proxy isn't reachable, so claude then talks to Anthropic directly.
+// URL comes from modules.claude.headroom_url (default http://127.0.0.1:8787).
+func headroomProxyURL(p ParsedArgs) string {
+	if !headroomEnabled(p) {
+		return ""
+	}
+	raw := config.GetString("modules.claude.headroom_url")
+	if raw == "" {
+		raw = "http://127.0.0.1:8787"
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	conn, err := net.DialTimeout("tcp", u.Host, 300*time.Millisecond)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  headroom proxy not reachable at %s; continuing without it\n", u.Host)
+		return ""
+	}
+	_ = conn.Close()
+	return raw
+}
+
 // openMode returns how plain `c` opens Claude Code, from
 // modules.claude.open in config:
 //
@@ -160,7 +203,7 @@ func openMode() string {
 	}
 }
 
-func restoreSession(name string) error {
+func restoreSession(name string, opts ...session.ExecOption) error {
 	sessions, err := agentsession.Load(agentsession.FilePath())
 	if err != nil {
 		return err
@@ -177,10 +220,10 @@ func restoreSession(name string) error {
 		return fmt.Errorf("chdir %s: %w", entry.Path, err)
 	}
 
-	return session.ExecClaude([]string{"-r", entry.ID})
+	return session.ExecClaude([]string{"-r", entry.ID}, opts...)
 }
 
-func resumeOrCreateSession(name string) error {
+func resumeOrCreateSession(name string, opts ...session.ExecOption) error {
 	path, err := os.Getwd()
 	if err != nil {
 		return err
@@ -194,7 +237,7 @@ func resumeOrCreateSession(name string) error {
 	entry := agentsession.FindByName(sessions, name)
 	if entry != nil {
 		fmt.Printf("📂 Resuming session: %s (id=%s)\n", name, entry.ID)
-		return session.ExecClaude([]string{"-r", entry.ID})
+		return session.ExecClaude([]string{"-r", entry.ID}, opts...)
 	}
 
 	// Create new session
@@ -212,5 +255,5 @@ func resumeOrCreateSession(name string) error {
 		return err
 	}
 
-	return session.ExecClaude([]string{"--session-id", sessionID})
+	return session.ExecClaude([]string{"--session-id", sessionID}, opts...)
 }

@@ -10,13 +10,15 @@ type ParsedArgs struct {
 	Anonymous       bool
 	Yolo            bool
 	PlainCLI        bool
+	NoWrappers      bool
+	NoHeadroom      bool
 	TaskListID      string
 	ContinueSession string
 	SessionName     string
 	PassArgs        []string
 }
 
-// ParseArgs extracts wrapper flags (-n, -a, -t, --yolo, --cli) from args,
+// ParseArgs extracts wrapper flags (-n, -a, -t, --yolo, --cli, --no-wrappers, --no-headroom) from args,
 // passing everything else through to claude.
 func ParseArgs(args []string) ParsedArgs {
 	var p ParsedArgs
@@ -34,6 +36,10 @@ func ParseArgs(args []string) ParsedArgs {
 			p.Yolo = true
 		case "--cli":
 			p.PlainCLI = true
+		case "--no-wrappers":
+			p.NoWrappers = true
+		case "--no-headroom":
+			p.NoHeadroom = true
 		case "--continue-session", "-cs":
 			if i+1 < len(args) && len(args[i+1]) > 0 && args[i+1][0] != '-' {
 				p.ContinueSession = args[i+1]

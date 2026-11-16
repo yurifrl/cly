@@ -75,6 +75,45 @@ type ExecOption func(*execConfig)
 
 type execConfig struct {
 	taskListID string
+	headroom   bool
+	baseURL    string
+}
+
+// WithAnthropicBaseURL sets ANTHROPIC_BASE_URL on the child process, for
+// launchers (tern acp, tclaude) that spawn claude themselves.
+func WithAnthropicBaseURL(url string) ExecOption {
+	return func(c *execConfig) {
+		c.baseURL = url
+	}
+}
+
+// WithHeadroom launches claude through `headroom wrap claude` when the
+// headroom binary is on PATH; otherwise claude is exec'd directly.
+func WithHeadroom(on bool) ExecOption {
+	return func(c *execConfig) {
+		c.headroom = on
+	}
+}
+
+// claudeExec resolves the binary and argv used to launch claude. With
+// headroom enabled and installed it is `headroom wrap claude [-- args]`;
+// a missing headroom silently falls back to plain claude.
+func claudeExec(args []string, cfg execConfig) (string, []string, error) {
+	if cfg.headroom {
+		if hr, err := exec.LookPath("headroom"); err == nil {
+			argv := []string{"headroom", "wrap", "claude"}
+			if len(args) > 0 {
+				argv = append(argv, "--")
+				argv = append(argv, args...)
+			}
+			return hr, argv, nil
+		}
+	}
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		return "", nil, errors.New("claude not found in PATH")
+	}
+	return claudePath, append([]string{"claude"}, args...), nil
 }
 
 // WithTaskListID sets the CLAUDE_CODE_TASK_LIST_ID env var on the
@@ -94,9 +133,9 @@ func (s *Session) ExecClaude(args []string, opts ...ExecOption) error {
 		o(&cfg)
 	}
 
-	claudePath, err := exec.LookPath("claude")
+	path, argv, err := claudeExec(args, cfg)
 	if err != nil {
-		return errors.New("claude not found in PATH")
+		return err
 	}
 
 	// Write to the active source so os.Environ() picks up both the
@@ -110,18 +149,20 @@ func (s *Session) ExecClaude(args []string, opts ...ExecOption) error {
 		env = append(env, "CLAUDE_CODE_TASK_LIST_ID="+cfg.taskListID)
 	}
 
-	execArgs := append([]string{"claude"}, args...)
-	return syscall.Exec(claudePath, execArgs, env)
+	return syscall.Exec(path, argv, env)
 }
 
 // ExecClaude execs claude with the given args (no session env).
-func ExecClaude(args []string) error {
-	claudePath, err := exec.LookPath("claude")
-	if err != nil {
-		return errors.New("claude not found in PATH")
+func ExecClaude(args []string, opts ...ExecOption) error {
+	var cfg execConfig
+	for _, o := range opts {
+		o(&cfg)
 	}
-	execArgs := append([]string{"claude"}, args...)
-	return syscall.Exec(claudePath, execArgs, os.Environ())
+	path, argv, err := claudeExec(args, cfg)
+	if err != nil {
+		return err
+	}
+	return syscall.Exec(path, argv, os.Environ())
 }
 
 // BuildAnonymousArgs appends the flags required to run claude without
@@ -132,10 +173,14 @@ func BuildAnonymousArgs(args []string) []string {
 
 // ExecClaudeAnonymous execs claude in a fresh temp directory with
 // project setting sources disabled.
-func ExecClaudeAnonymous(args []string) error {
-	claudePath, err := exec.LookPath("claude")
+func ExecClaudeAnonymous(args []string, opts ...ExecOption) error {
+	var cfg execConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	path, argv, err := claudeExec(BuildAnonymousArgs(args), cfg)
 	if err != nil {
-		return errors.New("claude not found in PATH")
+		return err
 	}
 
 	tmpDir, err := os.MkdirTemp("", "claude-anon-")
@@ -146,6 +191,5 @@ func ExecClaudeAnonymous(args []string) error {
 		return err
 	}
 
-	execArgs := append([]string{"claude"}, BuildAnonymousArgs(args)...)
-	return syscall.Exec(claudePath, execArgs, os.Environ())
+	return syscall.Exec(path, argv, os.Environ())
 }

@@ -30,6 +30,9 @@ func (s *Session) ExecTclaude(yolo bool, opts ...ExecOption) error {
 	if cfg.taskListID != "" {
 		env = append(env, "CLAUDE_CODE_TASK_LIST_ID="+cfg.taskListID)
 	}
+	if cfg.baseURL != "" {
+		env = append(env, "ANTHROPIC_BASE_URL="+cfg.baseURL)
+	}
 
 	args := []string{"tclaude", "-title", s.Name}
 	// tclaude defaults to its own model instead of Claude Code's setting.

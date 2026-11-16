@@ -36,6 +36,9 @@ func (s *Session) ExecTernACP(yolo bool, extra []string, opts ...ExecOption) err
 	if cfg.taskListID != "" {
 		env = append(env, "CLAUDE_CODE_TASK_LIST_ID="+cfg.taskListID)
 	}
+	if cfg.baseURL != "" {
+		env = append(env, "ANTHROPIC_BASE_URL="+cfg.baseURL)
+	}
 
 	args := []string{"tern", "acp", "claude"}
 	args = append(args, extra...)

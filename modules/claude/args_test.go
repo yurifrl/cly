@@ -1,6 +1,8 @@
 package claude
 
 import (
+	"github.com/stretchr/testify/require"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -113,4 +115,29 @@ func TestParseArgs(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestParseArgs_WrapperFlags(t *testing.T) {
+	p := ParseArgs([]string{"--no-wrappers", "--no-headroom", "-p", "hi"})
+	assert.True(t, p.NoWrappers)
+	assert.True(t, p.NoHeadroom)
+	assert.Equal(t, []string{"-p", "hi"}, p.PassArgs)
+}
+
+func TestHeadroomEnabled(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	assert.True(t, headroomEnabled(ParsedArgs{}))
+	assert.False(t, headroomEnabled(ParsedArgs{NoHeadroom: true}))
+	assert.False(t, headroomEnabled(ParsedArgs{NoWrappers: true}))
+}
+
+func TestHeadroomProxyURL(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Setenv("CLY_MODULES_CLAUDE_HEADROOM_URL", "http://"+ln.Addr().String())
+	assert.Equal(t, "http://"+ln.Addr().String(), headroomProxyURL(ParsedArgs{}))
+	assert.Equal(t, "", headroomProxyURL(ParsedArgs{NoHeadroom: true}))
+	ln.Close()
+	assert.Equal(t, "", headroomProxyURL(ParsedArgs{}))
 }
