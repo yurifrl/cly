@@ -42,8 +42,9 @@ modules:
   ompwrap:
     headroom: true # launch `cly omp` (alias `o`) through `headroom wrap omp`; requires headroom on PATH
   claude:
-    headroom: true # launch claude through `headroom wrap claude` when headroom is on PATH (--no-headroom / --no-wrappers to skip)
-    headroom_url: http://127.0.0.1:8787 # proxy used for acp/tern modes (run `headroom proxy` under your process manager)
+    headroom:
+      enabled: true # launch claude through `headroom wrap claude` when headroom is on PATH (--no-headroom / --no-wrappers to skip)
+      proxy_url: http://127.0.0.1:8787 # proxy used for acp/tern modes (run `headroom proxy` under your process manager)
   notify:
     enabled: true
     sound: false

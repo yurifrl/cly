@@ -21,7 +21,7 @@ func Register(parent *cobra.Command) {
 		Use:                "claude",
 		Aliases:            []string{"c"},
 		Short:              "Run Claude Code with session management",
-		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --cli forces claude.\n\nWhen claude is launched directly and headroom is on PATH, it runs through `headroom wrap claude` (modules.claude.headroom, default true). --no-headroom skips it; --no-wrappers skips all wrappers. In acp/tern modes ANTHROPIC_BASE_URL is pointed at the running headroom proxy (modules.claude.headroom_url) when reachable. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
+		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --cli forces claude.\n\nWhen claude is launched directly and headroom is on PATH, it runs through `headroom wrap claude` (modules.claude.headroom, default true). --no-headroom skips it; --no-wrappers skips all wrappers. In acp/tern modes ANTHROPIC_BASE_URL is pointed at the running headroom proxy (modules.claude.headroom.proxy_url) when reachable. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
 		DisableFlagParsing: true,
 		RunE:               run,
 	}
@@ -151,14 +151,14 @@ func ternACPArgs(args []string) (out []string, ok bool) {
 }
 
 // headroomEnabled reports whether claude should launch through
-// `headroom wrap claude`: modules.claude.headroom (default true), unless
+// `headroom wrap claude`: modules.claude.headroom.enabled (default true), unless
 // --no-wrappers or --no-headroom is given. The launch itself only wraps
 // when the headroom binary is on PATH.
 func headroomEnabled(p ParsedArgs) bool {
 	if p.NoWrappers || p.NoHeadroom {
 		return false
 	}
-	return config.GetBoolWithDefault("modules.claude.headroom", true)
+	return config.GetBoolWithDefault("modules.claude.headroom.enabled", true)
 }
 
 // headroomProxyURL returns the Headroom proxy base URL for launchers that
@@ -166,12 +166,12 @@ func headroomEnabled(p ParsedArgs) bool {
 // be used. The proxy is expected to be running under a process manager;
 // nothing is started here. Returns "" when headroom is disabled or the
 // proxy isn't reachable, so claude then talks to Anthropic directly.
-// URL comes from modules.claude.headroom_url (default http://127.0.0.1:8787).
+// URL comes from modules.claude.headroom.proxy_url (default http://127.0.0.1:8787).
 func headroomProxyURL(p ParsedArgs) string {
 	if !headroomEnabled(p) {
 		return ""
 	}
-	raw := config.GetString("modules.claude.headroom_url")
+	raw := config.GetString("modules.claude.headroom.proxy_url")
 	if raw == "" {
 		raw = "http://127.0.0.1:8787"
 	}

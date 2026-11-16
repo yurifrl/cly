@@ -135,7 +135,7 @@ func TestHeadroomProxyURL(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	t.Setenv("CLY_MODULES_CLAUDE_HEADROOM_URL", "http://"+ln.Addr().String())
+	t.Setenv("CLY_MODULES_CLAUDE_HEADROOM_PROXY_URL", "http://"+ln.Addr().String())
 	assert.Equal(t, "http://"+ln.Addr().String(), headroomProxyURL(ParsedArgs{}))
 	assert.Equal(t, "", headroomProxyURL(ParsedArgs{NoHeadroom: true}))
 	ln.Close()
