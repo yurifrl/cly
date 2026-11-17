@@ -21,6 +21,7 @@ import (
 //	<id>  <source>
 //	<id>  github.com/OWNER/REPO[/PATH]@<tag|latest>
 //	<id>  link:<dir>[?]
+//	<id>  release:github.com/OWNER/REPO/SUBPATH[@<tag|latest>]
 //
 // <source> is anything `tern plugin install` accepts (git URL,
 // github.com/OWNER/REPO[/PATH], directory). A github.com source may pin a
@@ -28,6 +29,8 @@ import (
 // the installed tag is recorded in <plugin>/.cly-ref. `link:` loads the plugin in
 // place via `tern plugin link`; a trailing `?` makes a link optional, so a
 // missing directory is skipped instead of failing (machine-specific plugins).
+// `release:` downloads a GitHub release tarball (plugin + binaries) and links
+// SUBPATH from the unpacked copy; see tern_release.go.
 // The id must match the plugin's id; it is how installed plugins are matched.
 type TernBundler struct {
 	name        string
@@ -59,6 +62,9 @@ type ternEntry struct {
 	source   string // install source, or link directory (expanded) when link
 	link     bool
 	optional bool
+	release  bool   // release: entry, fetched by cly and linked
+	root     string // release: unpack directory for the resolved tag
+	dir      string // release: directory linked into Tern (root/subpath)
 	repo     string // OWNER/REPO, for github.com sources
 	subpath  string // package directory inside the repo
 	ref      string // tag or "latest" as written; empty = default branch
@@ -112,6 +118,17 @@ func parseTernfile(path string) ([]ternEntry, error) {
 				rest = strings.TrimSuffix(rest, "?")
 			}
 			e.source = filepath.Clean(expandPath(os.ExpandEnv(rest)))
+		} else if rest, ok := strings.CutPrefix(e.source, "release:"); ok {
+			e.release, e.source = true, rest
+			if err := parseTernGitHub(&e); err != nil {
+				return nil, fmt.Errorf("Ternfile: %s: %w", e.id, err)
+			}
+			if e.repo == "" || e.subpath == "" {
+				return nil, fmt.Errorf("Ternfile: %s: release: wants github.com/OWNER/REPO/SUBPATH[@tag]", e.id)
+			}
+			if e.ref == "" {
+				e.ref = "latest"
+			}
 		} else if strings.HasSuffix(e.source, "?") {
 			return nil, fmt.Errorf("Ternfile: %s: '?' (optional) only applies to link: entries", e.id)
 		} else if err := parseTernGitHub(&e); err != nil {
@@ -156,6 +173,10 @@ func (e ternEntry) displaySource() string {
 	switch {
 	case e.link:
 		return "link:" + e.source
+	case e.release && e.tag != "" && e.ref == "latest":
+		return "release:" + e.source + " -> " + e.tag
+	case e.release:
+		return "release:" + e.source
 	case e.ref == "latest" && e.tag != "":
 		return e.source + " -> " + e.tag
 	}
@@ -261,6 +282,7 @@ const (
 	ternUpgrade   = "upgrade"   // pinned tag moves forward
 	ternDowngrade = "downgrade" // pinned tag moves back
 	ternPin       = "pin"       // untracked copy gets the Ternfile's tag
+	ternFetch     = "fetch"     // download a release and link it
 	ternSkip      = "skip"
 	ternMissing   = "missing" // required link target does not exist
 	ternError     = "error"   // the entry's tag could not be resolved
@@ -291,6 +313,12 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 		switch {
 		case e.err != nil:
 			a.verb, a.note = ternError, e.err.Error()
+		case e.release && present && have.link && have.target == e.dir && isDir(e.dir) && !force:
+			a.verb = ternOK
+		case e.release && present:
+			a.verb, a.note = ternFetch, "currently "+describeTern(have)
+		case e.release:
+			a.verb = ternFetch
 		case e.link && !isDir(e.source):
 			if e.optional {
 				a.verb, a.note = ternSkip, "link target absent (optional)"
@@ -366,7 +394,7 @@ func describeTern(t ternInstalled) string {
 func ternLine(a ternAction) string {
 	glyph, st := "✓", style.GreenStyle
 	switch a.verb {
-	case ternInstall, ternLink:
+	case ternInstall, ternLink, ternFetch:
 		glyph = "+"
 	case ternUpgrade:
 		glyph = "↑"
@@ -438,6 +466,9 @@ func resolveTernRefs(entries []ternEntry) {
 		}
 		e.tag = tag
 	}
+	for i := range entries {
+		entries[i].setReleasePaths()
+	}
 }
 
 // runTern runs `tern plugin ARGS...`, streaming output when verbose and
@@ -473,6 +504,16 @@ func (b *TernBundler) apply(dir string, a ternAction, verbose bool) error {
 		return b.install(dir, a, true, verbose)
 	case ternLink:
 		return runTern(verbose, "link", a.entry.source)
+	case ternFetch:
+		if err := fetchTernRelease(a.entry); err != nil {
+			return err
+		}
+		if a.have != (ternInstalled{}) {
+			if err := uninstallTern(a.id, a.have, verbose); err != nil {
+				return err
+			}
+		}
+		return runTern(verbose, "link", a.entry.dir)
 	case ternReplace:
 		if err := uninstallTern(a.id, a.have, verbose); err != nil {
 			return err
