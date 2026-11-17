@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-17 Tern Bundler
+
+### Added
+- `cly bundle tern` — declarative Tern plugin management from `Ternfile` (default `~/.config/cly/bundles/Ternfile`, `modules.bundle.tern_file`); `tern` accepted in `bundle`, `bundle check`, `bundle cleanup`, and `bundle all`
+- Ternfile lines are `<id> <source>` (any `tern plugin install` source) or `<id> link:<dir>[?]` (loaded in place with `tern plugin link`; trailing `?` skips a missing directory for machine-specific plugins); `~` and `$VARS` expand in link paths
+- State is read straight from Tern's plugins directory (copies vs `<id>.path` links), so it works with or without a running daemon; a copy that should be a link (or the reverse) or a link to a moved directory is replaced
+- Sync verifies each install lands under the Ternfile's id and fails naming the real id otherwise; `--force` reinstalls copies with `tern plugin install --force`; cleanup removes unlisted plugins and broken links
+
 ## 2026-10-19 @exec Directive
 
 ### Changed
