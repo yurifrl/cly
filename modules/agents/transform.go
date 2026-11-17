@@ -16,7 +16,7 @@ const (
 )
 
 // TransformJSONC converts JSONC content to valid JSON.
-// Strips comments and trailing commas, interpolates $VAR/${VAR} env vars
+// Strips comments and trailing commas, interpolates ${VAR} env vars
 // (unless @no-interpolation appears in the first 10 lines), and pretty-prints.
 func TransformJSONC(data []byte) ([]byte, error) {
 	return jsonc.Convert(data)

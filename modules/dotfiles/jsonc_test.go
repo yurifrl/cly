@@ -281,7 +281,7 @@ func TestCopyJsoncToJson(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, &m2))
 		assert.Equal(t, "/Users/test", m2["home"])
 		assert.Equal(t, "/opt/tool/bin", m2["bin"])
-		assert.Equal(t, "looks like a /Users/test ref", m2["bare"])
+		assert.Equal(t, "looks like a $CLY_TEST_HOME ref", m2["bare"])
 	})
 
 	t.Run("no-interpolation marker skips expansion", func(t *testing.T) {

@@ -25,8 +25,8 @@ func IsJsoncToJson(m Mapping) bool {
 	return strings.HasSuffix(m.Source, ".jsonc") && strings.HasSuffix(m.Destination, ".json")
 }
 
-// CopyJsoncToJson reads a JSONC file, strips comments, interpolates $VAR
-// and ${VAR} env references (unless @no-interpolation appears in the first
+// CopyJsoncToJson reads a JSONC file, strips comments, interpolates ${VAR}
+// env references (unless @no-interpolation appears in the first
 // 10 lines), and writes valid JSON to the destination.
 func CopyJsoncToJson(m Mapping) LinkResult {
 	result := LinkResult{Mapping: m}
@@ -106,7 +106,7 @@ func StripJSONC(input []byte) ([]byte, error) {
 	return jsonc.Strip(input)
 }
 
-// expandEnvIfAllowed expands $VAR/${VAR} unless the source carries
+// expandEnvIfAllowed expands ${VAR} unless the source carries
 // @no-interpolation in the first 10 lines. Wraps pkg/jsonc.ExpandEnv.
 func expandEnvIfAllowed(original, stripped []byte) ([]byte, error) {
 	return jsonc.ExpandEnv(original, stripped)

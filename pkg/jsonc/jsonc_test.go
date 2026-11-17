@@ -97,6 +97,7 @@ func TestStrip_Invalid(t *testing.T) {
 func TestConvert_ExpandsEnv(t *testing.T) {
 	t.Setenv("CLY_JSONC_HOME", "/home/test")
 	t.Setenv("CLY_JSONC_EDITOR", "vim")
+	t.Setenv("CLY_JSONC_EMPTY", "")
 
 	tests := []struct {
 		name  string
@@ -111,10 +112,16 @@ func TestConvert_ExpandsEnv(t *testing.T) {
 			want:  "/home/test",
 		},
 		{
-			name:  "bare $VAR",
+			name:  "bare $VAR left literal",
 			input: `{"editor": "$CLY_JSONC_EDITOR"}`,
 			key:   "editor",
-			want:  "vim",
+			want:  "$CLY_JSONC_EDITOR",
+		},
+		{
+			name:  "bare $defaults token left literal",
+			input: `{"list": "$defaults"}`,
+			key:   "list",
+			want:  "$defaults",
 		},
 		{
 			name:  "embedded in longer string",
@@ -123,8 +130,14 @@ func TestConvert_ExpandsEnv(t *testing.T) {
 			want:  "/home/test/bin/tool",
 		},
 		{
-			name:  "unset becomes empty",
+			name:  "unset left literal",
 			input: `{"val": "${CLY_JSONC_UNSET_XXXX}"}`,
+			key:   "val",
+			want:  "${CLY_JSONC_UNSET_XXXX}",
+		},
+		{
+			name:  "set but empty expands to empty",
+			input: `{"val": "${CLY_JSONC_EMPTY}"}`,
 			key:   "val",
 			want:  "",
 		},

@@ -1,5 +1,5 @@
 // Package jsonc converts JSONC source (JSON with // and /* */ comments,
-// trailing commas, and $VAR/${VAR} env placeholders) into valid,
+// trailing commas, and ${VAR} env placeholders) into valid,
 // pretty-printed JSON. It is the single implementation shared by
 // modules/dotfiles (dotfiles sync, `cly pi y settings`) and modules/agents
 // (JSONC-sidecar transforms for IDE/agent configs).
@@ -7,9 +7,11 @@
 // Behavior:
 //   - Strips // line comments, /* */ block comments, and trailing commas
 //     before } or ].
-//   - Expands $VAR and ${VAR} from the process environment via os.Expand,
-//     unless the literal string `@no-interpolation` appears in the first
-//     10 lines of the source (in which case env expansion is skipped).
+//   - Expands ${VAR} from the process environment. Only the braced form is
+//     interpolated: bare $word (e.g. Claude's "$defaults") is always left
+//     untouched, and ${VAR} whose VAR is unset is left as-is so the
+//     consuming tool can resolve it at runtime. Expansion is skipped
+//     entirely when `@no-interpolation` appears in the first 10 lines.
 //   - Re-validates the output as JSON after expansion so a value containing
 //     a quote or newline surfaces as an error instead of writing malformed
 //     output.
@@ -21,7 +23,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 )
+
+// envRef matches a braced ${VAR} reference. Bare $VAR is intentionally not
+// matched so literal dollar tokens in configs survive conversion.
+var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // Convert runs the full pipeline: strip comments and trailing commas,
 // expand env vars (unless @no-interpolation), validate, pretty-print.
@@ -49,15 +56,20 @@ func Strip(input []byte) ([]byte, error) {
 	return pretty.Bytes(), nil
 }
 
-// ExpandEnv applies os.Expand ($VAR/${VAR} -> os.Getenv) to stripped JSON
-// unless the original source contains @no-interpolation in its first 10
+// ExpandEnv replaces ${VAR} with its environment value in stripped JSON
+// (unset vars and bare $VAR are left literal) unless the original source contains @no-interpolation in its first 10
 // lines. Re-validates and re-pretty-prints so expansion cannot silently
 // produce malformed JSON.
 func ExpandEnv(original, stripped []byte) ([]byte, error) {
 	if HasNoInterpolation(original) {
 		return stripped, nil
 	}
-	expanded := os.Expand(string(stripped), os.Getenv)
+	expanded := envRef.ReplaceAllStringFunc(string(stripped), func(ref string) string {
+		if val, ok := os.LookupEnv(ref[2 : len(ref)-1]); ok {
+			return val
+		}
+		return ref
+	})
 
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, []byte(expanded), "", "  "); err != nil {
