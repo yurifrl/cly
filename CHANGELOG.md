@@ -6,6 +6,8 @@
 - `cly bundle tern` — declarative Tern plugin management from `Ternfile` (default `~/.config/cly/bundles/Ternfile`, `modules.bundle.tern_file`); `tern` accepted in `bundle`, `bundle check`, `bundle cleanup`, and `bundle all`
 - Ternfile lines are `<id> <source>` (any `tern plugin install` source) or `<id> link:<dir>[?]` (loaded in place with `tern plugin link`; trailing `?` skips a missing directory for machine-specific plugins); `~` and `$VARS` expand in link paths
 - State is read straight from Tern's plugins directory (copies vs `<id>.path` links), so it works with or without a running daemon; a copy that should be a link (or the reverse) or a link to a moved directory is replaced
+- `github.com/OWNER/REPO[/PATH]@<tag>` pins a git tag (cloned at the tag, since `tern plugin install` only takes the default branch); `@latest` resolves the newest GitHub release each sync (`GITHUB_TOKEN`/`GH_TOKEN` honoured); the installed tag lives in `<plugin>/.cly-ref`, so tag moves show as upgrade/downgrade, untracked copies as pin, and dropping the tag reinstalls from the default branch
+- `bundle check` and `bundle cleanup` no longer print usage when they report drift
 - Sync verifies each install lands under the Ternfile's id and fails naming the real id otherwise; `--force` reinstalls copies with `tern plugin install --force`; cleanup removes unlisted plugins and broken links
 
 ## 2026-10-19 @exec Directive

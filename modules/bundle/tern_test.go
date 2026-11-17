@@ -1,6 +1,9 @@
 package bundle
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,5 +236,203 @@ func TestTernSyncFailsOnMissingRequiredLink(t *testing.T) {
 	writeFakeTern(t)
 	if err := NewTernBundler().Sync(writeTernfile(t, "sl link:/definitely/not/here\n"), false, false, false, false, false); err == nil {
 		t.Fatal("Sync = nil, want failure for missing required link target")
+	}
+}
+
+// writeFakeGit puts a `git` stand-in on PATH whose `clone ... --branch TAG
+// URL DEST` creates DEST/$CLONE_SUBPATH and logs "clone URL TAG".
+func writeFakeGit(t *testing.T) {
+	t.Helper()
+	bin := t.TempDir()
+	script := `#!/bin/sh
+echo "clone $7 $6" >> "$CALL_LOG"
+[ -n "$FAIL_CLONE" ] && { echo "fatal: Remote branch $6 not found" >&2; exit 128; }
+mkdir -p "$8/$CLONE_SUBPATH"
+`
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// fakeReleases serves /repos/OWNER/REPO/releases/latest from tags; repos
+// not in the map 404 like a repo without releases.
+func fakeReleases(t *testing.T, tags map[string]string) *int {
+	t.Helper()
+	hits := new(int)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*hits++
+		repo := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/repos/"), "/releases/latest")
+		tag, ok := tags[repo]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprintf(w, `{"tag_name":%q}`, tag)
+	}))
+	t.Cleanup(srv.Close)
+	old := ternGitHubAPI
+	ternGitHubAPI = srv.URL
+	t.Cleanup(func() { ternGitHubAPI = old })
+	return hits
+}
+
+func TestParseTernfileRefs(t *testing.T) {
+	entries, err := parseTernfile(writeTernfile(t, `a github.com/o/r@v1.2.0
+b github.com/o/mono/plugins/b@go/tern/v0.2.0
+c https://github.com/o/c.git@latest
+d github.com/o/d
+e git@github.com:o/e.git
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ repo, subpath, ref string }{
+		{"o/r", "", "v1.2.0"},
+		{"o/mono", "plugins/b", "go/tern/v0.2.0"},
+		{"o/c", "", "latest"},
+		{"o/d", "", ""},
+		{"", "", ""},
+	}
+	for i, w := range want {
+		e := entries[i]
+		if e.repo != w.repo || e.subpath != w.subpath || e.ref != w.ref {
+			t.Errorf("%s = repo %q subpath %q ref %q, want %+v", e.id, e.repo, e.subpath, e.ref, w)
+		}
+	}
+
+	for name, content := range map[string]string{
+		"empty tag":        "a github.com/o/r@\n",
+		"no repo":          "a github.com/o@v1\n",
+		"tag on local dir": "a ./plugins/a@v1\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseTernfile(writeTernfile(t, content)); err == nil {
+				t.Errorf("parseTernfile(%q) = nil error, want error", content)
+			}
+		})
+	}
+}
+
+func TestPlanTernRefs(t *testing.T) {
+	desired := []ternEntry{
+		{id: "same", tag: "v1.0.0"},
+		{id: "up", tag: "v1.2.0"},
+		{id: "down", tag: "v0.9.0"},
+		{id: "untracked", tag: "v1.0.0"},
+		{id: "unpin"},
+		{id: "fresh", tag: "v1.0.0"},
+		{id: "broken", err: fmt.Errorf("no releases")},
+	}
+	installed := map[string]ternInstalled{
+		"same":      {ref: "v1.0.0"},
+		"up":        {ref: "v1.0.0"},
+		"down":      {ref: "v1.0.0"},
+		"untracked": {},
+		"unpin":     {ref: "v1.0.0"},
+		"broken":    {},
+	}
+	want := map[string]string{
+		"same": ternOK, "up": ternUpgrade, "down": ternDowngrade, "untracked": ternPin,
+		"unpin": ternReinstall, "fresh": ternInstall, "broken": ternError,
+	}
+	for _, a := range planTern(desired, installed, false) {
+		if a.verb != want[a.id] {
+			t.Errorf("%s: verb = %q (%s), want %q", a.id, a.verb, a.note, want[a.id])
+		}
+	}
+	for _, a := range planTern(desired[:1], installed, true) {
+		if a.id == "same" && a.verb != ternReinstall {
+			t.Errorf("force on pinned: verb = %q, want reinstall", a.verb)
+		}
+	}
+}
+
+func TestResolveTernLatest(t *testing.T) {
+	hits := fakeReleases(t, map[string]string{"o/r": "v2.0.0"})
+	entries := []ternEntry{
+		{id: "a", repo: "o/r", ref: "latest"},
+		{id: "b", repo: "o/r", ref: "latest"},
+		{id: "c", repo: "o/none", ref: "latest"},
+		{id: "d", repo: "o/r", ref: "v1.0.0"},
+	}
+	resolveTernRefs(entries)
+	if entries[0].tag != "v2.0.0" || entries[1].tag != "v2.0.0" {
+		t.Errorf("latest tags = %q, %q, want v2.0.0", entries[0].tag, entries[1].tag)
+	}
+	if entries[2].err == nil || !strings.Contains(entries[2].err.Error(), "no GitHub releases") {
+		t.Errorf("repo without releases: err = %v", entries[2].err)
+	}
+	if entries[3].tag != "v1.0.0" {
+		t.Errorf("explicit tag = %q, want v1.0.0", entries[3].tag)
+	}
+	if *hits != 2 {
+		t.Errorf("API hits = %d, want 2 (one per repo)", *hits)
+	}
+}
+
+func TestTernSyncPinnedLifecycle(t *testing.T) {
+	withTempConfig(t, nil)
+	pluginDir, log := writeFakeTern(t)
+	writeFakeGit(t)
+	fakeReleases(t, map[string]string{"o/sdk": "v0.3.0"})
+	t.Setenv("CLONE_SUBPATH", "plugins/jsonx")
+	b := NewTernBundler()
+	marker := func() string {
+		data, _ := os.ReadFile(filepath.Join(pluginDir, "jsonx", ternRefMarker))
+		return strings.TrimSpace(string(data))
+	}
+	sync := func(content string) []string {
+		t.Helper()
+		os.Remove(log)
+		if err := b.Sync(writeTernfile(t, content), false, false, false, false, false); err != nil {
+			t.Fatalf("Sync(%q): %v", content, err)
+		}
+		return calls(t, log)
+	}
+
+	got := sync("jsonx github.com/o/sdk/plugins/jsonx@v0.2.0\n")
+	if len(got) != 2 || got[0] != "clone https://github.com/o/sdk.git v0.2.0" ||
+		!strings.HasPrefix(got[1], "install ") || !strings.HasSuffix(got[1], "/repo/plugins/jsonx") {
+		t.Errorf("pinned install calls = %v", got)
+	}
+	if marker() != "v0.2.0" {
+		t.Errorf("marker = %q, want v0.2.0", marker())
+	}
+
+	if got := sync("jsonx github.com/o/sdk/plugins/jsonx@v0.2.0\n"); len(got) != 0 {
+		t.Errorf("same tag should be a no-op, ran %v", got)
+	}
+
+	got = sync("jsonx github.com/o/sdk/plugins/jsonx@latest\n")
+	if len(got) != 2 || got[0] != "clone https://github.com/o/sdk.git v0.3.0" || !strings.HasSuffix(got[1], " --force") {
+		t.Errorf("@latest upgrade calls = %v", got)
+	}
+	if marker() != "v0.3.0" {
+		t.Errorf("marker = %q, want v0.3.0", marker())
+	}
+
+	got = sync("jsonx github.com/o/sdk/plugins/jsonx\n")
+	if len(got) != 1 || got[0] != "install github.com/o/sdk/plugins/jsonx --force" {
+		t.Errorf("unpin calls = %v", got)
+	}
+	if marker() != "" {
+		t.Errorf("marker after unpin = %q, want none", marker())
+	}
+}
+
+func TestTernSyncCloneFailure(t *testing.T) {
+	withTempConfig(t, nil)
+	_, log := writeFakeTern(t)
+	writeFakeGit(t)
+	t.Setenv("FAIL_CLONE", "1")
+	err := NewTernBundler().Sync(writeTernfile(t, "x github.com/o/x@v9.9.9\n"), false, false, false, false, false)
+	if err == nil {
+		t.Fatal("Sync = nil, want failure when the tag cannot be cloned")
+	}
+	for _, c := range calls(t, log) {
+		if strings.HasPrefix(c, "install") {
+			t.Errorf("must not install after a failed clone, ran %q", c)
+		}
 	}
 }

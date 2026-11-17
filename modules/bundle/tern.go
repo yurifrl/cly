@@ -3,6 +3,7 @@ package bundle
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,10 +19,13 @@ import (
 // Ternfile format, one plugin per line:
 //
 //	<id>  <source>
+//	<id>  github.com/OWNER/REPO[/PATH]@<tag|latest>
 //	<id>  link:<dir>[?]
 //
 // <source> is anything `tern plugin install` accepts (git URL,
-// github.com/OWNER/REPO[/PATH], directory). `link:` loads the plugin in
+// github.com/OWNER/REPO[/PATH], directory). A github.com source may pin a
+// git tag with @<tag>, or follow the newest GitHub release with @latest;
+// the installed tag is recorded in <plugin>/.cly-ref. `link:` loads the plugin in
 // place via `tern plugin link`; a trailing `?` makes a link optional, so a
 // missing directory is skipped instead of failing (machine-specific plugins).
 // The id must match the plugin's id; it is how installed plugins are matched.
@@ -55,13 +59,28 @@ type ternEntry struct {
 	source   string // install source, or link directory (expanded) when link
 	link     bool
 	optional bool
+	repo     string // OWNER/REPO, for github.com sources
+	subpath  string // package directory inside the repo
+	ref      string // tag or "latest" as written; empty = default branch
+	tag      string // ref resolved to a concrete tag (set by load)
+	err      error  // resolving ref failed
 }
+
+// ternRefMarker is written into a pinned install so later syncs know
+// which tag is in place. A reinstall outside cly replaces the directory
+// and drops it, which reads as "untracked" and re-pins.
+const ternRefMarker = ".cly-ref"
+
+// ternGitHubAPI is the GitHub API root used to resolve @latest; tests
+// point it at an httptest server.
+var ternGitHubAPI = "https://api.github.com"
 
 // ternInstalled is one plugin present in Tern's plugins directory.
 type ternInstalled struct {
 	link   bool   // <id>.path file rather than an installed copy
 	target string // link target
 	broken bool   // link target is not a directory
+	ref    string // tag recorded by a pinned install (copies only)
 }
 
 // parseTernfile reads a Ternfile. Blank lines and `#` comments (full-line
@@ -95,10 +114,86 @@ func parseTernfile(path string) ([]ternEntry, error) {
 			e.source = filepath.Clean(expandPath(os.ExpandEnv(rest)))
 		} else if strings.HasSuffix(e.source, "?") {
 			return nil, fmt.Errorf("Ternfile: %s: '?' (optional) only applies to link: entries", e.id)
+		} else if err := parseTernGitHub(&e); err != nil {
+			return nil, fmt.Errorf("Ternfile: %s: %w", e.id, err)
 		}
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// parseTernGitHub splits github.com/OWNER/REPO[/PATH][@REF] into its
+// parts. Sources that are not on github.com pass through untouched; an
+// @ref on them is an error since only GitHub tags/releases are resolved.
+func parseTernGitHub(e *ternEntry) error {
+	src := strings.TrimPrefix(strings.TrimPrefix(e.source, "https://"), "http://")
+	rest, ok := strings.CutPrefix(src, "github.com/")
+	if !ok {
+		if strings.Contains(e.source, "@") && !strings.Contains(e.source, "://") && !strings.HasPrefix(e.source, "git@") {
+			return fmt.Errorf("@<tag> is only supported on github.com/OWNER/REPO sources")
+		}
+		return nil
+	}
+	path, ref, hasRef := strings.Cut(rest, "@")
+	if hasRef && ref == "" {
+		return fmt.Errorf("empty tag after @")
+	}
+	parts := strings.SplitN(strings.Trim(path, "/"), "/", 3)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("want github.com/OWNER/REPO[/PATH], got %q", e.source)
+	}
+	e.repo = parts[0] + "/" + strings.TrimSuffix(parts[1], ".git")
+	if len(parts) == 3 {
+		e.subpath = parts[2]
+	}
+	e.ref = ref
+	return nil
+}
+
+// displaySource renders an entry's source as written in the Ternfile,
+// adding the resolved tag for @latest.
+func (e ternEntry) displaySource() string {
+	switch {
+	case e.link:
+		return "link:" + e.source
+	case e.ref == "latest" && e.tag != "":
+		return e.source + " -> " + e.tag
+	}
+	return e.source
+}
+
+// resolveTernLatest returns the tag of repo's latest GitHub release.
+// GITHUB_TOKEN or GH_TOKEN is used when set to lift rate limits.
+func resolveTernLatest(repo string) (string, error) {
+	req, err := http.NewRequest("GET", ternGitHubAPI+"/repos/"+repo+"/releases/latest", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
+		if tok := os.Getenv(k); tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+			break
+		}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("resolve @latest for %s: %w", repo, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("%s has no GitHub releases; pin a tag with @<tag> instead", repo)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("resolve @latest for %s: HTTP %d", repo, resp.StatusCode)
+	}
+	var rel struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil || rel.TagName == "" {
+		return "", fmt.Errorf("resolve @latest for %s: no tag_name in response", repo)
+	}
+	return rel.TagName, nil
 }
 
 // ternPluginDir asks tern where its plugins directory is.
@@ -144,7 +239,8 @@ func listTernPlugins(dir string) (map[string]ternInstalled, error) {
 			continue
 		}
 		if isDir(full) {
-			installed[name] = ternInstalled{}
+			ref, _ := os.ReadFile(filepath.Join(full, ternRefMarker))
+			installed[name] = ternInstalled{ref: strings.TrimSpace(string(ref))}
 		}
 	}
 	return installed, nil
@@ -161,9 +257,13 @@ const (
 	ternInstall   = "install"
 	ternReinstall = "reinstall"
 	ternLink      = "link"
-	ternReplace   = "replace" // swap an installed copy/link for the Ternfile's form
+	ternReplace   = "replace"   // swap an installed copy/link for the Ternfile's form
+	ternUpgrade   = "upgrade"   // pinned tag moves forward
+	ternDowngrade = "downgrade" // pinned tag moves back
+	ternPin       = "pin"       // untracked copy gets the Ternfile's tag
 	ternSkip      = "skip"
 	ternMissing   = "missing" // required link target does not exist
+	ternError     = "error"   // the entry's tag could not be resolved
 	ternRemove    = "remove"
 )
 
@@ -189,6 +289,8 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 		have, present := installed[e.id]
 		a := ternAction{entry: e, have: have, id: e.id}
 		switch {
+		case e.err != nil:
+			a.verb, a.note = ternError, e.err.Error()
 		case e.link && !isDir(e.source):
 			if e.optional {
 				a.verb, a.note = ternSkip, "link target absent (optional)"
@@ -203,6 +305,10 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 			a.verb = ternLink
 		case present && !have.link && force:
 			a.verb = ternReinstall
+		case present && !have.link && e.tag != "":
+			a.verb, a.note = refVerb(have.ref, e.tag)
+		case present && !have.link && have.ref != "":
+			a.verb, a.note = ternReinstall, "unpin from "+have.ref
 		case present && !have.link:
 			a.verb = ternOK
 		case present:
@@ -227,12 +333,30 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 	return actions
 }
 
+// refVerb picks the action for an installed copy whose desired tag is
+// want and recorded tag is have.
+func refVerb(have, want string) (verb, note string) {
+	switch {
+	case have == want:
+		return ternOK, ""
+	case have == "":
+		return ternPin, "untracked -> " + want
+	case compareVersions(have, want) > 0:
+		return ternDowngrade, have + " -> " + want
+	case compareVersions(have, want) < 0:
+		return ternUpgrade, have + " -> " + want
+	}
+	return ternReinstall, have + " -> " + want
+}
+
 func describeTern(t ternInstalled) string {
 	switch {
 	case t.link && t.broken:
 		return "broken link -> " + t.target
 	case t.link:
 		return "linked -> " + t.target
+	case t.ref != "":
+		return "installed copy @" + t.ref
 	default:
 		return "installed copy"
 	}
@@ -244,19 +368,20 @@ func ternLine(a ternAction) string {
 	switch a.verb {
 	case ternInstall, ternLink:
 		glyph = "+"
-	case ternReinstall, ternReplace:
+	case ternUpgrade:
+		glyph = "↑"
+	case ternDowngrade:
+		glyph, st = "↓", style.YellowStyle
+	case ternReinstall, ternReplace, ternPin:
 		glyph, st = "↻", style.YellowStyle
 	case ternSkip:
 		glyph, st = "·", style.SubtleStyle
-	case ternMissing:
+	case ternMissing, ternError:
 		glyph, st = "✗", style.RedStyle
 	case ternRemove:
 		glyph, st = "-", style.RedStyle
 	}
-	detail := a.entry.source
-	if a.entry.link {
-		detail = "link:" + detail
-	}
+	detail := a.entry.displaySource()
 	if a.verb == ternRemove {
 		detail = ""
 	}
@@ -274,6 +399,7 @@ func (b *TernBundler) load(bundleFile string, force bool) (string, []ternAction,
 	if err != nil {
 		return "", nil, err
 	}
+	resolveTernRefs(desired)
 	dir, err := ternPluginDir()
 	if err != nil {
 		return "", nil, err
@@ -283,6 +409,35 @@ func (b *TernBundler) load(bundleFile string, force bool) (string, []ternAction,
 		return "", nil, err
 	}
 	return dir, planTern(desired, installed, force), nil
+}
+
+// resolveTernRefs fills each entry's tag: @<tag> as written, @latest via
+// the GitHub releases API (once per repo). Failures stay on the entry and
+// surface as an error row instead of aborting the whole plan.
+func resolveTernRefs(entries []ternEntry) {
+	latest := map[string]string{}
+	failed := map[string]error{}
+	for i := range entries {
+		e := &entries[i]
+		if e.ref != "latest" {
+			e.tag = e.ref
+			continue
+		}
+		if err, ok := failed[e.repo]; ok {
+			e.err = err
+			continue
+		}
+		tag, ok := latest[e.repo]
+		if !ok {
+			var err error
+			if tag, err = resolveTernLatest(e.repo); err != nil {
+				failed[e.repo], e.err = err, err
+				continue
+			}
+			latest[e.repo] = tag
+		}
+		e.tag = tag
+	}
 }
 
 // runTern runs `tern plugin ARGS...`, streaming output when verbose and
@@ -312,8 +467,10 @@ func uninstallTern(id string, have ternInstalled, verbose bool) error {
 
 func (b *TernBundler) apply(dir string, a ternAction, verbose bool) error {
 	switch a.verb {
-	case ternInstall, ternReinstall:
-		return b.install(dir, a, a.verb == ternReinstall, verbose)
+	case ternInstall:
+		return b.install(dir, a, false, verbose)
+	case ternReinstall, ternUpgrade, ternDowngrade, ternPin:
+		return b.install(dir, a, true, verbose)
 	case ternLink:
 		return runTern(verbose, "link", a.entry.source)
 	case ternReplace:
@@ -328,6 +485,8 @@ func (b *TernBundler) apply(dir string, a ternAction, verbose bool) error {
 		return uninstallTern(a.id, a.have, verbose)
 	case ternMissing:
 		return fmt.Errorf("link target %s does not exist", a.entry.source)
+	case ternError:
+		return a.entry.err
 	}
 	return nil
 }
@@ -335,9 +494,30 @@ func (b *TernBundler) apply(dir string, a ternAction, verbose bool) error {
 // install runs `tern plugin install` and verifies the plugin landed under
 // the Ternfile's id; a mismatch means the Ternfile names the wrong id and
 // would otherwise reinstall forever while cleanup removes the real one.
+// Pinned entries are cloned at their tag first (tern installs only the
+// default branch) and get a ref marker afterwards.
 func (b *TernBundler) install(dir string, a ternAction, force bool, verbose bool) error {
+	e := a.entry
+	src := e.source
+	if e.tag != "" {
+		tmp, err := os.MkdirTemp("", "cly-tern-*")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+		clone := filepath.Join(tmp, "repo")
+		cmd := exec.Command("git", "clone", "--quiet", "--depth", "1", "--branch", e.tag,
+			"https://github.com/"+e.repo+".git", clone)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git clone %s@%s: %w: %s", e.repo, e.tag, err, strings.TrimSpace(string(out)))
+		}
+		src = filepath.Join(clone, filepath.FromSlash(e.subpath))
+		if !isDir(src) {
+			return fmt.Errorf("%s has no directory %q at %s", e.repo, e.subpath, e.tag)
+		}
+	}
 	before, _ := listTernPlugins(dir)
-	args := []string{"install", a.entry.source}
+	args := []string{"install", src}
 	if force {
 		args = append(args, "--force")
 	}
@@ -349,6 +529,16 @@ func (b *TernBundler) install(dir string, a ternAction, force bool, verbose bool
 		return err
 	}
 	if _, ok := after[a.id]; ok {
+		marker := filepath.Join(dir, a.id, ternRefMarker)
+		if e.tag == "" {
+			if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("clear ref marker: %w", err)
+			}
+			return nil
+		}
+		if err := os.WriteFile(marker, []byte(e.tag+"\n"), 0o644); err != nil {
+			return fmt.Errorf("record installed tag: %w", err)
+		}
 		return nil
 	}
 	for id := range after {

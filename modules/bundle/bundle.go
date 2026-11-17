@@ -121,9 +121,10 @@ func openStore() (store.Store, error) {
 
 func checkCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.Command {
 	return &cobra.Command{
-		Use:   "check [type]",
-		Short: "Show what would change without making changes",
-		Args:  cobra.MaximumNArgs(1),
+		Use:          "check [type]",
+		SilenceUsage: true,
+		Short:        "Show what would change without making changes",
+		Args:         cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			bundlers, cleanup, err := getBundlers()
 			if err != nil {
@@ -142,9 +143,10 @@ func checkCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.Com
 
 func cleanupCmd(getBundlers func() (map[string]Bundler, func(), error)) *cobra.Command {
 	return &cobra.Command{
-		Use:   "cleanup [type]",
-		Short: "Remove packages not in bundle file",
-		Args:  cobra.MaximumNArgs(1),
+		Use:          "cleanup [type]",
+		SilenceUsage: true,
+		Short:        "Remove packages not in bundle file",
+		Args:         cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			bundlers, cleanup, err := getBundlers()
 			if err != nil {
