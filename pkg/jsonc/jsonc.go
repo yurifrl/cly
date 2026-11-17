@@ -10,8 +10,7 @@
 //   - Expands ${VAR} from the process environment. Only the braced form is
 //     interpolated: bare $word (e.g. Claude's "$defaults") is always left
 //     untouched, and ${VAR} whose VAR is unset is left as-is so the
-//     consuming tool can resolve it at runtime. Expansion is skipped
-//     entirely when `@no-interpolation` appears in the first 10 lines.
+//     consuming tool can resolve it at runtime.
 //   - Re-validates the output as JSON after expansion so a value containing
 //     a quote or newline surfaces as an error instead of writing malformed
 //     output.
@@ -31,18 +30,18 @@ import (
 var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // Convert runs the full pipeline: strip comments and trailing commas,
-// expand env vars (unless @no-interpolation), validate, pretty-print.
+// expand ${VAR} env vars, validate, pretty-print.
 func Convert(data []byte) ([]byte, error) {
 	stripped, err := Strip(data)
 	if err != nil {
 		return nil, err
 	}
-	return ExpandEnv(data, stripped)
+	return ExpandEnv(stripped)
 }
 
 // Strip removes comments and trailing commas from JSONC and pretty-prints
 // the result. It does NOT expand env vars — use Convert for that, or call
-// ExpandEnv with the original source if you need to keep strip and expand
+// ExpandEnv on the stripped output if you need to keep strip and expand
 // as separate steps (e.g. the dotfiles no-op fast path).
 func Strip(input []byte) ([]byte, error) {
 	stripped := stripComments(input)
@@ -57,13 +56,9 @@ func Strip(input []byte) ([]byte, error) {
 }
 
 // ExpandEnv replaces ${VAR} with its environment value in stripped JSON
-// (unset vars and bare $VAR are left literal) unless the original source contains @no-interpolation in its first 10
-// lines. Re-validates and re-pretty-prints so expansion cannot silently
+// (unset vars and bare $VAR are left literal). Re-validates and re-pretty-prints so expansion cannot silently
 // produce malformed JSON.
-func ExpandEnv(original, stripped []byte) ([]byte, error) {
-	if HasNoInterpolation(original) {
-		return stripped, nil
-	}
+func ExpandEnv(stripped []byte) ([]byte, error) {
 	expanded := envRef.ReplaceAllStringFunc(string(stripped), func(ref string) string {
 		if val, ok := os.LookupEnv(ref[2 : len(ref)-1]); ok {
 			return val
@@ -77,33 +72,6 @@ func ExpandEnv(original, stripped []byte) ([]byte, error) {
 	}
 	pretty.WriteByte('\n')
 	return pretty.Bytes(), nil
-}
-
-// HasNoInterpolation reports whether @no-interpolation appears in the first
-// 10 lines of src. Mirrors the convention from modules/agents/transform.go.
-func HasNoInterpolation(src []byte) bool {
-	limit := 10
-	start := 0
-	for i := 0; i < limit; i++ {
-		if start >= len(src) {
-			break
-		}
-		end := bytes.IndexByte(src[start:], '\n')
-		var line []byte
-		if end < 0 {
-			line = src[start:]
-		} else {
-			line = src[start : start+end]
-		}
-		if bytes.Contains(line, []byte("@no-interpolation")) {
-			return true
-		}
-		if end < 0 {
-			break
-		}
-		start += end + 1
-	}
-	return false
 }
 
 // stripComments removes // and /* */ comments while preserving string

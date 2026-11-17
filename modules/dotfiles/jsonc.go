@@ -26,8 +26,7 @@ func IsJsoncToJson(m Mapping) bool {
 }
 
 // CopyJsoncToJson reads a JSONC file, strips comments, interpolates ${VAR}
-// env references (unless @no-interpolation appears in the first
-// 10 lines), and writes valid JSON to the destination.
+// env references, and writes valid JSON to the destination.
 func CopyJsoncToJson(m Mapping) LinkResult {
 	result := LinkResult{Mapping: m}
 
@@ -50,7 +49,7 @@ func CopyJsoncToJson(m Mapping) LinkResult {
 		return result
 	}
 
-	expanded, err := expandEnvIfAllowed(data, stripped)
+	expanded, err := jsonc.ExpandEnv(stripped)
 	if err != nil {
 		result.State = StateError
 		result.Error = fmt.Sprintf("failed to expand env vars: %v", err)
@@ -101,19 +100,8 @@ func CopyJsoncToJson(m Mapping) LinkResult {
 
 // StripJSONC strips comments and trailing commas from JSONC input, with no
 // env expansion. Kept as the public entry point for callers that need just
-// the strip step; Convert-style expansion happens in expandEnvIfAllowed.
+// the strip step; Convert-style expansion happens in jsonc.ExpandEnv.
 func StripJSONC(input []byte) ([]byte, error) {
 	return jsonc.Strip(input)
 }
 
-// expandEnvIfAllowed expands ${VAR} unless the source carries
-// @no-interpolation in the first 10 lines. Wraps pkg/jsonc.ExpandEnv.
-func expandEnvIfAllowed(original, stripped []byte) ([]byte, error) {
-	return jsonc.ExpandEnv(original, stripped)
-}
-
-// hasNoInterpolation is kept for direct callers (tests, external helpers)
-// that need the marker check without going through Convert.
-func hasNoInterpolation(src []byte) bool {
-	return jsonc.HasNoInterpolation(src)
-}

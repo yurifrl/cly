@@ -154,18 +154,6 @@ func TestConvert_ExpandsEnv(t *testing.T) {
 	}
 }
 
-func TestConvert_RespectsNoInterpolation(t *testing.T) {
-	t.Setenv("CLY_JSONC_HOME", "/home/test")
-
-	input := "// @no-interpolation\n{\n  \"home\": \"${CLY_JSONC_HOME}\"\n}"
-	got, err := Convert([]byte(input))
-	require.NoError(t, err)
-
-	var m map[string]interface{}
-	require.NoError(t, json.Unmarshal(got, &m))
-	assert.Equal(t, "${CLY_JSONC_HOME}", m["home"])
-}
-
 func TestConvert_InvalidAfterExpansion(t *testing.T) {
 	t.Setenv("CLY_JSONC_BAD", `has "quote" inside`)
 
@@ -175,16 +163,3 @@ func TestConvert_InvalidAfterExpansion(t *testing.T) {
 	assert.Contains(t, err.Error(), "expansion produced invalid JSON")
 }
 
-func TestHasNoInterpolation(t *testing.T) {
-	assert.True(t, HasNoInterpolation([]byte("// @no-interpolation\n{}\n")))
-	assert.True(t, HasNoInterpolation([]byte("{\n// @no-interpolation\n}\n")))
-	assert.False(t, HasNoInterpolation([]byte("{\"key\": \"value\"}\n")))
-
-	// Past line 10 should not count.
-	lines := ""
-	for i := 0; i < 12; i++ {
-		lines += "// line\n"
-	}
-	lines += "// @no-interpolation\n"
-	assert.False(t, HasNoInterpolation([]byte(lines)))
-}

@@ -19,18 +19,6 @@ func TestTransformJSONC(t *testing.T) {
 	assert.NotContains(t, string(got), "//")
 }
 
-func TestTransformJSONC_NoInterpolation(t *testing.T) {
-	t.Setenv("TEST_VAL", "hello")
-
-	input := []byte("// @no-interpolation\n{\n  // comment\n  \"key\": \"${TEST_VAL}\"\n}")
-	got, err := TransformJSONC(input)
-	require.NoError(t, err)
-
-	// Should strip comments but NOT interpolate env vars
-	assert.Contains(t, string(got), `"${TEST_VAL}"`)
-	assert.NotContains(t, string(got), "//")
-}
-
 func TestStripAllowedTools(t *testing.T) {
 	tests := []struct {
 		name  string

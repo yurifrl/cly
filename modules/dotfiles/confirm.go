@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mattn/go-isatty"
+	"github.com/yurifrl/cly/pkg/jsonc"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -89,7 +90,7 @@ func jsoncContentMatches(m Mapping) bool {
 	if err != nil {
 		return false
 	}
-	want, err := expandEnvIfAllowed(src, stripped)
+	want, err := jsonc.ExpandEnv(stripped)
 	if err != nil {
 		return false
 	}

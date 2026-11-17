@@ -284,31 +284,6 @@ func TestCopyJsoncToJson(t *testing.T) {
 		assert.Equal(t, "looks like a $CLY_TEST_HOME ref", m2["bare"])
 	})
 
-	t.Run("no-interpolation marker skips expansion", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		source := filepath.Join(tmpDir, "config.jsonc")
-		dest := filepath.Join(tmpDir, "config.json")
-
-		t.Setenv("CLY_TEST_HOME", "/Users/test")
-
-		content := []byte(`// @no-interpolation
-{
-  "home": "${CLY_TEST_HOME}"
-}`)
-		require.NoError(t, os.WriteFile(source, content, 0644))
-
-		m := Mapping{Source: source, Destination: dest}
-		result := CopyJsoncToJson(m)
-		require.Equal(t, StateLinked, result.State, "error: %s", result.Error)
-
-		data, err := os.ReadFile(dest)
-		require.NoError(t, err)
-		require.True(t, json.Valid(data))
-
-		var m2 map[string]interface{}
-		require.NoError(t, json.Unmarshal(data, &m2))
-		assert.Equal(t, "${CLY_TEST_HOME}", m2["home"])
-	})
 
 	t.Run("expansion that breaks JSON surfaces as error", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -348,37 +323,6 @@ func TestCopyJsoncToJson(t *testing.T) {
 		assert.Equal(t, StateError, result.State)
 		assert.Contains(t, result.Error, "not valid JSON")
 	})
-}
-
-func TestApplyJsoncMapping_RespectsNoInterpolation(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	confPath := filepath.Join(tmpDir, "dotfiles.conf")
-	require.NoError(t, os.WriteFile(confPath, []byte("# empty config\n"), 0644))
-	prevConfigFlag := configFlag
-	configFlag = confPath
-	t.Cleanup(func() { configFlag = prevConfigFlag })
-
-	source := filepath.Join(tmpDir, "config.jsonc")
-	dest := filepath.Join(tmpDir, "config.json")
-
-	t.Setenv("CLY_TEST_DOTFILES_DIR", "/Users/test/dotfiles")
-
-	content := []byte("// @no-interpolation\n{\n  \"home\": \"${CLY_TEST_DOTFILES_DIR}/foo\"\n}")
-	require.NoError(t, os.WriteFile(source, content, 0644))
-
-	m := Mapping{Source: source, Destination: dest}
-	res, err := ApplyJsoncMapping(m)
-	require.NoError(t, err)
-	assert.Equal(t, StateLinked, res.State)
-
-	data, err := os.ReadFile(dest)
-	require.NoError(t, err)
-	assert.True(t, json.Valid(data))
-
-	var got map[string]interface{}
-	require.NoError(t, json.Unmarshal(data, &got))
-	assert.Equal(t, "${CLY_TEST_DOTFILES_DIR}/foo", got["home"])
 }
 
 func TestApplyJsoncMapping_ExpandsEnvVars(t *testing.T) {

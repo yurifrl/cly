@@ -44,7 +44,7 @@ Config syntax (dotfiles.conf):
   @op account=x op://vault/item/field -> ~/d         1Password read secret (-o flag)
   @op account=x op://vault/item/field -> ~/key | format-ssh @target os=linux
                                                        format output (private mode 0600 + derived .pub)
-  .jsonc -> .json                       comments stripped; ${VAR} env vars expanded, bare $VAR kept (opt out with @no-interpolation)
+  .jsonc -> .json                       comments stripped; ${VAR} env vars expanded, bare $VAR kept
 
 Per-line gating: append @target to any directive to skip it unless this machine
 matches. It gates only the line it is attached to; a bare @target line is an

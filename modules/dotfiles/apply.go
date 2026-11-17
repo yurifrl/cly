@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mattn/go-isatty"
+	"github.com/yurifrl/cly/pkg/jsonc"
 	"github.com/yurifrl/cly/pkg/style"
 )
 
@@ -40,9 +41,8 @@ func ApplyJsoncMapping(m Mapping) (LinkResult, error) {
 		return LinkResult{}, fmt.Errorf("strip jsonc: %w", serr)
 	}
 	// Env expansion happens after stripping so the comparison below reflects
-	// what will actually be written. expandEnvIfAllowed no-ops when the
-	// source carries @no-interpolation.
-	expanded, eerr := expandEnvIfAllowed(src, stripped)
+	// what will actually be written.
+	expanded, eerr := jsonc.ExpandEnv(stripped)
 	if eerr != nil {
 		return LinkResult{}, fmt.Errorf("expand env vars: %w", eerr)
 	}
