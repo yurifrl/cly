@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 	"syscall"
 
 	"github.com/yurifrl/cly/pkg/envs"
@@ -74,9 +75,36 @@ func (s *Session) RenameZellijTab() error {
 type ExecOption func(*execConfig)
 
 type execConfig struct {
-	taskListID string
-	headroom   bool
-	baseURL    string
+	taskListID  string
+	headroom    bool
+	baseURL     string
+	ternRestore []string
+}
+
+// TernRestoreEnv is set on a claude TUI launched in a Tern pane. It holds
+// the cly wrapper flags (`--cli` first) that relaunch the session, and
+// tells the `cly claude-tern-pane` hook to record the pane's session so
+// the claude-cli-restore Tern plugin can resume it after a daemon restart.
+const TernRestoreEnv = "CLY_TERN_RESTORE"
+
+// WithTernRestore marks claude as restorable by Tern when it runs in a
+// Tern pane ($TERN_PANE set); flags are the cly wrapper flags to replay.
+func WithTernRestore(flags []string) ExecOption {
+	return func(c *execConfig) {
+		c.ternRestore = append([]string{"--cli"}, flags...)
+	}
+}
+
+// claudeEnv is os.Environ() plus the env the options ask for.
+func claudeEnv(cfg execConfig) []string {
+	env := os.Environ()
+	if cfg.taskListID != "" {
+		env = append(env, "CLAUDE_CODE_TASK_LIST_ID="+cfg.taskListID)
+	}
+	if cfg.ternRestore != nil && os.Getenv("TERN_PANE") != "" {
+		env = append(env, TernRestoreEnv+"="+strings.Join(cfg.ternRestore, " "))
+	}
+	return env
 }
 
 // WithAnthropicBaseURL sets ANTHROPIC_BASE_URL on the child process, for
@@ -144,12 +172,7 @@ func (s *Session) ExecClaude(args []string, opts ...ExecOption) error {
 		return err
 	}
 
-	env := os.Environ()
-	if cfg.taskListID != "" {
-		env = append(env, "CLAUDE_CODE_TASK_LIST_ID="+cfg.taskListID)
-	}
-
-	return syscall.Exec(path, argv, env)
+	return syscall.Exec(path, argv, claudeEnv(cfg))
 }
 
 // ExecClaude execs claude with the given args (no session env).
@@ -162,7 +185,7 @@ func ExecClaude(args []string, opts ...ExecOption) error {
 	if err != nil {
 		return err
 	}
-	return syscall.Exec(path, argv, os.Environ())
+	return syscall.Exec(path, argv, claudeEnv(cfg))
 }
 
 // BuildAnonymousArgs appends the flags required to run claude without

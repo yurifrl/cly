@@ -37,6 +37,14 @@ func Register(parent *cobra.Command) {
 	})
 
 	parent.AddCommand(&cobra.Command{
+		Use:    "claude-tern-pane",
+		Short:  "SessionStart/SessionEnd hook: record the claude session of a Tern pane for restore",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE:   runTernPane,
+	})
+
+	parent.AddCommand(&cobra.Command{
 		Use:   "claude-rename <name>",
 		Short: "Rename the current Claude session and Zellij tab",
 		Args:  cobra.ExactArgs(1),
@@ -74,6 +82,7 @@ func runRename(cmd *cobra.Command, args []string) error {
 func run(cmd *cobra.Command, args []string) error {
 	p := ParseArgs(args)
 	wrap := session.WithHeadroom(headroomEnabled(p))
+	restore := session.WithTernRestore(ternRestoreFlags(p))
 
 	if p.Anonymous {
 		fmt.Println("🥷 Anonymous mode")
@@ -81,11 +90,11 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if p.ContinueSession != "" {
-		return restoreSession(p.ContinueSession, wrap)
+		return restoreSession(p.ContinueSession, wrap, restore)
 	}
 
 	if p.SessionName != "" {
-		return resumeOrCreateSession(p.SessionName, wrap)
+		return resumeOrCreateSession(p.SessionName, wrap, restore)
 	}
 
 	sess, err := session.Initialize(p.Name)
@@ -120,7 +129,23 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID), wrap)
+	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID), wrap, restore)
+}
+
+// ternRestoreFlags are the wrapper flags the claude-cli-restore Tern
+// plugin replays (after `--cli`) when it resumes this claude.
+func ternRestoreFlags(p ParsedArgs) []string {
+	var flags []string
+	if p.Yolo {
+		flags = append(flags, "--yolo")
+	}
+	if p.NoWrappers {
+		flags = append(flags, "--no-wrappers")
+	}
+	if p.NoHeadroom {
+		flags = append(flags, "--no-headroom")
+	}
+	return flags
 }
 
 // ternACPArgs translates claude flags that `tern acp claude` has an
