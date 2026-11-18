@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
@@ -22,6 +24,12 @@ import (
 //	<id>  github.com/OWNER/REPO[/PATH]@<tag|latest>
 //	<id>  link:<dir>[?]
 //	<id>  release:github.com/OWNER/REPO/SUBPATH[@<tag|latest>]
+//	<id>  github:OWNER/REPO[/PATH][@<tag|latest|HEAD>]
+//
+// `github:` keeps a plugin current on its own: without @ it follows the
+// newest GitHub release when the repo has releases, else the default
+// branch's HEAD commit; @latest requires a release, @HEAD always tracks the
+// branch, @<tag> pins. The installed tag or commit goes in .cly-ref.
 //
 // <source> is anything `tern plugin install` accepts (git URL,
 // github.com/OWNER/REPO[/PATH], directory). A github.com source may pin a
@@ -69,6 +77,9 @@ type ternEntry struct {
 	subpath  string // package directory inside the repo
 	ref      string // tag or "latest" as written; empty = default branch
 	tag      string // ref resolved to a concrete tag (set by load)
+	github   bool   // github: entry, always tracked (release or branch HEAD)
+	branch   bool   // track the default branch; want is its HEAD commit
+	want     string // tag or commit expected in .cly-ref; empty = untracked
 	err      error  // resolving ref failed
 }
 
@@ -129,6 +140,13 @@ func parseTernfile(path string) ([]ternEntry, error) {
 			if e.ref == "" {
 				e.ref = "latest"
 			}
+		} else if rest, ok := strings.CutPrefix(e.source, "github:"); ok {
+			e.github = true
+			e.source = "github.com/" + rest
+			if err := parseTernGitHub(&e); err != nil {
+				return nil, fmt.Errorf("Ternfile: %s: %w", e.id, err)
+			}
+			e.source = "github:" + rest
 		} else if strings.HasSuffix(e.source, "?") {
 			return nil, fmt.Errorf("Ternfile: %s: '?' (optional) only applies to link: entries", e.id)
 		} else if err := parseTernGitHub(&e); err != nil {
@@ -177,33 +195,68 @@ func (e ternEntry) displaySource() string {
 		return "release:" + e.source + " -> " + e.tag
 	case e.release:
 		return "release:" + e.source
+	case e.github && e.branch && e.want != "":
+		return e.source + " -> HEAD " + shortRef(e.want)
+	case e.github && e.tag != "" && e.ref != e.tag:
+		return e.source + " -> " + e.tag
 	case e.ref == "latest" && e.tag != "":
 		return e.source + " -> " + e.tag
 	}
 	return e.source
 }
 
+// errTernNoReleases marks a repo without GitHub releases; github: entries
+// fall back to the default branch on it.
+var errTernNoReleases = errors.New("no GitHub releases")
+
+// isCommit reports whether ref is a full git commit hash.
+func isCommit(ref string) bool {
+	if len(ref) != 40 {
+		return false
+	}
+	for _, c := range ref {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return false
+		}
+	}
+	return true
+}
+
+// shortRef abbreviates commit hashes for display; tags pass through.
+func shortRef(ref string) string {
+	if isCommit(ref) {
+		return ref[:7]
+	}
+	return ref
+}
+
+// resolveTernHead returns the commit at the tip of repo's default branch.
+func resolveTernHead(repo string) (string, error) {
+	out, err := exec.Command("git", "ls-remote", "https://github.com/"+repo+".git", "HEAD").Output()
+	if err != nil {
+		return "", fmt.Errorf("git ls-remote %s: %w", repo, err)
+	}
+	sha, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\t")
+	if !isCommit(sha) {
+		return "", fmt.Errorf("git ls-remote %s: no HEAD commit", repo)
+	}
+	return sha, nil
+}
+
 // resolveTernLatest returns the tag of repo's latest GitHub release.
-// GITHUB_TOKEN or GH_TOKEN is used when set to lift rate limits.
 func resolveTernLatest(repo string) (string, error) {
 	req, err := http.NewRequest("GET", ternGitHubAPI+"/repos/"+repo+"/releases/latest", nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
-		if tok := os.Getenv(k); tok != "" {
-			req.Header.Set("Authorization", "Bearer "+tok)
-			break
-		}
-	}
+	setGitHubAuth(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("resolve @latest for %s: %w", repo, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("%s has no GitHub releases; pin a tag with @<tag> instead", repo)
+		return "", fmt.Errorf("%s has %w; pin a tag with @<tag> instead", repo, errTernNoReleases)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("resolve @latest for %s: HTTP %d", repo, resp.StatusCode)
@@ -282,6 +335,7 @@ const (
 	ternUpgrade   = "upgrade"   // pinned tag moves forward
 	ternDowngrade = "downgrade" // pinned tag moves back
 	ternPin       = "pin"       // untracked copy gets the Ternfile's tag
+	ternUpdate    = "update"    // tracked branch moved to a new commit
 	ternFetch     = "fetch"     // download a release and link it
 	ternSkip      = "skip"
 	ternMissing   = "missing" // required link target does not exist
@@ -333,8 +387,8 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 			a.verb = ternLink
 		case present && !have.link && force:
 			a.verb = ternReinstall
-		case present && !have.link && e.tag != "":
-			a.verb, a.note = refVerb(have.ref, e.tag)
+		case present && !have.link && e.want != "":
+			a.verb, a.note = refVerb(have.ref, e.want)
 		case present && !have.link && have.ref != "":
 			a.verb, a.note = ternReinstall, "unpin from "+have.ref
 		case present && !have.link:
@@ -368,7 +422,9 @@ func refVerb(have, want string) (verb, note string) {
 	case have == want:
 		return ternOK, ""
 	case have == "":
-		return ternPin, "untracked -> " + want
+		return ternPin, "untracked -> " + shortRef(want)
+	case isCommit(have) || isCommit(want):
+		return ternUpdate, shortRef(have) + " -> " + shortRef(want)
 	case compareVersions(have, want) > 0:
 		return ternDowngrade, have + " -> " + want
 	case compareVersions(have, want) < 0:
@@ -384,7 +440,7 @@ func describeTern(t ternInstalled) string {
 	case t.link:
 		return "linked -> " + t.target
 	case t.ref != "":
-		return "installed copy @" + t.ref
+		return "installed copy @" + shortRef(t.ref)
 	default:
 		return "installed copy"
 	}
@@ -396,7 +452,7 @@ func ternLine(a ternAction) string {
 	switch a.verb {
 	case ternInstall, ternLink, ternFetch:
 		glyph = "+"
-	case ternUpgrade:
+	case ternUpgrade, ternUpdate:
 		glyph = "↑"
 	case ternDowngrade:
 		glyph, st = "↓", style.YellowStyle
@@ -441,14 +497,20 @@ func (b *TernBundler) load(bundleFile string, force bool) (string, []ternAction,
 
 // resolveTernRefs fills each entry's tag: @<tag> as written, @latest via
 // the GitHub releases API (once per repo). Failures stay on the entry and
-// surface as an error row instead of aborting the whole plan.
+// surface as an error row instead of aborting the whole plan. github:
+// entries are resolved concurrently by resolveTernGitHub.
 func resolveTernRefs(entries []ternEntry) {
+	resolveTernGitHub(entries)
 	latest := map[string]string{}
 	failed := map[string]error{}
 	for i := range entries {
 		e := &entries[i]
+		if e.github {
+			continue
+		}
 		if e.ref != "latest" {
 			e.tag = e.ref
+			e.want = e.tag
 			continue
 		}
 		if err, ok := failed[e.repo]; ok {
@@ -465,10 +527,53 @@ func resolveTernRefs(entries []ternEntry) {
 			latest[e.repo] = tag
 		}
 		e.tag = tag
+		e.want = tag
 	}
 	for i := range entries {
 		entries[i].setReleasePaths()
 	}
+}
+
+// resolveTernGitHub resolves github: entries, at most 8 lookups at a time:
+// a release tag, else (no releases, or @HEAD) the default branch's commit.
+func resolveTernGitHub(entries []ternEntry) {
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for i := range entries {
+		e := &entries[i]
+		if !e.github {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			switch e.ref {
+			case "HEAD":
+			case "":
+				tag, err := resolveTernLatest(e.repo)
+				if err == nil {
+					e.tag, e.want = tag, tag
+					return
+				}
+				if !errors.Is(err, errTernNoReleases) {
+					e.err = err
+					return
+				}
+			case "latest":
+				e.tag, e.err = resolveTernLatest(e.repo)
+				e.want = e.tag
+				return
+			default:
+				e.tag, e.want = e.ref, e.ref
+				return
+			}
+			e.branch = true
+			e.want, e.err = resolveTernHead(e.repo)
+		}()
+	}
+	wg.Wait()
 }
 
 // runTern runs `tern plugin ARGS...`, streaming output when verbose and
@@ -500,7 +605,7 @@ func (b *TernBundler) apply(dir string, a ternAction, verbose bool) error {
 	switch a.verb {
 	case ternInstall:
 		return b.install(dir, a, false, verbose)
-	case ternReinstall, ternUpgrade, ternDowngrade, ternPin:
+	case ternReinstall, ternUpgrade, ternDowngrade, ternPin, ternUpdate:
 		return b.install(dir, a, true, verbose)
 	case ternLink:
 		return runTern(verbose, "link", a.entry.source)
@@ -528,8 +633,10 @@ func (b *TernBundler) apply(dir string, a ternAction, verbose bool) error {
 		return fmt.Errorf("link target %s does not exist", a.entry.source)
 	case ternError:
 		return a.entry.err
+	case ternOK, ternSkip:
+		return nil
 	}
-	return nil
+	return fmt.Errorf("internal: no handler for %q", a.verb)
 }
 
 // install runs `tern plugin install` and verifies the plugin landed under
@@ -540,21 +647,35 @@ func (b *TernBundler) apply(dir string, a ternAction, verbose bool) error {
 func (b *TernBundler) install(dir string, a ternAction, force bool, verbose bool) error {
 	e := a.entry
 	src := e.source
-	if e.tag != "" {
+	installed := e.tag
+	if e.tag != "" || e.branch {
 		tmp, err := os.MkdirTemp("", "cly-tern-*")
 		if err != nil {
 			return err
 		}
 		defer os.RemoveAll(tmp)
 		clone := filepath.Join(tmp, "repo")
-		cmd := exec.Command("git", "clone", "--quiet", "--depth", "1", "--branch", e.tag,
-			"https://github.com/"+e.repo+".git", clone)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("git clone %s@%s: %w: %s", e.repo, e.tag, err, strings.TrimSpace(string(out)))
+		args := []string{"clone", "--quiet", "--depth", "1"}
+		label := "HEAD"
+		if e.tag != "" {
+			args, label = append(args, "--branch", e.tag), e.tag
+		}
+		args = append(args, "https://github.com/"+e.repo+".git", clone)
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("git clone %s@%s: %w: %s", e.repo, label, err, strings.TrimSpace(string(out)))
+		}
+		if e.branch {
+			// Record the commit actually cloned; the branch may have moved
+			// since planning.
+			out, err := exec.Command("git", "-C", clone, "rev-parse", "HEAD").Output()
+			if err != nil {
+				return fmt.Errorf("git rev-parse %s: %w", e.repo, err)
+			}
+			installed = strings.TrimSpace(string(out))
 		}
 		src = filepath.Join(clone, filepath.FromSlash(e.subpath))
 		if !isDir(src) {
-			return fmt.Errorf("%s has no directory %q at %s", e.repo, e.subpath, e.tag)
+			return fmt.Errorf("%s has no directory %q at %s", e.repo, e.subpath, label)
 		}
 	}
 	before, _ := listTernPlugins(dir)
@@ -571,13 +692,13 @@ func (b *TernBundler) install(dir string, a ternAction, force bool, verbose bool
 	}
 	if _, ok := after[a.id]; ok {
 		marker := filepath.Join(dir, a.id, ternRefMarker)
-		if e.tag == "" {
+		if installed == "" {
 			if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("clear ref marker: %w", err)
 			}
 			return nil
 		}
-		if err := os.WriteFile(marker, []byte(e.tag+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(marker, []byte(installed+"\n"), 0o644); err != nil {
 			return fmt.Errorf("record installed tag: %w", err)
 		}
 		return nil

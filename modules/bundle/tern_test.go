@@ -245,9 +245,16 @@ func writeFakeGit(t *testing.T) {
 	t.Helper()
 	bin := t.TempDir()
 	script := `#!/bin/sh
-echo "clone $7 $6" >> "$CALL_LOG"
-[ -n "$FAIL_CLONE" ] && { echo "fatal: Remote branch $6 not found" >&2; exit 128; }
-mkdir -p "$8/$CLONE_SUBPATH"
+case "$1" in
+ls-remote) printf '%s\tHEAD\n' "${FAKE_SHA:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" ;;
+-C) echo "${FAKE_SHA:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" ;;
+clone)
+  for a; do url=$dest; dest=$a; done
+  tag=HEAD; [ "$5" = "--branch" ] && tag=$6
+  echo "clone $url $tag" >> "$CALL_LOG"
+  [ -n "$FAIL_CLONE" ] && { echo "fatal: Remote branch $tag not found" >&2; exit 128; }
+  mkdir -p "$dest/$CLONE_SUBPATH" ;;
+esac
 `
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -271,9 +278,10 @@ func fakeReleases(t *testing.T, tags map[string]string) *int {
 		fmt.Fprintf(w, `{"tag_name":%q}`, tag)
 	}))
 	t.Cleanup(srv.Close)
-	old := ternGitHubAPI
+	old, oldTok := ternGitHubAPI, ternGitHubToken
 	ternGitHubAPI = srv.URL
-	t.Cleanup(func() { ternGitHubAPI = old })
+	ternGitHubToken = func() string { return "" }
+	t.Cleanup(func() { ternGitHubAPI, ternGitHubToken = old, oldTok })
 	return hits
 }
 
@@ -316,12 +324,14 @@ e git@github.com:o/e.git
 
 func TestPlanTernRefs(t *testing.T) {
 	desired := []ternEntry{
-		{id: "same", tag: "v1.0.0"},
-		{id: "up", tag: "v1.2.0"},
-		{id: "down", tag: "v0.9.0"},
-		{id: "untracked", tag: "v1.0.0"},
+		{id: "same", tag: "v1.0.0", want: "v1.0.0"},
+		{id: "up", tag: "v1.2.0", want: "v1.2.0"},
+		{id: "down", tag: "v0.9.0", want: "v0.9.0"},
+		{id: "untracked", tag: "v1.0.0", want: "v1.0.0"},
 		{id: "unpin"},
-		{id: "fresh", tag: "v1.0.0"},
+		{id: "fresh", tag: "v1.0.0", want: "v1.0.0"},
+		{id: "moved", branch: true, want: strings.Repeat("b", 40)},
+		{id: "steady", branch: true, want: strings.Repeat("a", 40)},
 		{id: "broken", err: fmt.Errorf("no releases")},
 	}
 	installed := map[string]ternInstalled{
@@ -331,10 +341,13 @@ func TestPlanTernRefs(t *testing.T) {
 		"untracked": {},
 		"unpin":     {ref: "v1.0.0"},
 		"broken":    {},
+		"moved":     {ref: strings.Repeat("a", 40)},
+		"steady":    {ref: strings.Repeat("a", 40)},
 	}
 	want := map[string]string{
 		"same": ternOK, "up": ternUpgrade, "down": ternDowngrade, "untracked": ternPin,
 		"unpin": ternReinstall, "fresh": ternInstall, "broken": ternError,
+		"moved": ternUpdate, "steady": ternOK,
 	}
 	for _, a := range planTern(desired, installed, false) {
 		if a.verb != want[a.id] {
@@ -434,5 +447,101 @@ func TestTernSyncCloneFailure(t *testing.T) {
 		if strings.HasPrefix(c, "install") {
 			t.Errorf("must not install after a failed clone, ran %q", c)
 		}
+	}
+}
+
+func TestParseTernfileGitHubScheme(t *testing.T) {
+	entries, err := parseTernfile(writeTernfile(t, "a github:o/r\nb github:o/mono/plugins/b@HEAD\nc github:o/c@v1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ repo, subpath, ref, source string }{
+		{"o/r", "", "", "github:o/r"},
+		{"o/mono", "plugins/b", "HEAD", "github:o/mono/plugins/b@HEAD"},
+		{"o/c", "", "v1", "github:o/c@v1"},
+	}
+	for i, w := range want {
+		e := entries[i]
+		if !e.github || e.repo != w.repo || e.subpath != w.subpath || e.ref != w.ref || e.source != w.source {
+			t.Errorf("%s = %+v, want %+v", e.id, e, w)
+		}
+	}
+	if _, err := parseTernfile(writeTernfile(t, "a github:o\n")); err == nil {
+		t.Error("github:o (no repo) parsed, want error")
+	}
+}
+
+func TestResolveTernGitHub(t *testing.T) {
+	_, log := writeFakeTern(t)
+	writeFakeGit(t)
+	_ = log
+	sha := strings.Repeat("c", 40)
+	t.Setenv("FAKE_SHA", sha)
+	fakeReleases(t, map[string]string{"o/rel": "v2.0.0"})
+	entries := []ternEntry{
+		{id: "auto-rel", github: true, repo: "o/rel"},
+		{id: "auto-branch", github: true, repo: "o/norel"},
+		{id: "head", github: true, repo: "o/rel", ref: "HEAD"},
+		{id: "latest-none", github: true, repo: "o/norel", ref: "latest"},
+		{id: "pinned", github: true, repo: "o/rel", ref: "v1.0.0"},
+	}
+	resolveTernRefs(entries)
+	check := func(i int, tag, want string, branch, wantErr bool) {
+		t.Helper()
+		e := entries[i]
+		if e.tag != tag || e.want != want || e.branch != branch || (e.err != nil) != wantErr {
+			t.Errorf("%s: tag %q want %q branch %v err %v", e.id, e.tag, e.want, e.branch, e.err)
+		}
+	}
+	check(0, "v2.0.0", "v2.0.0", false, false)
+	check(1, "", sha, true, false)
+	check(2, "", sha, true, false)
+	check(3, "", "", false, true)
+	check(4, "v1.0.0", "v1.0.0", false, false)
+}
+
+func TestTernSyncGitHubBranchTracking(t *testing.T) {
+	withTempConfig(t, nil)
+	pluginDir, log := writeFakeTern(t)
+	writeFakeGit(t)
+	fakeReleases(t, nil)
+	t.Setenv("CLONE_SUBPATH", "tool")
+	b := NewTernBundler()
+	tf := writeTernfile(t, "tool github:o/mono/tool\n")
+	sync := func() []string {
+		t.Helper()
+		os.Remove(log)
+		if err := b.Sync(tf, false, false, false, false, false); err != nil {
+			t.Fatalf("Sync: %v", err)
+		}
+		return calls(t, log)
+	}
+	marker := func() string {
+		data, _ := os.ReadFile(filepath.Join(pluginDir, "tool", ternRefMarker))
+		return strings.TrimSpace(string(data))
+	}
+
+	first := strings.Repeat("a", 40)
+	t.Setenv("FAKE_SHA", first)
+	got := sync()
+	if len(got) != 2 || got[0] != "clone https://github.com/o/mono.git HEAD" || !strings.HasSuffix(got[1], "/repo/tool") {
+		t.Errorf("first sync calls = %v", got)
+	}
+	if marker() != first {
+		t.Errorf("marker = %q, want %s", marker(), first)
+	}
+
+	if got := sync(); len(got) != 0 {
+		t.Errorf("unchanged branch should be a no-op, ran %v", got)
+	}
+
+	next := strings.Repeat("b", 40)
+	t.Setenv("FAKE_SHA", next)
+	got = sync()
+	if len(got) != 2 || !strings.HasSuffix(got[1], " --force") {
+		t.Errorf("moved branch calls = %v, want clone + forced install", got)
+	}
+	if marker() != next {
+		t.Errorf("marker = %q, want %s", marker(), next)
 	}
 }

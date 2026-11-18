@@ -8,9 +8,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // A `release:` Ternfile entry downloads a GitHub release tarball that ships a
@@ -76,13 +78,29 @@ func ternAsset(repo, tag string) (string, error) {
 
 func setGitHubAuth(req *http.Request) {
 	req.Header.Set("Accept", "application/vnd.github+json")
-	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
-		if tok := os.Getenv(k); tok != "" {
-			req.Header.Set("Authorization", "Bearer "+tok)
-			return
-		}
+	if tok := ternGitHubToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 }
+
+// ternGitHubToken returns GITHUB_TOKEN, GH_TOKEN or `gh auth token`
+// (looked up once): github: entries hit the API on every sync and the
+// anonymous limit is 60 requests an hour. Tests override it.
+var ternGitHubToken = sync.OnceValue(func() string {
+	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
+		if tok := os.Getenv(k); tok != "" {
+			return tok
+		}
+	}
+	if !commandExists("gh") {
+		return ""
+	}
+	out, err := exec.Command("gh", "auth", "token").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+})
 
 // fetchTernRelease unpacks the release into e.root, replacing any previous
 // copy, and drops other tags' directories for the same plugin.
