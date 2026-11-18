@@ -246,7 +246,7 @@ func writeFakeGit(t *testing.T) {
 	bin := t.TempDir()
 	script := `#!/bin/sh
 case "$1" in
-ls-remote) printf '%s\tHEAD\n' "${FAKE_SHA:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" ;;
+ls-remote) [ -n "$FAIL_LSREMOTE" ] && exit 128; printf '%s\tHEAD\n' "${FAKE_SHA:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" ;;
 -C) echo "${FAKE_SHA:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" ;;
 clone)
   for a; do url=$dest; dest=$a; done
@@ -760,5 +760,104 @@ func TestTernSyncProbesAndWritesLock(t *testing.T) {
 	}
 	if *hits != 1 {
 		t.Errorf("API hits on re-check = %d, want 1 (releases only, id cached)", *hits)
+	}
+}
+
+// unreachableGitHub points the API at a closed server: every request fails
+// at the transport level, like a machine with no network.
+func unreachableGitHub(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL
+	srv.Close()
+	old, oldTok := ternGitHubAPI, ternGitHubToken
+	ternGitHubAPI = url
+	ternGitHubToken = func() string { return "" }
+	t.Cleanup(func() { ternGitHubAPI, ternGitHubToken = old, oldTok })
+}
+
+func TestTernSyncOfflineKeepsInstalledPlugins(t *testing.T) {
+	withTempConfig(t, nil)
+	pluginDir, log := writeFakeTern(t)
+	writeFakeGit(t)
+	t.Setenv("FAIL_LSREMOTE", "1")
+	sha := strings.Repeat("a", 40)
+
+	// Installed plugin with a marker, plus an unlisted one.
+	mkdir(t, filepath.Join(pluginDir, "chirp"))
+	os.WriteFile(filepath.Join(pluginDir, "chirp", ternRefMarker), []byte(sha+"\n"), 0o644)
+	mkdir(t, filepath.Join(pluginDir, "stale"))
+
+	tf := writeTernfile(t, "github:o/chirp\ngithub:o/new\n")
+	lock := []ternLockEntry{{id: "chirp", source: "github:o/chirp", ref: sha}}
+	if err := writeTernLock(tf+".lock", lock); err != nil {
+		t.Fatal(err)
+	}
+	unreachableGitHub(t)
+
+	// chirp is installed: kept. new is not: a single error, so Sync fails.
+	err := NewTernBundler().Sync(tf, false, false, false, false, false)
+	if err == nil || !strings.Contains(err.Error(), "failed to sync 1 plugin") {
+		t.Fatalf("Sync err = %v, want exactly the uninstalled plugin to fail", err)
+	}
+	for _, c := range calls(t, log) {
+		if strings.HasPrefix(c, "install") || strings.HasPrefix(c, "remove") {
+			t.Errorf("offline sync changed something: %q", c)
+		}
+	}
+	if !isDir(filepath.Join(pluginDir, "chirp")) {
+		t.Error("installed plugin was removed while offline")
+	}
+	got, _ := readTernLock(tf + ".lock")
+	if len(got) == 0 || got[0].id != "chirp" || got[0].ref != sha {
+		t.Errorf("lock lost chirp's ref while offline: %v", got)
+	}
+}
+
+func TestTernSyncOfflineAllInstalledSucceeds(t *testing.T) {
+	withTempConfig(t, nil)
+	pluginDir, log := writeFakeTern(t)
+	writeFakeGit(t)
+	mkdir(t, filepath.Join(pluginDir, "chirp"))
+	mkdir(t, filepath.Join(pluginDir, "unlisted"))
+	tf := writeTernfile(t, "chirp github:o/chirp\n")
+	unreachableGitHub(t)
+
+	b := NewTernBundler()
+	if err := b.Sync(tf, false, false, false, false, false); err != nil {
+		t.Fatalf("offline Sync with everything installed = %v, want success", err)
+	}
+	// Cleanup still knows every id (explicit here), so it may remove the
+	// unlisted plugin even offline; it must never touch chirp.
+	if err := b.Cleanup(tf, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Check(tf); err != nil {
+		t.Errorf("offline Check after cleanup = %v, want in sync", err)
+	}
+	if !isDir(filepath.Join(pluginDir, "chirp")) {
+		t.Error("cleanup removed a listed plugin while offline")
+	}
+	for _, c := range calls(t, log) {
+		if strings.HasPrefix(c, "install") {
+			t.Errorf("offline run installed something: %q", c)
+		}
+	}
+}
+
+func TestTernOfflineUnknownIDBlocksCleanup(t *testing.T) {
+	withTempConfig(t, nil)
+	pluginDir, _ := writeFakeTern(t)
+	writeFakeGit(t)
+	mkdir(t, filepath.Join(pluginDir, "mystery"))
+	// No lock and no explicit id: offline, nothing can name this entry.
+	tf := writeTernfile(t, "github:o/mystery\n")
+	unreachableGitHub(t)
+
+	if err := NewTernBundler().Cleanup(tf, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if !isDir(filepath.Join(pluginDir, "mystery")) {
+		t.Error("cleanup removed a plugin while an id was unknown")
 	}
 }

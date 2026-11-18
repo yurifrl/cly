@@ -12,6 +12,7 @@
 - The id column is optional for `github:` and `link:` entries: the id is read from the plugin's `plugin.toml` (top-level `id`, ignoring block ids) at the resolved ref via the GitHub contents API, or from the local folder for links; `<id> <source>` still overrides, and plain sources still need it
 - `Ternfile.lock` (next to the Ternfile) is written after each sync with every plugin's id, source and installed tag/commit; it records, it does not pin. It doubles as the id cache keyed by (source, ref), so ids are fetched only for new refs, and its last known id keeps an entry matched when a lookup fails; cleanup refuses to remove anything while any id is unknown
 - github: lookups run 16 at a time and fetch the branch HEAD alongside the release lookup, halving check time on repos without releases
+- Offline syncs no longer fail: when GitHub can't be reached, an installed plugin is shown as `offline` and kept as is (lock untouched, exit 0, one summary line); a plugin that isn't installed yet still errors, once on its own row instead of twice. GitHub lookups now have a 20s timeout (they had none), and `git ls-remote` can no longer prompt
 - `bundle check` and `bundle cleanup` no longer print usage when they report drift
 - Sync verifies each install lands under the Ternfile's id and fails naming the real id otherwise; `--force` reinstalls copies with `tern plugin install --force`; cleanup removes unlisted plugins and broken links
 

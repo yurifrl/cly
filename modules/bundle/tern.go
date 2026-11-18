@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	pkgconfig "github.com/yurifrl/cly/pkg/config"
 	"github.com/yurifrl/cly/pkg/style"
@@ -237,6 +239,15 @@ func (e ternEntry) displaySource() string {
 // fall back to the default branch on it.
 var errTernNoReleases = errors.New("no GitHub releases")
 
+// errTernOffline marks a lookup that never got an answer (no network, DNS,
+// timeout). An installed plugin whose lookup fails this way is kept as is,
+// shown as "offline", instead of failing the sync.
+var errTernOffline = errors.New("GitHub unreachable")
+
+// ternHTTP is the client for GitHub API lookups. The default client has no
+// timeout, so a dead connection would hang a sync.
+var ternHTTP = &http.Client{Timeout: 20 * time.Second}
+
 // isCommit reports whether ref is a full git commit hash.
 func isCommit(ref string) bool {
 	if len(ref) != 40 {
@@ -260,9 +271,13 @@ func shortRef(ref string) string {
 
 // resolveTernHead returns the commit at the tip of repo's default branch.
 func resolveTernHead(repo string) (string, error) {
-	out, err := exec.Command("git", "ls-remote", "https://github.com/"+repo+".git", "HEAD").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "https://github.com/"+repo+".git", "HEAD")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("git ls-remote %s: %w", repo, err)
+		return "", fmt.Errorf("%s: %w", repo, errTernOffline)
 	}
 	sha, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\t")
 	if !isCommit(sha) {
@@ -278,9 +293,9 @@ func resolveTernLatest(repo string) (string, error) {
 		return "", err
 	}
 	setGitHubAuth(req)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := ternHTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("resolve @latest for %s: %w", repo, err)
+		return "", fmt.Errorf("%s: %w", repo, errTernOffline)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
@@ -368,6 +383,7 @@ const (
 	ternSkip      = "skip"
 	ternMissing   = "missing" // required link target does not exist
 	ternError     = "error"   // the entry's tag could not be resolved
+	ternStale     = "offline" // installed, but GitHub could not be asked about updates
 	ternRemove    = "remove"
 )
 
@@ -380,7 +396,7 @@ type ternAction struct {
 }
 
 func (a ternAction) changes() bool {
-	return a.verb != ternOK && a.verb != ternSkip
+	return a.verb != ternOK && a.verb != ternSkip && a.verb != ternStale
 }
 
 // planTern compares the Ternfile with the plugins directory. Desired
@@ -396,6 +412,8 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 			a.id = "?"
 		}
 		switch {
+		case e.err != nil && errors.Is(e.err, errTernOffline) && present:
+			a.verb, a.note = ternStale, "kept as installed, can't check for updates"
 		case e.err != nil:
 			a.verb, a.note = ternError, e.err.Error()
 		case e.id == "":
@@ -498,7 +516,7 @@ func ternLine(a ternAction) string {
 		glyph, st = "↓", style.YellowStyle
 	case ternReinstall, ternReplace, ternPin:
 		glyph, st = "↻", style.YellowStyle
-	case ternSkip:
+	case ternSkip, ternStale:
 		glyph, st = "·", style.SubtleStyle
 	case ternMissing, ternError:
 		glyph, st = "✗", style.RedStyle
@@ -705,7 +723,7 @@ func (b *TernBundler) apply(dir string, a ternAction, verbose bool) error {
 		return fmt.Errorf("link target %s does not exist", a.entry.source)
 	case ternError:
 		return a.entry.err
-	case ternOK, ternSkip:
+	case ternOK, ternSkip, ternStale:
 		return nil
 	}
 	return fmt.Errorf("internal: no handler for %q", a.verb)
@@ -792,18 +810,25 @@ func (b *TernBundler) Sync(bundleFile string, verbose bool, force bool, _ bool, 
 	}
 	dir, actions := st.dir, st.actions
 	var failed []string
-	changed, kept := 0, 0
+	changed, kept, stale := 0, 0, 0
 	for _, a := range actions {
 		if a.verb == ternRemove {
 			continue
 		}
 		fmt.Println(ternLine(a))
+		if a.verb == ternStale {
+			stale++
+			continue
+		}
 		if !a.changes() {
 			kept++
 			continue
 		}
 		if err := b.apply(dir, a, verbose); err != nil {
-			printRed(fmt.Sprintf("    %s: %v", a.id, err))
+			// error/missing rows already show their reason
+			if a.verb != ternError && a.verb != ternMissing {
+				printRed(fmt.Sprintf("    %s: %v", a.id, err))
+			}
 			failed = append(failed, a.id)
 			continue
 		}
@@ -814,6 +839,10 @@ func (b *TernBundler) Sync(bundleFile string, verbose bool, force bool, _ bool, 
 	}
 	if len(failed) > 0 {
 		return fmt.Errorf("failed to sync %d plugin(s): %v", len(failed), failed)
+	}
+	if stale > 0 {
+		fmt.Println()
+		printYellow(fmt.Sprintf("Offline: couldn't check %d plugin(s) for updates; kept as installed", stale))
 	}
 	if changed == 0 {
 		fmt.Println()
@@ -850,12 +879,19 @@ func (b *TernBundler) Check(bundleFile string) error {
 		return err
 	}
 	actions := st.actions
-	pending := 0
+	pending, stale := 0, 0
 	for _, a := range actions {
 		fmt.Println(ternLine(a))
 		if a.changes() {
 			pending++
 		}
+		if a.verb == ternStale {
+			stale++
+		}
+	}
+	if stale > 0 {
+		fmt.Println()
+		printYellow(fmt.Sprintf("Offline: couldn't check %d plugin(s) for updates", stale))
 	}
 	if pending == 0 {
 		fmt.Println()

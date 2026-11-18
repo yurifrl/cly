@@ -51,9 +51,9 @@ func ternAsset(repo, tag string) (string, error) {
 		return "", err
 	}
 	setGitHubAuth(req)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := ternHTTP.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", repo, errTernOffline)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

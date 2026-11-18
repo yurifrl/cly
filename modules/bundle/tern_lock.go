@@ -128,9 +128,9 @@ func probeTernID(repo, subpath, ref string) (string, error) {
 	}
 	setGitHubAuth(req)
 	req.Header.Set("Accept", "application/vnd.github.raw")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := ternHTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("probe id: %w", err)
+		return "", fmt.Errorf("%s: %w", repo, errTernOffline)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
@@ -227,7 +227,7 @@ func ternLockAfterSync(entries []ternEntry, installed map[string]ternInstalled, 
 	var out []ternLockEntry
 	for _, e := range entries {
 		have, ok := installed[e.id]
-		if e.id == "" || failed[e.id] || !ok {
+		if e.id == "" || failed[e.id] || !ok || e.err != nil {
 			if l, found := prevBySource[e.lockSource()]; found {
 				out = append(out, l)
 			}
