@@ -37,7 +37,7 @@ var ternReleaseRoot = func() string {
 
 // setReleasePaths fills root and dir once the tag is known.
 func (e *ternEntry) setReleasePaths() {
-	if !e.bin || e.tag == "" {
+	if !e.bin || e.tag == "" || e.id == "" {
 		return
 	}
 	e.root = filepath.Join(ternReleaseRoot(), e.id, e.tag)

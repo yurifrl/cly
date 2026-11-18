@@ -262,6 +262,9 @@ esac
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+// fakeFiles backs the contents endpoint of fakeReleases; tests reset it.
+var fakeFiles map[string]string
+
 // fakeReleases serves /repos/OWNER/REPO/releases/latest from tags; repos
 // not in the map 404 like a repo without releases.
 func fakeReleases(t *testing.T, tags map[string]string) *int {
@@ -269,6 +272,16 @@ func fakeReleases(t *testing.T, tags map[string]string) *int {
 	hits := new(int)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*hits++
+		// /repos/OWNER/REPO/contents/PATH?ref=REF serves fakeFiles["OWNER/REPO/PATH@REF"].
+		if owner, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/repos/"), "/contents/"); ok {
+			body, found := fakeFiles[owner+"/"+rest+"@"+r.URL.Query().Get("ref")]
+			if !found {
+				http.NotFound(w, r)
+				return
+			}
+			fmt.Fprint(w, body)
+			return
+		}
 		repo := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/repos/"), "/releases/latest")
 		tag, ok := tags[repo]
 		if !ok {
@@ -583,5 +596,169 @@ func TestResolveTernBinRequiresRelease(t *testing.T) {
 	resolveTernRefs(entries)
 	if entries[0].err == nil || entries[0].branch {
 		t.Errorf("+bin without releases: err %v branch %v, want error and no branch fallback", entries[0].err, entries[0].branch)
+	}
+}
+
+func TestPluginTOMLID(t *testing.T) {
+	toml := `schema = 1
+id = "jsonx"   # the plugin
+name = "JSON Explorer"
+
+[[blocks]]
+id = "explorer"
+`
+	if got := pluginTOMLID(strings.NewReader(toml)); got != "jsonx" {
+		t.Errorf("id = %q, want jsonx (not the block id)", got)
+	}
+	if got := pluginTOMLID(strings.NewReader("[[blocks]]\nid = \"x\"\n")); got != "" {
+		t.Errorf("id = %q, want empty when only sections carry ids", got)
+	}
+}
+
+func TestParseTernfileOptionalID(t *testing.T) {
+	entries, err := parseTernfile(writeTernfile(t, "github:o/r\ngithub:o/r/p +bin\nnamed github:o/n\nlink:/tmp/x?\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries[0].id != "" || entries[0].repo != "o/r" {
+		t.Errorf("bare github: = %+v", entries[0])
+	}
+	if entries[1].id != "" || !entries[1].bin {
+		t.Errorf("bare +bin = %+v", entries[1])
+	}
+	if entries[2].id != "named" {
+		t.Errorf("explicit id = %q", entries[2].id)
+	}
+	if entries[3].id != "" || !entries[3].link || !entries[3].optional {
+		t.Errorf("bare link = %+v", entries[3])
+	}
+	if _, err := parseTernfile(writeTernfile(t, "https://example.com/x.git\n")); err == nil {
+		t.Error("bare plain URL parsed, want 'write the id' error")
+	}
+}
+
+func TestTernLockRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "Ternfile.lock")
+	want := []ternLockEntry{
+		{id: "chirp", source: "github:o/chirp", ref: strings.Repeat("a", 40)},
+		{id: "claude", source: "github:o/agents/plugin +bin", ref: "v0.1.0"},
+		{id: "sl", source: "link:/x", ref: "-"},
+	}
+	if err := writeTernLock(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readTernLock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("round trip = %v, want %v", got, want)
+	}
+	info, _ := os.Stat(path)
+	if err := writeTernLock(path, want); err != nil {
+		t.Fatal(err)
+	}
+	if info2, _ := os.Stat(path); !info2.ModTime().Equal(info.ModTime()) {
+		t.Error("unchanged lock was rewritten")
+	}
+}
+
+func TestResolveTernIDs(t *testing.T) {
+	hits := fakeReleases(t, nil)
+	sha := strings.Repeat("a", 40)
+	fakeFiles = map[string]string{
+		"o/probe/plugin.toml@" + sha:      "id = \"probed\"\n[[blocks]]\nid = \"b\"\n",
+		"o/mono/plugins/x/plugin.toml@v1": "id = \"x\"\n",
+	}
+	t.Cleanup(func() { fakeFiles = nil })
+	linkDir := t.TempDir()
+	os.WriteFile(filepath.Join(linkDir, "plugin.toml"), []byte("id = \"linked\"\n"), 0o644)
+
+	entries := []ternEntry{
+		{source: "github:o/probe", github: true, repo: "o/probe", want: sha},
+		{source: "github:o/mono/plugins/x", github: true, repo: "o/mono", subpath: "plugins/x", want: "v1"},
+		{source: "github:o/cached", github: true, repo: "o/cached", want: "v2"},
+		{source: "github:o/gone", github: true, repo: "o/gone", want: "v3"},
+		{source: linkDir, link: true},
+		{source: "github:o/offline", github: true, repo: "o/offline", err: fmt.Errorf("network down")},
+	}
+	lock := []ternLockEntry{
+		{id: "cached-id", source: "github:o/cached", ref: "v2"},
+		{id: "gone-last", source: "github:o/gone", ref: "v0"},
+		{id: "offline-last", source: "github:o/offline", ref: "v0"},
+	}
+	if err := resolveTernIDs(entries, lock); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"probed", "x", "cached-id", "gone-last", "linked", "offline-last"}
+	for i, want := range ids {
+		if entries[i].id != want {
+			t.Errorf("%s: id = %q, want %q", entries[i].source, entries[i].id, want)
+		}
+	}
+	if entries[3].err == nil || !strings.Contains(entries[3].err.Error(), "write the id") {
+		t.Errorf("missing plugin.toml: err = %v, want 'write the id' hint", entries[3].err)
+	}
+	if *hits != 3 {
+		t.Errorf("API hits = %d, want 3 (cached entry must not be fetched)", *hits)
+	}
+
+	dup := []ternEntry{{id: "same", source: "a"}, {id: "same", source: "b"}}
+	if err := resolveTernIDs(dup, nil); err == nil {
+		t.Error("duplicate ids resolved without error")
+	}
+}
+
+func TestPlanTernKeepsEverythingWhenAnIDIsUnknown(t *testing.T) {
+	desired := []ternEntry{{source: "github:o/x", err: fmt.Errorf("offline")}}
+	for _, a := range planTern(desired, map[string]ternInstalled{"something": {}}, false) {
+		if a.verb == ternRemove {
+			t.Errorf("planned removal of %s while an id is unknown", a.id)
+		}
+	}
+}
+
+func TestTernSyncProbesAndWritesLock(t *testing.T) {
+	withTempConfig(t, nil)
+	pluginDir, log := writeFakeTern(t)
+	writeFakeGit(t)
+	hits := fakeReleases(t, nil)
+	sha := strings.Repeat("a", 40)
+	t.Setenv("FAKE_SHA", sha)
+	fakeFiles = map[string]string{"o/mono/tool/plugin.toml@" + sha: "id = \"tool\"\n"}
+	t.Cleanup(func() { fakeFiles = nil })
+	t.Setenv("CLONE_SUBPATH", "tool")
+	linkDir := mkdir(t, filepath.Join(t.TempDir(), "statusline"))
+	os.WriteFile(filepath.Join(linkDir, "plugin.toml"), []byte("id = \"statusline\"\n"), 0o644)
+
+	tf := writeTernfile(t, "github:o/mono/tool\nlink:"+linkDir+"\n")
+	b := NewTernBundler()
+	if err := b.Sync(tf, false, false, false, false, false); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if !isDir(filepath.Join(pluginDir, "tool")) {
+		t.Fatal("tool not installed under its probed id")
+	}
+	lock, err := readTernLock(tf + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ternLockEntry{
+		{id: "tool", source: "github:o/mono/tool", ref: sha},
+		{id: "statusline", source: "link:" + linkDir, ref: "-"},
+	}
+	if fmt.Sprint(lock) != fmt.Sprint(want) {
+		t.Errorf("lock = %v, want %v", lock, want)
+	}
+
+	// Second run: ref unchanged, so the id comes from the lock (only the
+	// releases lookup hits the API, no contents probe).
+	*hits = 0
+	os.Remove(log)
+	if err := b.Check(tf); err != nil {
+		t.Errorf("Check after sync = %v, want in sync", err)
+	}
+	if *hits != 1 {
+		t.Errorf("API hits on re-check = %d, want 1 (releases only, id cached)", *hits)
 	}
 }

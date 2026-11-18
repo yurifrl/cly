@@ -71,6 +71,7 @@ func (b *TernBundler) CheckDeps() error {
 type ternEntry struct {
 	id       string
 	source   string // install source, or link directory (expanded) when link
+	raw      string // source exactly as written in the Ternfile
 	link     bool
 	optional bool
 	bin      bool   // +bin: prebuilt release archive, fetched by cly and linked
@@ -117,17 +118,22 @@ func parseTernfile(path string) ([]ternEntry, error) {
 			line = strings.TrimSpace(line[:i])
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 2 || len(fields) > 3 {
-			return nil, fmt.Errorf("Ternfile: %q: want '<id> <source> [+bin]'", line)
+		// The id column is optional: ids never contain ':' or '/', sources
+		// always do, so a leading source means the id is probed.
+		if len(fields) > 0 && strings.ContainsAny(fields[0], ":/") {
+			fields = append([]string{""}, fields...)
 		}
-		e := ternEntry{id: fields[0], source: fields[1]}
+		if len(fields) < 2 || len(fields) > 3 {
+			return nil, fmt.Errorf("Ternfile: %q: want '[<id>] <source> [+bin]'", line)
+		}
+		e := ternEntry{id: fields[0], source: fields[1], raw: fields[1]}
 		if len(fields) == 3 {
 			if fields[2] != "+bin" {
-				return nil, fmt.Errorf("Ternfile: %s: unknown option %q (only +bin)", e.id, fields[2])
+				return nil, fmt.Errorf("Ternfile: %s: unknown option %q (only +bin)", fields[1], fields[2])
 			}
 			e.bin = true
 		}
-		if seen[e.id] {
+		if e.id != "" && seen[e.id] {
 			return nil, fmt.Errorf("Ternfile: plugin %q listed twice", e.id)
 		}
 		seen[e.id] = true
@@ -160,11 +166,23 @@ func parseTernfile(path string) ([]ternEntry, error) {
 			return nil, fmt.Errorf("Ternfile: %s: %w", e.id, err)
 		}
 		if e.bin && !e.github {
-			return nil, fmt.Errorf("Ternfile: %s: +bin only applies to github: entries", e.id)
+			return nil, fmt.Errorf("Ternfile: %s: +bin only applies to github: entries", e.label())
+		}
+		if e.id == "" && !e.github && !e.link {
+			return nil, fmt.Errorf("Ternfile: %s: the id can only be probed for github: and link: entries; write it in front", e.source)
 		}
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// label names an entry in messages: its id, or its source before the id
+// is known.
+func (e ternEntry) label() string {
+	if e.id != "" {
+		return e.id
+	}
+	return e.lockSource()
 }
 
 // parseTernGitHub splits github.com/OWNER/REPO[/PATH][@REF] into its
@@ -374,9 +392,14 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 		want[e.id] = true
 		have, present := installed[e.id]
 		a := ternAction{entry: e, have: have, id: e.id}
+		if a.id == "" {
+			a.id = "?"
+		}
 		switch {
 		case e.err != nil:
 			a.verb, a.note = ternError, e.err.Error()
+		case e.id == "":
+			a.verb, a.note = ternSkip, "link target absent (optional), id unknown"
 		case e.bin && present && have.link && have.target == e.dir && isDir(e.dir) && !force:
 			a.verb = ternOK
 		case e.bin && present:
@@ -411,6 +434,13 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 		actions = append(actions, a)
 	}
 
+	// An entry whose id is unknown might be any installed plugin, so
+	// nothing is safe to remove until every id resolves.
+	for _, e := range desired {
+		if e.id == "" {
+			return actions
+		}
+	}
 	var extras []string
 	for id := range installed {
 		if !want[id] {
@@ -488,21 +518,39 @@ func ternLine(a ternAction) string {
 	return fmt.Sprintf("  %s %-10s %-22s %s", st.Render(glyph), a.verb, a.id, style.SubtleStyle.Render(detail))
 }
 
-func (b *TernBundler) load(bundleFile string, force bool) (string, []ternAction, error) {
+// ternState is everything one run works from.
+type ternState struct {
+	dir     string
+	desired []ternEntry
+	lock    []ternLockEntry
+	actions []ternAction
+}
+
+func (b *TernBundler) load(bundleFile string, force bool) (*ternState, error) {
 	desired, err := parseTernfile(bundleFile)
 	if err != nil {
-		return "", nil, err
+		return nil, err
+	}
+	lock, err := readTernLock(ternLockPath(bundleFile))
+	if err != nil {
+		return nil, err
 	}
 	resolveTernRefs(desired)
+	if err := resolveTernIDs(desired, lock); err != nil {
+		return nil, err
+	}
+	for i := range desired {
+		desired[i].setReleasePaths() // +bin paths need the id
+	}
 	dir, err := ternPluginDir()
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	installed, err := listTernPlugins(dir)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	return dir, planTern(desired, installed, force), nil
+	return &ternState{dir: dir, desired: desired, lock: lock, actions: planTern(desired, installed, force)}, nil
 }
 
 // resolveTernRefs fills each entry's tag: @<tag> as written, @latest via
@@ -539,15 +587,12 @@ func resolveTernRefs(entries []ternEntry) {
 		e.tag = tag
 		e.want = tag
 	}
-	for i := range entries {
-		entries[i].setReleasePaths()
-	}
 }
 
-// resolveTernGitHub resolves github: entries, at most 8 lookups at a time:
-// a release tag, else (no releases, or @HEAD) the default branch's commit.
+// resolveTernGitHub resolves github: entries, at most 16 at a time: a
+// release tag, else (no releases, or @HEAD) the default branch's commit.
 func resolveTernGitHub(entries []ternEntry) {
-	sem := make(chan struct{}, 8)
+	sem := make(chan struct{}, 16)
 	var wg sync.WaitGroup
 	for i := range entries {
 		e := &entries[i]
@@ -562,6 +607,20 @@ func resolveTernGitHub(entries []ternEntry) {
 			switch e.ref {
 			case "HEAD":
 			case "":
+				// Ask for the branch HEAD alongside the release so a repo
+				// without releases costs one round trip, not two.
+				type head struct {
+					sha string
+					err error
+				}
+				var headc chan head
+				if !e.bin {
+					headc = make(chan head, 1)
+					go func() {
+						sha, err := resolveTernHead(e.repo)
+						headc <- head{sha, err}
+					}()
+				}
 				tag, err := resolveTernLatest(e.repo)
 				if err == nil {
 					e.tag, e.want = tag, tag
@@ -571,6 +630,9 @@ func resolveTernGitHub(entries []ternEntry) {
 					e.err = err
 					return
 				}
+				h := <-headc
+				e.branch, e.want, e.err = true, h.sha, h.err
+				return
 			case "latest":
 				e.tag, e.err = resolveTernLatest(e.repo)
 				e.want = e.tag
@@ -724,10 +786,11 @@ func (b *TernBundler) install(dir string, a ternAction, force bool, verbose bool
 // Sync installs and links everything in the Ternfile. Removing plugins
 // that are not listed is Cleanup's job (run after sync by default).
 func (b *TernBundler) Sync(bundleFile string, verbose bool, force bool, _ bool, _ bool, _ bool) error {
-	dir, actions, err := b.load(bundleFile, force)
+	st, err := b.load(bundleFile, force)
 	if err != nil {
 		return err
 	}
+	dir, actions := st.dir, st.actions
 	var failed []string
 	changed, kept := 0, 0
 	for _, a := range actions {
@@ -746,6 +809,9 @@ func (b *TernBundler) Sync(bundleFile string, verbose bool, force bool, _ bool, 
 		}
 		changed++
 	}
+	if err := b.writeLock(bundleFile, st, failed); err != nil {
+		printRed(fmt.Sprintf("Warning: %v", err))
+	}
 	if len(failed) > 0 {
 		return fmt.Errorf("failed to sync %d plugin(s): %v", len(failed), failed)
 	}
@@ -759,13 +825,31 @@ func (b *TernBundler) Sync(bundleFile string, verbose bool, force bool, _ bool, 
 	return nil
 }
 
+// writeLock records the post-sync state in Ternfile.lock.
+func (b *TernBundler) writeLock(bundleFile string, st *ternState, failed []string) error {
+	installed, err := listTernPlugins(st.dir)
+	if err != nil {
+		return fmt.Errorf("write lock: %w", err)
+	}
+	bad := map[string]bool{}
+	for _, id := range failed {
+		bad[id] = true
+	}
+	lock := ternLockAfterSync(st.desired, installed, bad, st.lock)
+	if err := writeTernLock(ternLockPath(bundleFile), lock); err != nil {
+		return fmt.Errorf("write lock: %w", err)
+	}
+	return nil
+}
+
 // Check prints the plan without touching anything and fails when the
 // plugins directory differs from the Ternfile.
 func (b *TernBundler) Check(bundleFile string) error {
-	_, actions, err := b.load(bundleFile, false)
+	st, err := b.load(bundleFile, false)
 	if err != nil {
 		return err
 	}
+	actions := st.actions
 	pending := 0
 	for _, a := range actions {
 		fmt.Println(ternLine(a))
@@ -786,9 +870,16 @@ func (b *TernBundler) Check(bundleFile string) error {
 // Cleanup removes or unlinks plugins that the Ternfile does not list,
 // including broken links.
 func (b *TernBundler) Cleanup(bundleFile string, verbose bool, _ bool) error {
-	dir, actions, err := b.load(bundleFile, false)
+	st, err := b.load(bundleFile, false)
 	if err != nil {
 		return err
+	}
+	dir, actions := st.dir, st.actions
+	for _, e := range st.desired {
+		if e.id == "" {
+			printYellow(fmt.Sprintf("Skipping cleanup: could not work out the id of %s", e.label()))
+			return nil
+		}
 	}
 	removed := 0
 	for _, a := range actions {
