@@ -46,7 +46,7 @@ func TestTernReleaseSync(t *testing.T) {
 	ternReleaseRoot = func() string { return root }
 	defer func() { ternGitHubAPI, ternReleaseRoot = oldAPI, oldRoot }()
 
-	file := writeTernfile(t, "x  release:github.com/o/r/plugin@latest\n")
+	file := writeTernfile(t, "x  github:o/r/plugin +bin\n")
 	b := NewTernBundler()
 	if err := b.Sync(file, false, false, false, false, false); err != nil {
 		t.Fatal(err)

@@ -15,12 +15,13 @@ import (
 	"sync"
 )
 
-// A `release:` Ternfile entry downloads a GitHub release tarball that ships a
-// plugin together with its binaries (e.g. plugin/ + bin/), unpacks it under
-// ternReleaseRoot()/<id>/<tag>/ and links <subpath> from there. Because the
-// whole archive is kept, a plugin that expects ../bin/ next to itself works.
+// A `+bin` Ternfile entry is for a plugin that runs compiled binaries shipped
+// next to it. cly downloads the GitHub release's prebuilt archive (e.g.
+// plugin/ + bin/), unpacks it under ternReleaseRoot()/<id>/<tag>/ and links
+// PATH from there. Because the whole archive is kept, a plugin that expects
+// ../bin/ next to itself works.
 //
-//	<id>  release:github.com/OWNER/REPO/SUBPATH[@<tag|latest>]
+//	<id>  github:OWNER/REPO/PATH[@<tag|latest>] +bin
 //
 // The archive must be a .tar.gz named *_<goos>_<goarch>.tar.gz with a single
 // top-level directory, which is stripped.
@@ -36,7 +37,7 @@ var ternReleaseRoot = func() string {
 
 // setReleasePaths fills root and dir once the tag is known.
 func (e *ternEntry) setReleasePaths() {
-	if !e.release || e.tag == "" {
+	if !e.bin || e.tag == "" {
 		return
 	}
 	e.root = filepath.Join(ternReleaseRoot(), e.id, e.tag)

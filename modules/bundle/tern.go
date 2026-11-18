@@ -20,16 +20,21 @@ import (
 //
 // Ternfile format, one plugin per line:
 //
+//	<id>  github:OWNER/REPO[/PATH][@<tag|latest|HEAD>] [+bin]
+//	<id>  link:<dir>[?]
 //	<id>  <source>
 //	<id>  github.com/OWNER/REPO[/PATH]@<tag|latest>
-//	<id>  link:<dir>[?]
-//	<id>  release:github.com/OWNER/REPO/SUBPATH[@<tag|latest>]
-//	<id>  github:OWNER/REPO[/PATH][@<tag|latest|HEAD>]
 //
 // `github:` keeps a plugin current on its own: without @ it follows the
 // newest GitHub release when the repo has releases, else the default
 // branch's HEAD commit; @latest requires a release, @HEAD always tracks the
 // branch, @<tag> pins. The installed tag or commit goes in .cly-ref.
+//
+// `+bin` is for plugins that run compiled binaries shipped next to them
+// (../bin/). Source has no binaries, so instead of cloning, cly downloads
+// the release's prebuilt archive for this platform, keeps all of it, and
+// links PATH from the unpacked copy; see tern_release.go. It follows the
+// newest release (or the @<tag> one) and needs releases to exist.
 //
 // <source> is anything `tern plugin install` accepts (git URL,
 // github.com/OWNER/REPO[/PATH], directory). A github.com source may pin a
@@ -37,8 +42,6 @@ import (
 // the installed tag is recorded in <plugin>/.cly-ref. `link:` loads the plugin in
 // place via `tern plugin link`; a trailing `?` makes a link optional, so a
 // missing directory is skipped instead of failing (machine-specific plugins).
-// `release:` downloads a GitHub release tarball (plugin + binaries) and links
-// SUBPATH from the unpacked copy; see tern_release.go.
 // The id must match the plugin's id; it is how installed plugins are matched.
 type TernBundler struct {
 	name        string
@@ -70,9 +73,9 @@ type ternEntry struct {
 	source   string // install source, or link directory (expanded) when link
 	link     bool
 	optional bool
-	release  bool   // release: entry, fetched by cly and linked
-	root     string // release: unpack directory for the resolved tag
-	dir      string // release: directory linked into Tern (root/subpath)
+	bin      bool   // +bin: prebuilt release archive, fetched by cly and linked
+	root     string // +bin: unpack directory for the resolved tag
+	dir      string // +bin: directory linked into Tern (root/subpath)
 	repo     string // OWNER/REPO, for github.com sources
 	subpath  string // package directory inside the repo
 	ref      string // tag or "latest" as written; empty = default branch
@@ -114,10 +117,16 @@ func parseTernfile(path string) ([]ternEntry, error) {
 			line = strings.TrimSpace(line[:i])
 		}
 		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			return nil, fmt.Errorf("Ternfile: %q: want '<id> <source>'", line)
+		if len(fields) < 2 || len(fields) > 3 {
+			return nil, fmt.Errorf("Ternfile: %q: want '<id> <source> [+bin]'", line)
 		}
 		e := ternEntry{id: fields[0], source: fields[1]}
+		if len(fields) == 3 {
+			if fields[2] != "+bin" {
+				return nil, fmt.Errorf("Ternfile: %s: unknown option %q (only +bin)", e.id, fields[2])
+			}
+			e.bin = true
+		}
 		if seen[e.id] {
 			return nil, fmt.Errorf("Ternfile: plugin %q listed twice", e.id)
 		}
@@ -130,16 +139,8 @@ func parseTernfile(path string) ([]ternEntry, error) {
 			}
 			e.source = filepath.Clean(expandPath(os.ExpandEnv(rest)))
 		} else if rest, ok := strings.CutPrefix(e.source, "release:"); ok {
-			e.release, e.source = true, rest
-			if err := parseTernGitHub(&e); err != nil {
-				return nil, fmt.Errorf("Ternfile: %s: %w", e.id, err)
-			}
-			if e.repo == "" || e.subpath == "" {
-				return nil, fmt.Errorf("Ternfile: %s: release: wants github.com/OWNER/REPO/SUBPATH[@tag]", e.id)
-			}
-			if e.ref == "" {
-				e.ref = "latest"
-			}
+			hint := "github:" + strings.TrimPrefix(rest, "github.com/")
+			return nil, fmt.Errorf("Ternfile: %s: release: is replaced by '+bin'; write '%s %s +bin'", e.id, e.id, strings.TrimSuffix(hint, "@latest"))
 		} else if rest, ok := strings.CutPrefix(e.source, "github:"); ok {
 			e.github = true
 			e.source = "github.com/" + rest
@@ -147,10 +148,19 @@ func parseTernfile(path string) ([]ternEntry, error) {
 				return nil, fmt.Errorf("Ternfile: %s: %w", e.id, err)
 			}
 			e.source = "github:" + rest
+			if e.bin && e.subpath == "" {
+				return nil, fmt.Errorf("Ternfile: %s: +bin needs the plugin folder inside the archive: github:OWNER/REPO/PATH", e.id)
+			}
+			if e.bin && e.ref == "HEAD" {
+				return nil, fmt.Errorf("Ternfile: %s: +bin installs a release archive; @HEAD has none", e.id)
+			}
 		} else if strings.HasSuffix(e.source, "?") {
 			return nil, fmt.Errorf("Ternfile: %s: '?' (optional) only applies to link: entries", e.id)
 		} else if err := parseTernGitHub(&e); err != nil {
 			return nil, fmt.Errorf("Ternfile: %s: %w", e.id, err)
+		}
+		if e.bin && !e.github {
+			return nil, fmt.Errorf("Ternfile: %s: +bin only applies to github: entries", e.id)
 		}
 		entries = append(entries, e)
 	}
@@ -191,10 +201,10 @@ func (e ternEntry) displaySource() string {
 	switch {
 	case e.link:
 		return "link:" + e.source
-	case e.release && e.tag != "" && e.ref == "latest":
-		return "release:" + e.source + " -> " + e.tag
-	case e.release:
-		return "release:" + e.source
+	case e.bin && e.tag != "" && e.ref != e.tag:
+		return e.source + " +bin -> " + e.tag
+	case e.bin:
+		return e.source + " +bin"
 	case e.github && e.branch && e.want != "":
 		return e.source + " -> HEAD " + shortRef(e.want)
 	case e.github && e.tag != "" && e.ref != e.tag:
@@ -336,7 +346,7 @@ const (
 	ternDowngrade = "downgrade" // pinned tag moves back
 	ternPin       = "pin"       // untracked copy gets the Ternfile's tag
 	ternUpdate    = "update"    // tracked branch moved to a new commit
-	ternFetch     = "fetch"     // download a release and link it
+	ternFetch     = "fetch"     // +bin: download the release archive and link it
 	ternSkip      = "skip"
 	ternMissing   = "missing" // required link target does not exist
 	ternError     = "error"   // the entry's tag could not be resolved
@@ -367,11 +377,11 @@ func planTern(desired []ternEntry, installed map[string]ternInstalled, force boo
 		switch {
 		case e.err != nil:
 			a.verb, a.note = ternError, e.err.Error()
-		case e.release && present && have.link && have.target == e.dir && isDir(e.dir) && !force:
+		case e.bin && present && have.link && have.target == e.dir && isDir(e.dir) && !force:
 			a.verb = ternOK
-		case e.release && present:
+		case e.bin && present:
 			a.verb, a.note = ternFetch, "currently "+describeTern(have)
-		case e.release:
+		case e.bin:
 			a.verb = ternFetch
 		case e.link && !isDir(e.source):
 			if e.optional {
@@ -557,7 +567,7 @@ func resolveTernGitHub(entries []ternEntry) {
 					e.tag, e.want = tag, tag
 					return
 				}
-				if !errors.Is(err, errTernNoReleases) {
+				if e.bin || !errors.Is(err, errTernNoReleases) {
 					e.err = err
 					return
 				}

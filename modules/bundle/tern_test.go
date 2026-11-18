@@ -545,3 +545,43 @@ func TestTernSyncGitHubBranchTracking(t *testing.T) {
 		t.Errorf("marker = %q, want %s", marker(), next)
 	}
 }
+
+func TestParseTernfileBin(t *testing.T) {
+	entries, err := parseTernfile(writeTernfile(t, "a github:o/r/plugin +bin\nb github:o/r/plugin@v1 +bin  # pinned\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := entries[0]; !e.bin || !e.github || e.repo != "o/r" || e.subpath != "plugin" || e.ref != "" {
+		t.Errorf("a = %+v", e)
+	}
+	if e := entries[1]; !e.bin || e.ref != "v1" {
+		t.Errorf("b = %+v", e)
+	}
+
+	for name, tc := range map[string]struct{ content, msg string }{
+		"unknown option": {"a github:o/r/p +src\n", "unknown option"},
+		"bin on link":    {"a link:/tmp +bin\n", "only applies to github:"},
+		"bin on plain":   {"a github.com/o/r/p +bin\n", "only applies to github:"},
+		"bin no path":    {"a github:o/r +bin\n", "needs the plugin folder"},
+		"bin at HEAD":    {"a github:o/r/p@HEAD +bin\n", "@HEAD"},
+		"old release:":   {"a release:github.com/o/r/plugin@latest\n", "write 'a github:o/r/plugin +bin'"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseTernfile(writeTernfile(t, tc.content))
+			if err == nil || !strings.Contains(err.Error(), tc.msg) {
+				t.Errorf("err = %v, want it to mention %q", err, tc.msg)
+			}
+		})
+	}
+}
+
+func TestResolveTernBinRequiresRelease(t *testing.T) {
+	writeFakeGit(t)
+	t.Setenv("CALL_LOG", filepath.Join(t.TempDir(), "calls"))
+	fakeReleases(t, nil)
+	entries := []ternEntry{{id: "x", github: true, bin: true, repo: "o/norel", subpath: "plugin"}}
+	resolveTernRefs(entries)
+	if entries[0].err == nil || entries[0].branch {
+		t.Errorf("+bin without releases: err %v branch %v, want error and no branch fallback", entries[0].err, entries[0].branch)
+	}
+}
