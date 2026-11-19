@@ -82,7 +82,7 @@ func runRename(cmd *cobra.Command, args []string) error {
 func run(cmd *cobra.Command, args []string) error {
 	p := ParseArgs(args)
 	wrap := session.WithHeadroom(headroomEnabled(p))
-	restore := session.WithTernRestore(ternRestoreFlags(p))
+	restore := session.WithTernRestore(ternRestoreFlags(p), claudeArgs(p))
 
 	if p.Anonymous {
 		fmt.Println("🥷 Anonymous mode")
@@ -130,6 +130,15 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	return sess.ExecClaude(p.PassArgs, session.WithTaskListID(p.TaskListID), wrap, restore)
+}
+
+// claudeArgs are the claude args the user gave, without the ones --yolo
+// injects (ParseArgs puts those first).
+func claudeArgs(p ParsedArgs) []string {
+	if p.Yolo {
+		return p.PassArgs[len(session.YoloArgs()):]
+	}
+	return p.PassArgs
 }
 
 // ternRestoreFlags are the wrapper flags the claude-cli-restore Tern

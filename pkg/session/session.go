@@ -1,11 +1,11 @@
 package session
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"regexp"
-	"strings"
 	"syscall"
 
 	"github.com/yurifrl/cly/pkg/envs"
@@ -78,20 +78,30 @@ type execConfig struct {
 	taskListID  string
 	headroom    bool
 	baseURL     string
-	ternRestore []string
+	ternRestore *TernRestore
 }
 
 // TernRestoreEnv is set on a claude TUI launched in a Tern pane. It holds
-// the cly wrapper flags (`--cli` first) that relaunch the session, and
-// tells the `cly claude-tern-pane` hook to record the pane's session so
-// the claude-cli-restore Tern plugin can resume it after a daemon restart.
+// a JSON TernRestore, and tells the `cly claude-tern-pane` hook to record
+// the pane's session so the claude-cli-restore Tern plugin can bring it
+// back after a daemon restart.
 const TernRestoreEnv = "CLY_TERN_RESTORE"
 
+// TernRestore is how a claude launched by `c` is launched again: Flags are
+// the cly wrapper flags (`--cli` first), Args the claude args it was given.
+// A session with a transcript is resumed with Flags + `--resume <id>`; one
+// that never wrote a transcript (no message sent yet, e.g. a fresh
+// `--fork-session`) can't be resumed, so Flags + Args are replayed instead.
+type TernRestore struct {
+	Flags []string `json:"flags"`
+	Args  []string `json:"args"`
+}
+
 // WithTernRestore marks claude as restorable by Tern when it runs in a
-// Tern pane ($TERN_PANE set); flags are the cly wrapper flags to replay.
-func WithTernRestore(flags []string) ExecOption {
+// Tern pane ($TERN_PANE set).
+func WithTernRestore(flags, args []string) ExecOption {
 	return func(c *execConfig) {
-		c.ternRestore = append([]string{"--cli"}, flags...)
+		c.ternRestore = &TernRestore{Flags: append([]string{"--cli"}, flags...), Args: append([]string{}, args...)}
 	}
 }
 
@@ -102,7 +112,9 @@ func claudeEnv(cfg execConfig) []string {
 		env = append(env, "CLAUDE_CODE_TASK_LIST_ID="+cfg.taskListID)
 	}
 	if cfg.ternRestore != nil && os.Getenv("TERN_PANE") != "" {
-		env = append(env, TernRestoreEnv+"="+strings.Join(cfg.ternRestore, " "))
+		if v, err := json.Marshal(cfg.ternRestore); err == nil {
+			env = append(env, TernRestoreEnv+"="+string(v))
+		}
 	}
 	return env
 }

@@ -23,18 +23,24 @@ import (
 // record per Tern pane running a claude launched by `c` (CLY_TERN_RESTORE
 // set): <ternPaneDir>/<TERN_PANE>.json. The claude-cli-restore Tern plugin
 // reads it from its `spawn` hook and has the respawned shell run
-// `cly claude --cli [flags] --resume <session_id>`.
+// `cly claude --cli [flags] --resume <session_id>`, or the original
+// `cly claude --cli [flags] [args]` when the session has no transcript yet.
 
 // ternPaneRecord is the file the claude-cli-restore plugin reads.
 type ternPaneRecord struct {
-	SessionID string   `json:"session_id"`
-	Cwd       string   `json:"cwd"`
-	Flags     []string `json:"flags"`
-	Updated   string   `json:"updated"`
+	SessionID string `json:"session_id"`
+	// Transcript is where claude writes the session; it only exists once a
+	// message was sent, and only then can the session be resumed.
+	Transcript string   `json:"transcript_path"`
+	Cwd        string   `json:"cwd"`
+	Flags      []string `json:"flags"`
+	Args       []string `json:"args"`
+	Updated    string   `json:"updated"`
 }
 
 type ternHookInput struct {
 	SessionID     string `json:"session_id"`
+	Transcript    string `json:"transcript_path"`
 	Cwd           string `json:"cwd"`
 	HookEventName string `json:"hook_event_name"`
 	Reason        string `json:"reason"`
@@ -50,9 +56,9 @@ func ternPaneDir() string {
 }
 
 func runTernPane(cmd *cobra.Command, args []string) error {
-	flags := os.Getenv(session.TernRestoreEnv)
+	raw := os.Getenv(session.TernRestoreEnv)
 	pane := os.Getenv("TERN_PANE")
-	if flags == "" || pane == "" || strings.ContainsAny(pane, `/\.`) {
+	if raw == "" || pane == "" || strings.ContainsAny(pane, `/\.`) {
 		return nil
 	}
 	data, err := io.ReadAll(cmd.InOrStdin())
@@ -78,11 +84,18 @@ func runTernPane(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		pruneTernPanes(dir)
+		var how session.TernRestore
+		if json.Unmarshal([]byte(raw), &how) != nil {
+			// claude started by an older cly: space-joined flags.
+			how = session.TernRestore{Flags: strings.Fields(raw)}
+		}
 		rec := ternPaneRecord{
-			SessionID: in.SessionID,
-			Cwd:       in.Cwd,
-			Flags:     strings.Fields(flags),
-			Updated:   time.Now().UTC().Format(time.RFC3339),
+			SessionID:  in.SessionID,
+			Transcript: in.Transcript,
+			Cwd:        in.Cwd,
+			Flags:      how.Flags,
+			Args:       how.Args,
+			Updated:    time.Now().UTC().Format(time.RFC3339),
 		}
 		out, _ := json.Marshal(rec)
 		tmp := path + ".tmp"
