@@ -269,6 +269,11 @@ func ExpandPath(path string) string {
 
 func expandEnvInModuleStrings(mods map[string]map[string]interface{}) {
 	for k, mod := range mods {
+		// statusline uses $context/$model/$cwd as its own placeholders and
+		// shell snippets with literal $; env expansion would blank them.
+		if k == "statusline" {
+			continue
+		}
 		mods[k] = expandEnvInMapStrings(mod).(map[string]interface{})
 	}
 }
