@@ -78,7 +78,7 @@ func runTernPluginInstall(cmd *cobra.Command, args []string) error {
 	have, _ := ternPluginVersion(os.DirFS(dir), "plugin.toml")
 	linked := ternPluginLinkedTo() == dir
 	if have == want && linked && !force {
-		fmt.Printf("✅ %s %s is up to date\n", ternPluginID, want)
+		fmt.Printf("✅ %s %s is up to date: %s\n", ternPluginID, want, dir)
 		return nil
 	}
 
@@ -102,11 +102,11 @@ func runTernPluginInstall(cmd *cobra.Command, args []string) error {
 	}
 	switch {
 	case have == "" || !linked:
-		fmt.Printf("✅ installed %s %s\n", ternPluginID, want)
+		fmt.Printf("✅ installed %s %s: %s\n", ternPluginID, want, dir)
 	case have == want:
-		fmt.Printf("✅ reinstalled %s %s\n", ternPluginID, want)
+		fmt.Printf("✅ reinstalled %s %s: %s\n", ternPluginID, want, dir)
 	default:
-		fmt.Printf("✅ updated %s %s → %s\n", ternPluginID, have, want)
+		fmt.Printf("✅ updated %s %s → %s: %s\n", ternPluginID, have, want, dir)
 	}
 	if !ternPaneHookConfigured() {
 		fmt.Println("⚠️  `cly claude-tern-pane` isn't a hook in ~/.claude/settings.json; panes get the icon but won't resume.")
@@ -121,10 +121,11 @@ func runTernPluginUninstall(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	if err := os.RemoveAll(ternPluginHome()); err != nil {
+	dir := ternPluginHome()
+	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
-	fmt.Printf("✅ removed %s\n", ternPluginID)
+	fmt.Printf("✅ removed %s: %s\n", ternPluginID, dir)
 	return nil
 }
 
