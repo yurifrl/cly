@@ -44,6 +44,8 @@ func Register(parent *cobra.Command) {
 		RunE:   runTernPane,
 	})
 
+	parent.AddCommand(ternPluginCmd())
+
 	parent.AddCommand(&cobra.Command{
 		Use:   "claude-rename <name>",
 		Short: "Rename the current Claude session and Zellij tab",
