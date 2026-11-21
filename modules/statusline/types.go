@@ -8,6 +8,16 @@ type StatusJSON struct {
 	Workspace      *WorkspaceInfo `json:"workspace,omitempty"`
 	ContextWindow  *ContextWindow `json:"context_window,omitempty"`
 	Cost           *CostInfo      `json:"cost,omitempty"`
+	Thinking       *Thinking      `json:"thinking,omitempty"`
+	Effort         *Effort        `json:"effort,omitempty"`
+}
+
+type Thinking struct {
+	Enabled bool `json:"enabled,omitempty"`
+}
+
+type Effort struct {
+	Level string `json:"level,omitempty"`
 }
 
 type ModelInfo struct {
@@ -22,6 +32,8 @@ type WorkspaceInfo struct {
 
 type ContextWindow struct {
 	ContextWindowSize    int           `json:"context_window_size,omitempty"`
+	TotalInputTokens     int           `json:"total_input_tokens,omitempty"`
+	UsedPercentage       *float64      `json:"used_percentage,omitempty"`
 	RemainingPercentage  *float64      `json:"remaining_percentage,omitempty"`
 	CurrentUsage         *CurrentUsage `json:"current_usage,omitempty"`
 }

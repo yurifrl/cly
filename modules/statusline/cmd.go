@@ -173,6 +173,8 @@ func RenderStatusline(input *StatusJSON, cfg Config) string {
 			if cfg.Cost.Enabled {
 				out = RenderCost(input)
 			}
+		case "cockpit":
+			out = RenderCockpit(input)
 		case "custom":
 			if cfg.Custom.Enabled {
 				out = RenderCustom(input, cfg.Custom)
