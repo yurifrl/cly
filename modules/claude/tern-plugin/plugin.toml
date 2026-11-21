@@ -1,0 +1,7 @@
+schema = 1
+id = "claude-cli-restore"
+name = "Claude CLI Restore"
+version = "0.3.0"
+description = "Resume a plain Claude Code TUI (`c --cli`) in its pane when the session daemon restarts, like Tern does for tern acp and omp chats, and give Claude Code panes the Anthropic icon."
+host = "host.luau"
+window = "window.luau"

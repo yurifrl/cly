@@ -21,7 +21,7 @@ import (
 //
 // `cly claude-tern-pane` is a SessionStart/SessionEnd hook that keeps one
 // record per Tern pane running a claude launched by `c` (CLY_TERN_RESTORE
-// set): <ternPaneDir>/<TERN_PANE>.json. The claude-cli-restore Tern plugin
+// set): <ternPaneDir>/<TERN_PANE>.json. The claude-cli-restore Tern plugin (./tern-plugin)
 // reads it from its `spawn` hook and has the respawned shell run
 // `cly claude --cli [flags] --resume <session_id>`, or the original
 // `cly claude --cli [flags] [args]` when the session has no transcript yet.
