@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -31,27 +32,22 @@ func ternPluginCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
+	installCmd := &cobra.Command{
+		Use:   "install",
+		Short: "Install the plugin, or update it when cly carries a newer version",
+		Long: "Extracts the plugin to " + "~/.local/share/cly/tern-plugins/" + ternPluginID + " and links it into Tern. " +
+			"Does nothing when that version is already linked; --force rewrites it anyway.",
+		Args: cobra.NoArgs,
+		RunE: runTernPluginInstall,
+	}
+	installCmd.Flags().Bool("force", false, "reinstall even when the version is current")
 	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "install",
-			Short: "Install the plugin into Tern (replacing an installed or linked copy)",
-			Args:  cobra.NoArgs,
-			RunE:  runTernPluginInstall,
-		},
+		installCmd,
 		&cobra.Command{
 			Use:   "uninstall",
 			Short: "Remove the plugin from Tern",
 			Args:  cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				if err := ternPlugin("remove", ternPluginID); err != nil {
-					// A linked copy is unlinked, not removed.
-					if err2 := ternPlugin("unlink", ternPluginID); err2 != nil {
-						return err
-					}
-				}
-				fmt.Printf("✅ removed %s\n", ternPluginID)
-				return nil
-			},
+			RunE:  runTernPluginUninstall,
 		},
 		&cobra.Command{
 			Use:   "extract <dir>",
@@ -70,29 +66,106 @@ func ternPluginCmd() *cobra.Command {
 }
 
 func runTernPluginInstall(cmd *cobra.Command, args []string) error {
+	force, _ := cmd.Flags().GetBool("force")
 	if _, err := exec.LookPath("tern"); err != nil {
 		return fmt.Errorf("tern not found on PATH")
 	}
-	tmp, err := os.MkdirTemp("", "cly-tern-plugin-")
+	want, err := ternPluginVersion(ternPluginFS, "tern-plugin/plugin.toml")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmp)
-	dir := filepath.Join(tmp, ternPluginID)
+	dir := ternPluginHome()
+	have, _ := ternPluginVersion(os.DirFS(dir), "plugin.toml")
+	linked := ternPluginLinkedTo() == dir
+	if have == want && linked && !force {
+		fmt.Printf("✅ %s %s is up to date\n", ternPluginID, want)
+		return nil
+	}
+
+	// Rewrite the folder so files dropped from a newer version go away.
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
 	if err := extractTernPlugin(dir); err != nil {
 		return err
 	}
-	// `install --force` doesn't replace a linked copy; drop it first.
-	_ = ternPlugin("unlink", ternPluginID)
-	if err := ternPlugin("install", dir, "--force"); err != nil {
+	if linked {
+		err = ternPlugin("reload", ternPluginID)
+	} else {
+		// Replace an installed copy or a link elsewhere (a dev checkout).
+		_ = ternPlugin("unlink", ternPluginID)
+		_ = ternPlugin("remove", ternPluginID)
+		err = ternPlugin("link", dir)
+	}
+	if err != nil {
 		return err
 	}
-	fmt.Printf("✅ installed %s\n", ternPluginID)
+	switch {
+	case have == "" || !linked:
+		fmt.Printf("✅ installed %s %s\n", ternPluginID, want)
+	case have == want:
+		fmt.Printf("✅ reinstalled %s %s\n", ternPluginID, want)
+	default:
+		fmt.Printf("✅ updated %s %s → %s\n", ternPluginID, have, want)
+	}
 	if !ternPaneHookConfigured() {
 		fmt.Println("⚠️  `cly claude-tern-pane` isn't a hook in ~/.claude/settings.json; panes get the icon but won't resume.")
 		fmt.Println(`   Add it under hooks.SessionStart and hooks.SessionEnd: {"type": "command", "command": "cly claude-tern-pane"}`)
 	}
 	return nil
+}
+
+func runTernPluginUninstall(cmd *cobra.Command, args []string) error {
+	if err := ternPlugin("unlink", ternPluginID); err != nil {
+		if err2 := ternPlugin("remove", ternPluginID); err2 != nil {
+			return err
+		}
+	}
+	if err := os.RemoveAll(ternPluginHome()); err != nil {
+		return err
+	}
+	fmt.Printf("✅ removed %s\n", ternPluginID)
+	return nil
+}
+
+// ternPluginHome is the folder install extracts the plugin to and links
+// into Tern; a Ternfile lists it as `link:<dir>?` so syncs keep it.
+func ternPluginHome() string {
+	base := os.Getenv("XDG_DATA_HOME")
+	if base == "" {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(base, "cly", "tern-plugins", ternPluginID)
+}
+
+var ternVersionRe = regexp.MustCompile(`(?m)^version\s*=\s*"([^"]+)"`)
+
+// ternPluginVersion reads `version` from a plugin.toml.
+func ternPluginVersion(fsys fs.FS, path string) (string, error) {
+	data, err := fs.ReadFile(fsys, path)
+	if err != nil {
+		return "", err
+	}
+	m := ternVersionRe.FindSubmatch(data)
+	if m == nil {
+		return "", fmt.Errorf("%s has no version", path)
+	}
+	return string(m[1]), nil
+}
+
+// ternPluginLinkedTo is the folder Tern links the plugin from, or "" when
+// it isn't linked (absent or an installed copy).
+func ternPluginLinkedTo() string {
+	out, err := exec.Command("tern", "plugin", "dir").Output()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(strings.TrimSpace(string(out)), ternPluginID+".path"))
+	if err != nil {
+		return ""
+	}
+	return filepath.Clean(strings.TrimSpace(string(data)))
 }
 
 func extractTernPlugin(dir string) error {
