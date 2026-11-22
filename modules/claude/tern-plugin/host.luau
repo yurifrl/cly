@@ -6,8 +6,11 @@
 -- (a Claude SessionStart/SessionEnd hook) keeps one record per pane running
 -- such a claude in ~/.local/state/cly/tern-claude/<TERN_PANE>.json. When the
 -- daemon spawns that pane's shell again (same pane id), this hook has fish
--- run `cly claude --cli [flags] --resume <session>` at startup, or the
--- original `cly claude --cli [flags] [args]` when the session was never saved.
+-- run `cly claude --cli [flags] --resume <session>` at its first prompt, or
+-- the original `cly claude --cli [flags] [args]` when the session was never
+-- saved. The line is typed and executed at the prompt (not run by `-C`) so
+-- Tern sees the command, names the tab after it and shows its program icon;
+-- it starts with `c` when fish has that function (the usual alias).
 
 local DIR = (tern.getenv("HOME") or "") .. "/.local/state/cly/tern-claude/"
 
@@ -33,7 +36,7 @@ tern.on("spawn", function(spec)
     local rec = record(pane)
     if not rec then return spec end
 
-    local words = { "cly", "claude" }
+    local words = {}
     local flags = type(rec.flags) == "table" and rec.flags or { "--cli" }
     for _, f in ipairs(flags) do
         if type(f) == "string" and string.match(f, "^%-%-[%w%-]+$") then table.insert(words, f) end
@@ -51,15 +54,21 @@ tern.on("spawn", function(spec)
             if type(a) == "string" then table.insert(words, quote(a)) end
         end
     end
-    local line = table.concat(words, " ")
+    local rest = table.concat(words, " ")
+    local init = ""
     if type(rec.cwd) == "string" and rec.cwd ~= "" and tern.fs.exists(rec.cwd) then
-        line = "cd " .. quote(rec.cwd) .. " && " .. line
+        init = "cd " .. quote(rec.cwd) .. "; "
     end
+    init = init
+        .. "function __cly_tern_restore --on-event fish_prompt; functions -e __cly_tern_restore; "
+        .. "if functions -q c; commandline -r " .. quote("c " .. rest) .. "; "
+        .. "else; commandline -r " .. quote("cly claude " .. rest) .. "; end; "
+        .. "commandline -f execute; end"
 
     local args = {}
     for _, a in ipairs(spec.args) do table.insert(args, a) end
     table.insert(args, "-C")
-    table.insert(args, line)
+    table.insert(args, init)
     spec.args = args
     return spec
 end)
