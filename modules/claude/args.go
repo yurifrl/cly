@@ -10,6 +10,7 @@ type ParsedArgs struct {
 	Anonymous       bool
 	Yolo            bool
 	PlainCLI        bool
+	ACP             bool
 	NoWrappers      bool
 	NoHeadroom      bool
 	TaskListID      string
@@ -18,7 +19,7 @@ type ParsedArgs struct {
 	PassArgs        []string
 }
 
-// ParseArgs extracts wrapper flags (-n, -a, -t, --yolo, --cli, --no-wrappers, --no-headroom) from args,
+// ParseArgs extracts wrapper flags (-n, -a, -t, --yolo, --cli, --acp, --no-wrappers, --no-headroom) from args,
 // passing everything else through to claude.
 func ParseArgs(args []string) ParsedArgs {
 	var p ParsedArgs
@@ -36,6 +37,8 @@ func ParseArgs(args []string) ParsedArgs {
 			p.Yolo = true
 		case "--cli":
 			p.PlainCLI = true
+		case "--acp":
+			p.ACP = true
 		case "--no-wrappers":
 			p.NoWrappers = true
 		case "--no-headroom":

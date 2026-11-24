@@ -93,6 +93,11 @@ func TestParseArgs(t *testing.T) {
 			expected: ParsedArgs{PlainCLI: true, Yolo: true, PassArgs: session.YoloArgs()},
 		},
 		{
+			name:     "acp is a wrapper flag",
+			args:     []string{"--acp", "--yolo"},
+			expected: ParsedArgs{ACP: true, Yolo: true, PassArgs: session.YoloArgs()},
+		},
+		{
 			name:     "empty args",
 			args:     []string{},
 			expected: ParsedArgs{},

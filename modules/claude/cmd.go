@@ -21,7 +21,7 @@ func Register(parent *cobra.Command) {
 		Use:                "claude",
 		Aliases:            []string{"c"},
 		Short:              "Run Claude Code with session management",
-		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the UI set by modules.claude.open in config: acp (default, Tern's ACP agent view via `tern acp claude`), tern (tclaude) or claude. Falls back to claude when it can't start; --cli forces claude.\n\nWhen claude is launched directly and headroom is on PATH, it runs through `headroom wrap claude` (modules.claude.headroom, default true). --no-headroom skips it; --no-wrappers skips all wrappers. In acp/tern modes ANTHROPIC_BASE_URL is pointed at the running headroom proxy (modules.claude.headroom.proxy_url) when reachable. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
+		Long:               "Wraps Claude Code with session naming and Zellij tab integration.\n\nPlain `c` opens the Claude Code CLI by default. --acp opens Tern's ACP agent view (`tern acp claude`) instead; modules.claude.open in config can change the default UI (claude, acp or tern/tclaude). Falls back to claude when the ACP/tern UI can't start; --cli forces claude.\n\nWhen claude is launched directly and headroom is on PATH, it runs through `headroom wrap claude` (modules.claude.headroom, default true). --no-headroom skips it; --no-wrappers skips all wrappers. In acp/tern modes ANTHROPIC_BASE_URL is pointed at the running headroom proxy (modules.claude.headroom.proxy_url) when reachable. --yolo in acp mode opens bypassPermissions and relies on the `cly claude-yolo-context` SessionStart hook for the safe-autonomous prompt.",
 		DisableFlagParsing: true,
 		RunE:               run,
 	}
@@ -108,9 +108,9 @@ func run(cmd *cobra.Command, args []string) error {
 
 	_ = sess.RenameZellijTab()
 
-	// Plain `c` / `c --yolo` launch the UI picked by modules.claude.open;
-	// it only returns if it can't start, then fall back to claude. Extra
-	// claude args or --cli → claude.
+	// Plain `c` / `c --yolo` launch the claude CLI unless --acp or
+	// modules.claude.open picks another UI; that only returns if it can't
+	// start, then fall back to claude. Extra claude args or --cli → claude.
 	proxy := session.WithAnthropicBaseURL(headroomProxyURL(p))
 	extra := p.PassArgs
 	if p.Yolo {
@@ -118,7 +118,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 	acpArgs, acpOK := ternACPArgs(extra)
 	if !p.PlainCLI {
-		switch openMode() {
+		switch openModeFor(p) {
 		case "acp":
 			if acpOK {
 				_ = sess.ExecTernACP(p.Yolo, acpArgs, session.WithTaskListID(p.TaskListID), proxy)
@@ -224,18 +224,21 @@ func headroomProxyURL(p ParsedArgs) string {
 	return raw
 }
 
-// openMode returns how plain `c` opens Claude Code, from
-// modules.claude.open in config:
+// openModeFor returns how `c` opens Claude Code: --acp forces the ACP view,
+// otherwise modules.claude.open in config:
 //
-//	acp    Tern's ACP agent view (`tern acp claude`, claude-agent-acp) — default
+//	claude the plain Claude Code TUI — default
+//	acp    Tern's ACP agent view (`tern acp claude`, claude-agent-acp)
 //	tern   tclaude (tern-agents-ui)
-//	claude the plain Claude Code TUI
-func openMode() string {
+func openModeFor(p ParsedArgs) string {
+	if p.ACP {
+		return "acp"
+	}
 	switch m := config.GetString("modules.claude.open"); m {
-	case "tern", "claude":
+	case "tern", "acp":
 		return m
 	default:
-		return "acp"
+		return "claude"
 	}
 }
 
